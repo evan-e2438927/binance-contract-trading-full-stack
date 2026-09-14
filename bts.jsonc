@@ -1,0 +1,28 @@
+// Better-T-Stack project metadata
+//
+// Keep this file to use the `add` command.
+// Add addons: pnpm dlx create-better-t-stack@latest add
+//
+// Docs: https://better-t-stack.dev/docs
+// Stack Builder: https://better-t-stack.dev/new
+
+{
+  "$schema": "https://r2.better-t-stack.dev/schema.json",
+  "version": "3.43.0",
+  "createdAt": "2026-09-14T11:54:04.706Z",
+  "reproducibleCommand": "pnpm create better-t-stack@latest binance-contract-trading-full-stack --frontend next native-uniwind --backend hono --runtime node --database postgres --orm drizzle --api none --auth none --payments none --addons turborepo --examples none --db-setup supabase --web-deploy cloudflare --server-deploy none --git --package-manager pnpm --install",
+  "database": "postgres",
+  "orm": "drizzle",
+  "backend": "hono",
+  "runtime": "node",
+  "frontend": ["next", "native-uniwind"],
+  "addons": ["turborepo"],
+  "examples": [],
+  "auth": "none",
+  "payments": "none",
+  "packageManager": "pnpm",
+  "dbSetup": "supabase",
+  "api": "none",
+  "webDeploy": "cloudflare",
+  "serverDeploy": "none",
+}
