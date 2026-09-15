@@ -381,21 +381,55 @@ git commit -m "feat(shared): fixed.ts 补齐五种舍入（mulCeil/divRound/alig
 创建 `packages/shared/src/enums.ts`，11 个枚举，直接对应 `03-database-design.md` 第二节：
 
 ```ts
+/**
+ * 账户登录用的链。'evm' 对应 MetaMask 等 EVM 钱包，'solana' 对应 Phantom 等。
+ * 和地址一起构成 accounts 表的唯一键——同一个人用两条链登录会得到两个独立账户（有意的）。
+ */
 export const CHAIN = ["evm", "solana"] as const;
 export type Chain = (typeof CHAIN)[number];
 
+/**
+ * 持仓模式（账户级设置，第 6 讲的 accounts 表里能看到）。
+ * - ONE_WAY 单向持仓：同一币对同一时间只能持多或持空一个方向，两个方向共用一个仓位槽。
+ * - HEDGE   双向持仓：同一币对可以同时开多、开空两个独立仓位（对冲用）。
+ */
 export const POSITION_MODE = ["ONE_WAY", "HEDGE"] as const;
 export type PositionMode = (typeof POSITION_MODE)[number];
 
+/**
+ * 仓位/订单归属的方向槽位，和 ORDER_SIDE（买/卖）是两个不同维度，别混。
+ * - BOTH  单向模式下用——不区分多空，只有一个仓位槽。
+ * - LONG  双向模式下的多头仓位。
+ * - SHORT 双向模式下的空头仓位。
+ */
 export const POSITION_SIDE = ["BOTH", "LONG", "SHORT"] as const;
 export type PositionSide = (typeof POSITION_SIDE)[number];
 
+/**
+ * 保证金模式（可以每个币对单独设置，见第 6 讲的 account_symbol_settings 表）。
+ * - CROSS    全仓：这个币对的仓位用整个钱包余额做保证金，仓位之间互相"输血"。
+ * - ISOLATED 逐仓：只用分配给这个仓位的保证金，独立算强平价，亏光了也不影响钱包其他部分。
+ */
 export const MARGIN_MODE = ["CROSS", "ISOLATED"] as const;
 export type MarginMode = (typeof MARGIN_MODE)[number];
 
+/**
+ * 订单的买卖方向。注意这是"交易动作"，不等于"开多/开空"——
+ * 开空仓也是先 SELL，只是 positionSide 传 SHORT；reduceOnly 平多仓同样要 SELL。
+ */
 export const ORDER_SIDE = ["BUY", "SELL"] as const;
 export type OrderSide = (typeof ORDER_SIDE)[number];
 
+/**
+ * 订单类型。触发单（STOP 系列）平时不占盘口、不冻结保证金，
+ * 标记价触及 stopPrice 才会"激活"——具体触发规则见 04-backend-design.md 第 7 节。
+ * - LIMIT               限价单：按指定价格排队等成交。
+ * - MARKET              市价单：立刻按当前盘口逐档吃单成交。
+ * - STOP                止损限价单：触发后以 price 挂一张限价单。
+ * - STOP_MARKET         止损市价单：触发后立即按市价成交。
+ * - TAKE_PROFIT         止盈限价单：触发后以 price 挂一张限价单。
+ * - TAKE_PROFIT_MARKET  止盈市价单：触发后立即按市价成交。
+ */
 export const ORDER_TYPE = [
   "LIMIT",
   "MARKET",
@@ -406,9 +440,27 @@ export const ORDER_TYPE = [
 ] as const;
 export type OrderType = (typeof ORDER_TYPE)[number];
 
+/**
+ * 订单有效方式（Time In Force），只对限价单有意义。
+ * - GTC 一直有效，直到成交或被撤单（默认）。
+ * - IOC 立即成交能成的部分，没成交的部分立刻取消，不留在盘口上。
+ * - FOK 必须一次性全部成交，否则整单立刻取消，不接受部分成交。
+ * - GTX 只做 Maker（Post Only）：如果这单下去会立即和对手盘成交，直接拒单，不允许吃单。
+ */
 export const TIME_IN_FORCE = ["GTC", "IOC", "FOK", "GTX"] as const;
 export type TimeInForce = (typeof TIME_IN_FORCE)[number];
 
+/**
+ * 订单状态机的六个状态，状态流转图见 04-backend-design.md 第 3 节。
+ * NEW/PARTIALLY_FILLED 是"活跃"状态（对应第 7 讲 orders 表那个部分索引）；
+ * 其余四个都是终态，进去了就不会再变。
+ * - NEW               已挂单，尚未成交。
+ * - PARTIALLY_FILLED  部分成交，剩余部分还在排队。
+ * - FILLED            完全成交（终态）。
+ * - CANCELED          用户主动撤单（终态）。
+ * - EXPIRED           IOC 未成交部分 / FOK 未全部成交 / GTX 会吃单 / 触发时保证金不足等原因失效（终态）。
+ * - REJECTED          下单校验链（04-backend-design.md 第 6 节）没通过，直接拒绝，不会进入挂单簿（终态）。
+ */
 export const ORDER_STATUS = [
   "NEW",
   "PARTIALLY_FILLED",
@@ -419,12 +471,34 @@ export const ORDER_STATUS = [
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUS)[number];
 
+/**
+ * 成交时这笔单扮演的角色，决定手续费费率（Maker 更低，鼓励挂单提供流动性）。
+ * - MAKER 挂单方：这笔成交是靠"别人的单吃到了我挂在盘口上的单"促成的。
+ * - TAKER 吃单方：这笔成交是靠"我主动吃掉了盘口上已有的挂单"促成的。
+ */
 export const FILL_ROLE = ["MAKER", "TAKER"] as const;
 export type FillRole = (typeof FILL_ROLE)[number];
 
+/**
+ * 触发单用哪种价格判断"到没到触发点"。
+ * - MARK_PRICE     标记价（默认，和币安一致）：能防止有人用小单插针把别人的止损打出来。
+ * - CONTRACT_PRICE 合约最新成交价：更贴近"眼见为实"，但更容易被插针。
+ */
 export const WORKING_TYPE = ["MARK_PRICE", "CONTRACT_PRICE"] as const;
 export type WorkingType = (typeof WORKING_TYPE)[number];
 
+/**
+ * 资金流水的类型——ledger_entries 表（第 8 讲）里每一行都必须归到这 8 类之一，
+ * 这是"钱从哪来、到哪去"的唯一分类依据，账目对不上时靠这个字段定位是哪类操作出的问题。
+ * - INITIAL          开户时发放的初始模拟资金。
+ * - RESET            账户重置（走正常平仓流程后把余额设回初始值，见 CLAUDE.md 已知失真点 #10）。
+ * - REALIZED_PNL     平仓（部分或全部）产生的已实现盈亏。
+ * - FEE              交易手续费（Maker/Taker）。
+ * - FUNDING          资金费结算（每 8 小时，多空双方互相支付）。
+ * - LIQUIDATION      强平时该仓位的盈亏结算。
+ * - LIQUIDATION_FEE  强平清算费。
+ * - MARGIN_TRANSFER  逐仓模式下手动划入/划出保证金。
+ */
 export const LEDGER_TYPE = [
   "INITIAL",
   "RESET",
@@ -471,36 +545,39 @@ describe("errors", () => {
 ```ts
 export const ERROR_CODES = [
   // 认证
-  "UNAUTHORIZED",
-  "TOKEN_EXPIRED",
-  "NONCE_INVALID",
-  "SIGNATURE_INVALID",
-  // 下单（对应 04-backend-design.md 第 6 节校验链）
-  "SYMBOL_NOT_TRADING",
-  "MARKET_NOT_READY",
-  "INVALID_PARAMS",
-  "POSITION_SIDE_MISMATCH",
-  "PRICE_FILTER",
-  "LOT_SIZE",
-  "MIN_NOTIONAL",
-  "PERCENT_PRICE",
-  "REDUCE_ONLY_REJECTED",
-  "LEVERAGE_TOO_HIGH",
-  "INSUFFICIENT_MARGIN",
-  "MARKET_ORDER_TOO_LARGE",
-  "POST_ONLY_REJECTED",
-  "TOO_MANY_ORDERS",
+  "UNAUTHORIZED", // 缺 token 或 token 无效
+  "TOKEN_EXPIRED", // token 过期，需要重新签名登录
+  "NONCE_INVALID", // 登录用的 nonce 不存在、已过期或已用过一次
+  "SIGNATURE_INVALID", // 钱包签名验证失败
+
+  // 下单校验链（严格按顺序执行，见 04-backend-design.md 第 6 节，前一步没过不会走到后一步）
+  "SYMBOL_NOT_TRADING", // 第 1 步：币对不存在，或未开放交易
+  "MARKET_NOT_READY", // 第 2 步：行情还没就绪（没有盘口/标记价），暂不接受下单
+  "INVALID_PARAMS", // 第 3 步：订单类型/TIF/价格/触发价的参数组合不合法
+  "POSITION_SIDE_MISMATCH", // 第 4 步：positionSide 和当前持仓模式（单向/双向）对不上
+  "PRICE_FILTER", // 第 5 步：委托价不是 tickSize 的整数倍
+  "LOT_SIZE", // 第 5 步：委托数量不是 stepSize 的整数倍
+  "MIN_NOTIONAL", // 第 6 步：数量或名义价值低于该币对的最小下单门槛
+  "PERCENT_PRICE", // 第 7 步：委托价偏离标记价超过 ±5%（防止用天价/地板价试探系统）
+  "REDUCE_ONLY_REJECTED", // 第 8 步：只减仓单没有对应仓位，或数量超过了仓位剩余
+  "LEVERAGE_TOO_HIGH", // 第 9 步：成交后名义价值所在的杠杆分层，不允许当前设置的杠杆倍数
+  "INSUFFICIENT_MARGIN", // 第 10 步：可用余额不够支付起始保证金 + 预留的吃单手续费
+  "MARKET_ORDER_TOO_LARGE", // 第 11 步：市价单数量超过了对手盘可见深度的一半
+  "POST_ONLY_REJECTED", // 第 12 步：GTX（只做 Maker）单如果下去会立刻吃单成交，直接拒
+  "TOO_MANY_ORDERS", // 第 13 步：该账户当前挂单数已经到了 200 张的上限
+
   // 仓位与账户
-  "ORDER_NOT_FOUND",
-  "POSITION_NOT_FOUND",
-  "MARGIN_MODE_LOCKED",
-  "POSITION_MODE_LOCKED",
-  "RESET_COOLING_DOWN",
-  "MARGIN_WOULD_LIQUIDATE",
+  "ORDER_NOT_FOUND", // 撤单时订单不存在，或已经是终态
+  "POSITION_NOT_FOUND", // 平仓/加减保证金时找不到对应仓位
+  "MARGIN_MODE_LOCKED", // 该币对还有持仓或挂单，不能切换全仓/逐仓
+  "POSITION_MODE_LOCKED", // 账户还有任何持仓或挂单，不能切换单向/双向持仓模式
+  "RESET_COOLING_DOWN", // 账户重置有冷却时间，冷却期内不能再次重置
+  "MARGIN_WOULD_LIQUIDATE", // 逐仓减保证金后会让保证金率立刻 ≥ 100%（相当于自己把自己强平），不允许
+
   // 系统
-  "RATE_LIMITED",
-  "INTERNAL_ERROR",
-  "SERVICE_UNAVAILABLE",
+  "RATE_LIMITED", // 触发限流
+  "INTERNAL_ERROR", // 服务端内部错误，兜底用
+  "SERVICE_UNAVAILABLE", // 引擎还没就绪（启动中，或行情断连导致暂停撮合）
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -656,18 +733,18 @@ git commit -m "feat(db): 11 个 pgEnum，接入 packages/shared 的枚举元组"
 import { bigint, boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const symbols = pgTable("symbols", {
-  symbol: text("symbol").primaryKey(),
-  baseAsset: text("base_asset").notNull(),
-  quoteAsset: text("quote_asset").notNull(),
-  status: text("status").notNull(),
-  pricePrecision: integer("price_precision").notNull(),
-  quantityPrecision: integer("quantity_precision").notNull(),
-  tickSize: bigint("tick_size", { mode: "bigint" }).notNull(),
-  stepSize: bigint("step_size", { mode: "bigint" }).notNull(),
-  minQty: bigint("min_qty", { mode: "bigint" }).notNull(),
-  minNotional: bigint("min_notional", { mode: "bigint" }).notNull(),
-  enabled: boolean("enabled").notNull().default(false),
-  sortOrder: integer("sort_order").notNull().default(0),
+  symbol: text("symbol").primaryKey(), // 'BTCUSDT' 这种币安原生的交易对代码，直接当主键
+  baseAsset: text("base_asset").notNull(), // 'BTC'——标的资产
+  quoteAsset: text("quote_asset").notNull(), // 'USDT'——计价资产，本项目目前只对接 U 本位
+  status: text("status").notNull(), // 币安那边的状态，如 'TRADING'/'SETTLING'，原样存
+  pricePrecision: integer("price_precision").notNull(), // 价格小数位数，前端展示用
+  quantityPrecision: integer("quantity_precision").notNull(), // 数量小数位数，前端展示用
+  tickSize: bigint("tick_size", { mode: "bigint" }).notNull(), // 价格最小变动单位，下单校验链第 5 步要用
+  stepSize: bigint("step_size", { mode: "bigint" }).notNull(), // 数量最小变动单位，同上
+  minQty: bigint("min_qty", { mode: "bigint" }).notNull(), // 最小下单数量
+  minNotional: bigint("min_notional", { mode: "bigint" }).notNull(), // 最小下单名义价值（价格 × 数量）
+  enabled: boolean("enabled").notNull().default(false), // 我们自己的字段：是否对用户开放，不是币安数据的一部分
+  sortOrder: integer("sort_order").notNull().default(0), // 我们自己的字段：币对列表的展示顺序
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -688,12 +765,12 @@ export const leverageBrackets = pgTable(
     symbol: text("symbol")
       .notNull()
       .references(() => symbols.symbol),
-    bracket: integer("bracket").notNull(),
-    notionalFloor: bigint("notional_floor", { mode: "bigint" }).notNull(),
-    notionalCap: bigint("notional_cap", { mode: "bigint" }).notNull(),
-    maxLeverage: integer("max_leverage").notNull(),
-    mmr: bigint("mmr", { mode: "bigint" }).notNull(),
-    cum: bigint("cum", { mode: "bigint" }).notNull(),
+    bracket: integer("bracket").notNull(), // 层号，从 1 开始，层号越大杠杆上限越低
+    notionalFloor: bigint("notional_floor", { mode: "bigint" }).notNull(), // 这一层的名义价值下限
+    notionalCap: bigint("notional_cap", { mode: "bigint" }).notNull(), // 这一层的名义价值上限
+    maxLeverage: integer("max_leverage").notNull(), // 这一层允许的最大杠杆倍数
+    mmr: bigint("mmr", { mode: "bigint" }).notNull(), // 维持保证金率，定标 1e8，如 0.4% 存 400000n
+    cum: bigint("cum", { mode: "bigint" }).notNull(), // 速算额，配合 mmr 算维持保证金：名义价值 × mmr − cum
   },
   (t) => [
     uniqueIndex("lb_symbol_bracket_uq").on(t.symbol, t.bracket),
@@ -740,13 +817,15 @@ export const accounts = pgTable(
     // EVM 统一小写；Solana 保持 base58 原样。
     address: text("address").notNull(),
     chain: chainEnum("chain").notNull(),
+    // 已结算的钱包余额，是 accounts.wallet_balance === SUM(ledger_entries.amount) 这条
+    // 不变式里的左边——任何资金变动都必须同步改这个字段并写一条 ledger_entries。
     walletBalance: bigint("wallet_balance", { mode: "bigint" }).notNull().default(0n),
     positionMode: positionModeEnum("position_mode").notNull().default("ONE_WAY"),
-    lastResetAt: timestamp("last_reset_at", { withTimezone: true }),
+    lastResetAt: timestamp("last_reset_at", { withTimezone: true }), // 上次账户重置的时间，null 表示没重置过
     // 排行榜显示名，默认脱敏地址。
     nickname: text("nickname"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(), // 最近一次活跃时间
   },
   (t) => [uniqueIndex("accounts_chain_address_uq").on(t.chain, t.address)],
 );
@@ -767,10 +846,10 @@ export const authNonces = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     address: text("address").notNull(),
     chain: chainEnum("chain").notNull(),
-    nonce: text("nonce").notNull(),
-    message: text("message").notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    usedAt: timestamp("used_at", { withTimezone: true }),
+    nonce: text("nonce").notNull(), // 随机挑战值，拼进 message 里让用户签名，防重放攻击
+    message: text("message").notNull(), // 完整待签名原文，验签必须用这份服务端存的原文
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), // 有效期 5 分钟
+    usedAt: timestamp("used_at", { withTimezone: true }), // 非空说明已经验签成功用过一次，防止重放
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -800,10 +879,11 @@ export const accountSymbolSettings = pgTable(
     symbol: text("symbol")
       .notNull()
       .references(() => symbols.symbol),
-    leverage: integer("leverage").notNull().default(20),
-    marginMode: marginModeEnum("margin_mode").notNull().default("CROSS"),
+    leverage: integer("leverage").notNull().default(20), // 这个账户在这个币对上的杠杆倍数
+    marginMode: marginModeEnum("margin_mode").notNull().default("CROSS"), // 全仓/逐仓，默认全仓
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
+  // 联合主键 (accountId, symbol)：每个账户每个币对最多一条设置，天然去重
   (t) => [primaryKey({ columns: [t.accountId, t.symbol] })],
 );
 
@@ -858,14 +938,15 @@ export const positions = pgTable(
       .references(() => symbols.symbol),
     positionSide: positionSideEnum("position_side").notNull(),
     marginMode: marginModeEnum("margin_mode").notNull(),
-    leverage: integer("leverage").notNull(),
-    qty: bigint("qty", { mode: "bigint" }).notNull().default(0n),
-    entryPrice: bigint("entry_price", { mode: "bigint" }).notNull().default(0n),
-    isolatedMargin: bigint("isolated_margin", { mode: "bigint" }).notNull().default(0n),
-    openedAt: timestamp("opened_at", { withTimezone: true }),
+    leverage: integer("leverage").notNull(), // 开仓时锁定的杠杆倍数，后续调杠杆不影响已开的仓位
+    qty: bigint("qty", { mode: "bigint" }).notNull().default(0n), // 恒为非负，方向看 positionSide
+    entryPrice: bigint("entry_price", { mode: "bigint" }).notNull().default(0n), // 加权平均开仓价
+    isolatedMargin: bigint("isolated_margin", { mode: "bigint" }).notNull().default(0n), // 仅逐仓模式下有意义
+    openedAt: timestamp("opened_at", { withTimezone: true }), // 首次开仓时间，qty 归零后不清空，留作历史记录
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    // 一个账户在一个币对的同一个方向上只能有一条仓位记录（不管单向/双向模式）
     uniqueIndex("pos_acc_sym_side_uq").on(t.accountId, t.symbol, t.positionSide),
     // 部分索引：只索引活跃仓位（qty > 0）。资金费结算、强平扫描按币对高频捞取活跃仓位，靠它。
     index("pos_symbol_open_idx").on(t.symbol).where(sql`qty > 0`),
@@ -896,39 +977,42 @@ export const orders = pgTable(
   "orders",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    clientOrderId: text("client_order_id").notNull(),
+    clientOrderId: text("client_order_id").notNull(), // 前端生成的幂等键，重试同一个值不会重复下单
     accountId: uuid("account_id")
       .notNull()
       .references(() => accounts.id, { onDelete: "cascade" }),
     symbol: text("symbol")
       .notNull()
       .references(() => symbols.symbol),
-    side: orderSideEnum("side").notNull(),
-    positionSide: positionSideEnum("position_side").notNull(),
+    side: orderSideEnum("side").notNull(), // BUY/SELL，交易动作方向
+    positionSide: positionSideEnum("position_side").notNull(), // 这笔单影响哪个仓位槽（BOTH/LONG/SHORT）
     type: orderTypeEnum("type").notNull(),
-    timeInForce: timeInForceEnum("time_in_force").notNull().default("GTC"),
-    price: bigint("price", { mode: "bigint" }),
-    stopPrice: bigint("stop_price", { mode: "bigint" }),
-    workingType: workingTypeEnum("working_type").notNull().default("MARK_PRICE"),
-    qty: bigint("qty", { mode: "bigint" }).notNull(),
-    executedQty: bigint("executed_qty", { mode: "bigint" }).notNull().default(0n),
-    avgPrice: bigint("avg_price", { mode: "bigint" }).notNull().default(0n),
-    reduceOnly: boolean("reduce_only").notNull().default(false),
-    closePosition: boolean("close_position").notNull().default(false),
+    timeInForce: timeInForceEnum("time_in_force").notNull().default("GTC"), // 只对限价单有意义
+    price: bigint("price", { mode: "bigint" }), // 委托价，市价单为 null
+    stopPrice: bigint("stop_price", { mode: "bigint" }), // 触发单的触发价，非触发单为 null
+    workingType: workingTypeEnum("working_type").notNull().default("MARK_PRICE"), // 触发单用什么价格判断触发
+    qty: bigint("qty", { mode: "bigint" }).notNull(), // 委托数量
+    executedQty: bigint("executed_qty", { mode: "bigint" }).notNull().default(0n), // 已成交数量
+    avgPrice: bigint("avg_price", { mode: "bigint" }).notNull().default(0n), // 已成交部分的加权平均价
+    reduceOnly: boolean("reduce_only").notNull().default(false), // 只减仓：不能开新仓，只能减少现有仓位
+    closePosition: boolean("close_position").notNull().default(false), // 一键平仓：不指定数量，直接清空整个仓位
     status: orderStatusEnum("status").notNull().default("NEW"),
-    triggered: boolean("triggered").notNull().default(false),
-    queueAhead: bigint("queue_ahead", { mode: "bigint" }).notNull().default(0n),
-    queueEstimated: boolean("queue_estimated").notNull().default(false),
-    frozenMargin: bigint("frozen_margin", { mode: "bigint" }).notNull().default(0n),
-    rejectReason: text("reject_reason"),
+    triggered: boolean("triggered").notNull().default(false), // 触发单是否已经被标记价/最新价触发过
+    queueAhead: bigint("queue_ahead", { mode: "bigint" }).notNull().default(0n), // 拟真排队：前方还剩多少量没成交
+    queueEstimated: boolean("queue_estimated").notNull().default(false), // 排队位置是不是估算出来的（重启后会是）
+    frozenMargin: bigint("frozen_margin", { mode: "bigint" }).notNull().default(0n), // 这张挂单占用/冻结的保证金
+    rejectReason: text("reject_reason"), // 状态是 REJECTED/EXPIRED 时，记录具体是哪条错误码/原因
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    // 下单幂等：同一账户同一个 clientOrderId 只会真正下单一次
     uniqueIndex("orders_acc_client_uq").on(t.accountId, t.clientOrderId),
+    // 部分索引：只索引"活跃"挂单（NEW/PARTIALLY_FILLED）。引擎恢复、撮合时按币对高频捞取，靠它。
     index("orders_open_idx")
       .on(t.symbol, t.status)
       .where(sql`status IN ('NEW','PARTIALLY_FILLED')`),
+    // 查一个账户的历史挂单列表（按时间倒序分页）
     index("orders_acc_created_idx").on(t.accountId, t.createdAt.desc()),
   ],
 );
@@ -958,12 +1042,12 @@ export const fills = pgTable(
     symbol: text("symbol").notNull(),
     side: orderSideEnum("side").notNull(),
     positionSide: positionSideEnum("position_side").notNull(),
-    price: bigint("price", { mode: "bigint" }).notNull(),
-    qty: bigint("qty", { mode: "bigint" }).notNull(),
-    role: fillRoleEnum("role").notNull(),
-    fee: bigint("fee", { mode: "bigint" }).notNull(),
-    realizedPnl: bigint("realized_pnl", { mode: "bigint" }).notNull().default(0n),
-    isLiquidation: boolean("is_liquidation").notNull().default(false),
+    price: bigint("price", { mode: "bigint" }).notNull(), // 这一笔的实际成交价（不是订单的委托价）
+    qty: bigint("qty", { mode: "bigint" }).notNull(), // 这一笔的成交数量（订单可能分好几笔成交）
+    role: fillRoleEnum("role").notNull(), // MAKER/TAKER，决定手续费费率
+    fee: bigint("fee", { mode: "bigint" }).notNull(), // 这一笔的手续费，向上取整（mulCeil）
+    realizedPnl: bigint("realized_pnl", { mode: "bigint" }).notNull().default(0n), // 这一笔带来的已实现盈亏，开仓/加仓为 0
+    isLiquidation: boolean("is_liquidation").notNull().default(false), // 这一笔是不是强平引起的
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -1030,17 +1114,17 @@ export const ledgerEntries = pgTable(
     accountId: uuid("account_id")
       .notNull()
       .references(() => accounts.id, { onDelete: "cascade" }),
-    type: ledgerTypeEnum("type").notNull(),
-    symbol: text("symbol"),
-    amount: bigint("amount", { mode: "bigint" }).notNull(),
-    balanceAfter: bigint("balance_after", { mode: "bigint" }).notNull(),
-    refType: text("ref_type"),
-    refId: uuid("ref_id"),
+    type: ledgerTypeEnum("type").notNull(), // 这笔钱属于 LEDGER_TYPE 8 类中的哪一类
+    symbol: text("symbol"), // 和某个币对相关的流水（如手续费/资金费）才填，INITIAL/RESET 这类为 null
+    amount: bigint("amount", { mode: "bigint" }).notNull(), // 有符号：收入为正，支出为负
+    balanceAfter: bigint("balance_after", { mode: "bigint" }).notNull(), // 这笔发生后的余额快照，查流水页不用累加
+    refType: text("ref_type"), // 关联的业务对象类型，如 'fill'/'funding'/'liquidation'
+    refId: uuid("ref_id"), // 关联的业务对象 id，配合 refType 能查到这笔钱具体是哪次成交/结算引起的
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index("ledger_acc_created_idx").on(t.accountId, t.createdAt.desc()),
-    index("ledger_acc_type_idx").on(t.accountId, t.type),
+    index("ledger_acc_created_idx").on(t.accountId, t.createdAt.desc()), // 流水分页查询
+    index("ledger_acc_type_idx").on(t.accountId, t.type), // 按类型筛选流水（比如只看手续费）
   ],
 );
 
@@ -1064,14 +1148,15 @@ export const fundingPayments = pgTable(
       .references(() => accounts.id, { onDelete: "cascade" }),
     symbol: text("symbol").notNull(),
     positionSide: positionSideEnum("position_side").notNull(),
-    fundingRate: bigint("funding_rate", { mode: "bigint" }).notNull(),
-    markPrice: bigint("mark_price", { mode: "bigint" }).notNull(),
-    notional: bigint("notional", { mode: "bigint" }).notNull(),
-    amount: bigint("amount", { mode: "bigint" }).notNull(),
-    settledAt: timestamp("settled_at", { withTimezone: true }).notNull(),
+    fundingRate: bigint("funding_rate", { mode: "bigint" }).notNull(), // 结算时使用的资金费率
+    markPrice: bigint("mark_price", { mode: "bigint" }).notNull(), // 结算时使用的标记价
+    notional: bigint("notional", { mode: "bigint" }).notNull(), // 结算时仓位的名义价值（= markPrice × qty）
+    amount: bigint("amount", { mode: "bigint" }).notNull(), // 有符号：多头付给空头（或反之）时，付出方为负
+    settledAt: timestamp("settled_at", { withTimezone: true }).notNull(), // 结算时间，每 8 小时一次
   },
   (t) => [
     index("funding_acc_settled_idx").on(t.accountId, t.settledAt.desc()),
+    // 防重复结算：定时器因重启而重复触发时，唯一约束挡住第二次写入
     uniqueIndex("funding_uq").on(t.accountId, t.symbol, t.positionSide, t.settledAt),
   ],
 );
@@ -1096,14 +1181,15 @@ export const liquidations = pgTable(
       .references(() => accounts.id, { onDelete: "cascade" }),
     symbol: text("symbol").notNull(),
     positionSide: positionSideEnum("position_side").notNull(),
-    marginMode: marginModeEnum("margin_mode").notNull(),
-    qty: bigint("qty", { mode: "bigint" }).notNull(),
-    entryPrice: bigint("entry_price", { mode: "bigint" }).notNull(),
-    markPrice: bigint("mark_price", { mode: "bigint" }).notNull(),
-    realizedPnl: bigint("realized_pnl", { mode: "bigint" }).notNull(),
-    liquidationFee: bigint("liquidation_fee", { mode: "bigint" }).notNull(),
-    marginBalanceBefore: bigint("margin_balance_before", { mode: "bigint" }).notNull(),
-    maintMarginAt: bigint("maint_margin_at", { mode: "bigint" }).notNull(),
+    marginMode: marginModeEnum("margin_mode").notNull(), // 被强平时这个仓位是全仓还是逐仓
+    qty: bigint("qty", { mode: "bigint" }).notNull(), // 被强平的数量
+    entryPrice: bigint("entry_price", { mode: "bigint" }).notNull(), // 被强平仓位的开仓均价
+    markPrice: bigint("mark_price", { mode: "bigint" }).notNull(), // 触发强平那一刻的标记价，强平按这个价格平仓
+    realizedPnl: bigint("realized_pnl", { mode: "bigint" }).notNull(), // 强平这笔带来的已实现盈亏（通常是负的）
+    liquidationFee: bigint("liquidation_fee", { mode: "bigint" }).notNull(), // 强平清算费，比普通手续费高
+    // 下面两个是取证字段：用户质疑"我不该被强平"时，把这两个数摆出来就能说清楚，别省。
+    marginBalanceBefore: bigint("margin_balance_before", { mode: "bigint" }).notNull(), // 强平前一刻的保证金余额
+    maintMarginAt: bigint("maint_margin_at", { mode: "bigint" }).notNull(), // 强平前一刻算出的维持保证金要求
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("liq_acc_created_idx").on(t.accountId, t.createdAt.desc())],
@@ -1126,16 +1212,16 @@ export const equitySnapshots = pgTable(
     accountId: uuid("account_id")
       .notNull()
       .references(() => accounts.id, { onDelete: "cascade" }),
-    snapDate: date("snap_date").notNull(),
-    equity: bigint("equity", { mode: "bigint" }).notNull(),
-    walletBalance: bigint("wallet_balance", { mode: "bigint" }).notNull(),
-    cumulativePnl: bigint("cumulative_pnl", { mode: "bigint" }).notNull(),
-    roi: bigint("roi", { mode: "bigint" }).notNull(),
+    snapDate: date("snap_date").notNull(), // UTC 日期，每天一条
+    equity: bigint("equity", { mode: "bigint" }).notNull(), // 权益 = 钱包余额 + 所有仓位未实现盈亏
+    walletBalance: bigint("wallet_balance", { mode: "bigint" }).notNull(), // 当天快照时刻的钱包余额
+    cumulativePnl: bigint("cumulative_pnl", { mode: "bigint" }).notNull(), // 自上次账户重置以来的累计盈亏
+    roi: bigint("roi", { mode: "bigint" }).notNull(), // 收益率，定标 1e8，排行榜按这个字段排序
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("equity_acc_date_uq").on(t.accountId, t.snapDate),
-    index("equity_date_roi_idx").on(t.snapDate, t.roi.desc()),
+    uniqueIndex("equity_acc_date_uq").on(t.accountId, t.snapDate), // 每个账户每天最多一条快照
+    index("equity_date_roi_idx").on(t.snapDate, t.roi.desc()), // 排行榜：WHERE snap_date=today ORDER BY roi DESC
   ],
 );
 
