@@ -20,6 +20,9 @@ app.get("/", (c) => {
 });
 
 import { serve } from "@hono/node-server";
+import { booksRoute } from "./routers/books";
+
+app.route("/books", booksRoute); // 👈 新增
 
 serve(
   {

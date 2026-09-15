@@ -22,3 +22,5 @@ catalog:
   "@tailwindcss/postcss": ^4.3.3
   "@types/react-dom": ^19.2.7
   tailwindcss: ^4.3.3
+  drizzle-orm: ^0.45.2      # 数据库 ORM
+
