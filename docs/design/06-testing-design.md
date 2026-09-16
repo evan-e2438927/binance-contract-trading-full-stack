@@ -343,7 +343,8 @@ console.log(`内存 ${process.memoryUsage().heapUsed / 1e6}MB`)
 # 每次 push
 - pnpm check-types      # 类型检查
 - pnpm test             # 单测 + 集成（用 CI 里的测试库）
-- pnpm verify:brackets  # 分层表连续性
+# 分层表的结构与连续性校验由 packages/db 的单测覆盖（pnpm test 已包含）。
+# verify:brackets 要调币安签名接口，不进 CI，上线前和怀疑数据时手动跑。
 ```
 
 E2E 和压测**不进每次 push 的 CI**（太慢），改成：

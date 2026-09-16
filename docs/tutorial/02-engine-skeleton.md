@@ -10,13 +10,16 @@
 - 一个最小可运行的引擎：能接收行情、能开户
 - 一个测试脚手架：每次 `apply` 之后**自动**检查账目，改了余额没写流水会立刻红
 - 一个纯净性守卫：谁往引擎里写了 `Date.now()` 就红
+- 一套回滚机制：宿主写库失败时 `rollback()` 只撤本次改动，代价和账户总数无关；漏记一处修改，测试当场红
 
 **先读**：
 
 - `docs/design/02-architecture.md` 第二节"为什么把引擎抽成独立包"、第六节"跨层契约"、第七节"状态归属"
 - `docs/design/06-testing-design.md` 第 3 节"场景重放"、第 4 节"不变式检查"
 
-**本讲共 7 节，最后是 20 条测试。**
+**本讲共 8 节，最后是 32 条测试。**
+
+> **代码已经在仓库里了**：`packages/engine` 按本讲义实现，讲义里每一段代码都和仓库文件逐字一致（第 1–6 节的代码块拼起来、再按第 7 节修改，得到的就是仓库里的版本）。你可以对照着读，也可以删掉 `packages/engine/src` 照讲义自己敲一遍——两种都行，检查点的测试数字都对得上。
 
 ---
 
@@ -465,7 +468,7 @@ export interface Engine {
 
 类型定下来之后，先准备一份测试专用的引擎配置。
 
-**这里有一个重要决定：测试夹具不读你第 01 讲用 `fetch:brackets` 拉下来的真实分层表。** 你拉下来的 BTCUSDT 第 1 层上限是 300,000 / 150x，而设计文档所有算例（强平价 45,180.72 等）都基于文档里那张示例表（第 1 层 50,000 / 125x）。测试如果读真实数据：
+**这里有一个重要决定：测试夹具不读数据库里的真实分层表**（第 01 讲用 `fetch:brackets` 拉取，现已改为官方接口每日同步，见 [01b](01b-bracket-sync.md)）。真实表里 BTCUSDT 第 1 层上限是 300,000 / 150x，而设计文档所有算例（强平价 45,180.72 等）都基于文档里那张示例表（第 1 层 50,000 / 125x）。测试如果读真实数据：
 
 1. 文档算例对不上，你没法拿文档验证自己的公式
 2. 币安哪天调表，测试莫名其妙全红——而你的代码根本没改
@@ -481,7 +484,7 @@ import type { EngineConfig, EngineInput, LeverageBracket, SymbolSpec } from "../
 /**
  * 测试专用的冻结配置。
  *
- * ⚠️ 故意不读 packages/db 里 fetch:brackets 拉下来的真实分层表：
+ * ⚠️ 故意不读 packages/db 里从币安官方接口同步进数据库的真实分层表：
  * 币安会调表（BTCUSDT 第 1 层上限已经从文档里的 50,000 变成了 300,000），
  * 测试如果跟着真实数据走，币安一调表就全红，而且红得毫无意义。
  * 这里用的是 01-domain-knowledge.md 里那张示例表——所有文档算例都基于它。
@@ -674,6 +677,10 @@ git commit -m "feat(engine): 包骨架、跨层契约类型、测试夹具与纯
 **为什么用 `Map` 不用数组**：撮合时要高频地"按订单 id 找订单"、"按账户+币对+方向找仓位"，数组每次都要遍历。仓位的键用 `accountId|symbol|positionSide` 拼出来，一个仓位一个键，天然对应数据库那个唯一索引 `pos_acc_sym_side_uq`。
 
 **为什么快照要深拷贝**：宿主拿到快照后如果改了里面的对象（哪怕是无意的），不能影响引擎。反过来 `restore` 进来的对象，调用方之后再改，也不能影响引擎。`structuredClone` 原生支持 `bigint`，一行搞定。
+
+**快照不是给每次 `apply` 用的**：深拷贝的代价和账户总数成正比。它适合重启恢复、测试、排查问题这种低频场景；如果宿主每处理一个输入都先拍一次快照当回滚点，账户一多就会被 GC 拖垮。每次 `apply` 的回滚要用只记改动的 undo 日志，第 7 节会加上。
+
+**内存会不会无限涨**：不会。成交、流水、终态订单都不进内存，内存里只有活着的状态，上界由"每账户挂单 ≤ 200、仓位 ≤ 币对数 × 2"保证。粗算见 `02-architecture.md` 第七节"内存规模"。
 
 ### 动手
 
@@ -1446,13 +1453,697 @@ git commit -m "feat(engine): 不变式自动检查脚手架（含测试测试器
 
 ---
 
-## 第 7 节：把契约改动回写设计文档
+## 第 7 节：回滚——undo 日志与 `commit()` / `rollback()`
 
-第 3 节对 `02-architecture.md` 第六节的契约做了四处补充。**代码和设计文档不一致，下一个读文档的人（包括以后的你）就会照着旧契约写代码。**
+### 概念：写库失败了，内存怎么办
+
+`02-architecture.md` 第七节规定"内存是权威，落库失败就回滚内存"。第 4 节做的 `snapshot()` / `restore()` 看上去就能干这件事：
+
+```ts
+// ❌ 看似顺手，实际会拖垮性能
+const before = engine.snapshot()
+const events = engine.apply(input)
+try { await persist(events) } catch { engine.restore(before) }
+```
+
+问题在代价：`snapshot()` 深拷贝**全部**账户、仓位、挂单，是 O(全体账户)；而一次 `apply` 通常只改几个账户。1 万个账户时，每一笔成交都要先拷贝上百 MB 的临时对象，`aggTrade` 一密集，进程就一直忙着 GC。
+
+换个思路：**只记被改动的东西的旧值**。
+
+```
+apply 开始              → 开一本空日志
+改某个键之前            → 这个键第一次被改？把旧值（或"原来不存在"）记进日志
+apply 结束，宿主落库
+  ├─ 成功 → commit()    → 扔掉日志                     O(1)
+  └─ 失败 → rollback()  → 日志里每个键恢复成旧值         O(本次改动数)
+```
+
+两个细节：
+
+- **同一个键只记第一次**。一次 `apply` 里余额可能先扣手续费、再加盈亏，改了两次；回滚要回到 `apply` 之前，不是回到"扣完手续费"那一步。也因为这样，恢复时和顺序无关。
+- **行情类状态不进日志**。和快照一样的理由：币安的价格不会因为我们写库失败就倒退。
+
+### 最难的部分：怎么保证"每一处修改都进了日志"
+
+日志的正确性全靠一件事：**引擎里任何对账户类状态的修改，都先记了旧值**。后面七讲会有几十处修改，靠自觉一定会漏。漏一处，回滚就悄悄回不干净——平时根本发现不了，只有写库失败那一刻才出事。
+
+所以这里上三道锁，从编译期一直到测试期：
+
+| 锁 | 拦住什么 | 怎么做 |
+| --- | --- | --- |
+| ① 类型只读 | `state.accounts.set(...)` 直接写 Map；`account.walletBalance = x` 原地改对象 | `EngineState` 上四个账户类 Map 改成 `ReadonlyMap<string, Readonly<T>>`，**编译就报错**。想改只能调 `journal.ts` 的 `putAccount` / `putOrder` 等函数 |
+| ② 运行时冻结 | 用 `as` 绕过类型原地改 | 存进 Map 的对象一律 `Object.freeze`，原地改直接抛 `TypeError` |
+| ③ 回滚自检 | 以上都没拦住的任何漏记 | 测试脚手架在**每一次** `apply` 之后：`rollback()` → 必须和 `apply` 之前一模一样 → 再把结果装回去 |
+
+为什么日志存旧对象的**引用**就够了，不需要拷贝：有锁 ①②，对象进了引擎就不可能被原地改，旧对象永远是旧的样子。每次修改都是"造一个新对象，put 进去"。这是日志能做到 O(改动数) 的前提。
+
+### 调用协议
+
+```ts
+const events = engine.apply(input)
+try {
+  await persist(events)
+  engine.commit()
+} catch {
+  engine.rollback()
+}
+```
+
+引擎主动拦住三种用错的方式（都是程序错误，直接抛）：
+
+- 上一次 `apply` 还没 `commit` / `rollback` 就又 `apply`——多半是宿主并发喂了输入，回滚会撤错东西
+- 没有待结算的 `apply` 却调 `commit` / `rollback`
+- 有待结算的 `apply` 时调 `restore`
+
+还有一条保护：`apply` 自己抛出程序错误时（比如喂了未知币对），可能已经改了一半。引擎在 `catch` 里先自动撤销本次改动，再把错误抛出去。**一次 `apply` 要么完整生效，要么什么都没发生。**
+
+### 动手：`journal.ts`
+
+创建 `packages/engine/src/journal.ts`：
+
+```ts
+import { positionKey, settingKey, writable, type EngineState } from "./state";
+import type { Account, AccountSymbolSetting, Order, Position } from "./types";
+
+/**
+ * 一次 apply 的 undo 日志：每个被改动的键，记下它在本次 apply 之前的值。
+ *
+ * - 值为 undefined 表示"本次 apply 之前这个键不存在"，回滚时删掉它
+ * - 同一个键在一次 apply 里只记第一次——回滚要回到 apply 之前，不是回到上一步
+ *
+ * 为什么不直接用 snapshot()：快照是 O(全体账户) 的深拷贝，而一次 apply 通常只碰几个账户。
+ * 日志只记旧值的引用（账户类对象不许原地改，旧对象不会被污染），代价是 O(本次改动数)。
+ * 见 02-architecture.md 第七节"回滚怎么做"。
+ */
+export interface Journal {
+  accounts: Map<string, Readonly<Account> | undefined>;
+  settings: Map<string, Readonly<AccountSymbolSetting> | undefined>;
+  positions: Map<string, Readonly<Position> | undefined>;
+  orders: Map<string, Readonly<Order> | undefined>;
+}
+
+type Slot = keyof Journal;
+
+/** 开始记录一次 apply。上一次还没结算就再开，说明宿主漏了 commit / rollback。 */
+export function beginJournal(state: EngineState): void {
+  if (state.journal) {
+    throw new Error("上一次 apply 还没有 commit() 或 rollback()，宿主必须先结算再喂下一个输入");
+  }
+  state.journal = { accounts: new Map(), settings: new Map(), positions: new Map(), orders: new Map() };
+}
+
+/** 宿主落库成功：丢弃日志，本次改动生效。 */
+export function commitJournal(state: EngineState): void {
+  requireJournal(state, "commit");
+  state.journal = null;
+}
+
+/** 宿主落库失败：把本次 apply 改过的键恢复成旧值。行情类状态不在日志里，保持不动。 */
+export function rollbackJournal(state: EngineState): void {
+  const journal = requireJournal(state, "rollback");
+  undo(writable(state.accounts), journal.accounts);
+  undo(writable(state.settings), journal.settings);
+  undo(writable(state.positions), journal.positions);
+  undo(writable(state.orders), journal.orders);
+  state.journal = null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 修改账户类状态的唯一入口。EngineState 上这几个 Map 是只读的，
+// 引擎代码想改账户、设置、仓位、订单，只能调下面这些函数。
+//
+// 存进去的对象会被 Object.freeze：日志里存的是旧对象的引用而不是拷贝，
+// 编译期 Readonly 已经拦住了原地改，冻结再在运行时兜一层——谁绕过类型原地改，当场抛 TypeError。
+// ─────────────────────────────────────────────────────────────
+
+export function putAccount(state: EngineState, account: Account): void {
+  record(state, "accounts", account.id);
+  writable(state.accounts).set(account.id, Object.freeze(account));
+}
+
+export function putSetting(state: EngineState, setting: AccountSymbolSetting): void {
+  const key = settingKey(setting.accountId, setting.symbol);
+  record(state, "settings", key);
+  writable(state.settings).set(key, Object.freeze(setting));
+}
+
+export function putPosition(state: EngineState, position: Position): void {
+  const key = positionKey(position.accountId, position.symbol, position.positionSide);
+  record(state, "positions", key);
+  writable(state.positions).set(key, Object.freeze(position));
+}
+
+export function removePosition(state: EngineState, key: string): void {
+  record(state, "positions", key);
+  writable(state.positions).delete(key);
+}
+
+export function putOrder(state: EngineState, order: Order): void {
+  record(state, "orders", order.id);
+  writable(state.orders).set(order.id, Object.freeze(order));
+}
+
+/** 订单进入终态、发出 orderUpdate 之后调用：内存里只留未完成订单。 */
+export function removeOrder(state: EngineState, orderId: string): void {
+  record(state, "orders", orderId);
+  writable(state.orders).delete(orderId);
+}
+
+function record(state: EngineState, slot: Slot, key: string): void {
+  // 没开日志（单元测试直接调 applyInput）时不记录
+  const log = state.journal?.[slot] as Map<string, unknown> | undefined;
+  if (log && !log.has(key)) {
+    log.set(key, state[slot].get(key));
+  }
+}
+
+function undo<V>(map: Map<string, V>, log: Map<string, V | undefined>): void {
+  for (const [key, before] of log) {
+    if (before === undefined) {
+      map.delete(key);
+    } else {
+      map.set(key, before);
+    }
+  }
+}
+
+function requireJournal(state: EngineState, action: string): Journal {
+  if (!state.journal) {
+    throw new Error(`没有待结算的 apply，${action}() 调用多余，宿主流程有 bug`);
+  }
+  return state.journal;
+}
+```
+
+`state.ts` 和 `journal.ts` 互相引用，但 `state.ts` 那边只 `import type`，编译后会被擦掉，运行时没有循环依赖。
+
+### 动手：改 `state.ts`
+
+四处改动。
+
+**① 顶部 import 加一行**：
+
+```ts
+import type { Journal } from "./journal";
+```
+
+**② `EngineState` 整个替换**：注释补上只读的理由，账户类 Map 改成只读，加上 `journal` 字段。
+
+```ts
+/**
+ * 引擎的全部内存状态。只在引擎包内部流通，对外只暴露 EngineSnapshot。
+ * 用 Map 而不是数组：撮合时要按 id / 仓位键高频查找。
+ *
+ * 账户类状态对外是只读的（ReadonlyMap + Readonly 值），编译器会拦住两种写法：
+ * - state.accounts.set(...)            → 必须改用 journal.ts 的 putAccount 等函数
+ * - state.accounts.get(id)!.walletBalance = x → 对象不能原地改，要构造新对象再 put
+ * 这样每一处修改都一定经过 undo 日志，回滚才不会漏。
+ */
+export interface EngineState {
+  readonly config: EngineConfig;
+  readonly symbols: Map<string, SymbolSpec>;
+  readonly brackets: Map<string, LeverageBracket[]>; // 按 notionalCap 升序
+
+  // —— 账户类状态：进快照、可回滚 ——
+  readonly accounts: ReadonlyMap<string, Readonly<Account>>;
+  readonly settings: ReadonlyMap<string, Readonly<AccountSymbolSetting>>; // key: settingKey()
+  readonly positions: ReadonlyMap<string, Readonly<Position>>; // key: positionKey()
+  readonly orders: ReadonlyMap<string, Readonly<Order>>; // 只放未完成订单
+
+  /** 本次 apply 的 undo 日志；null 表示没有待结算的 apply。见 journal.ts。 */
+  journal: Journal | null;
+
+  // —— 行情类状态：不进快照 ——
+  readonly books: Map<string, BookState>;
+  readonly marks: Map<string, MarkState>;
+  readonly lastPrices: Map<string, Fixed>;
+}
+```
+
+然后 `createState` 返回的对象里补一行 `journal: null,`（放在 `lastPrices: new Map(),` 后面）。
+
+**③ 在 `toSnapshot` 上面加 `writable`**。只读 Map 真要写的时候（只有 `loadSnapshot` 和 `journal.ts`）用它显式转一下——以后 grep `writable(` 就能看到全引擎所有写入点：
+
+```ts
+/**
+ * 拿到账户类 Map 的可写版本。只给本文件的 loadSnapshot 和 journal.ts 用——
+ * 其它地方要改账户类状态，一律走 journal.ts 的 put / remove。
+ */
+export function writable<V>(map: ReadonlyMap<string, V>): Map<string, V> {
+  return map as Map<string, V>;
+}
+```
+
+**④ `loadSnapshot` 整个替换**：开头拒绝未结算状态，写入改用 `writable`，存进去的对象冻结。
+
+```ts
+/** 用快照整体替换账户类状态。行情类状态（books/marks/lastPrices）保持不动。 */
+export function loadSnapshot(state: EngineState, snapshot: EngineSnapshot): void {
+  // 整体替换会让 undo 日志里记的旧值失去意义，必须先把上一次 apply 结算掉
+  if (state.journal) {
+    throw new Error("还有未结算的 apply（没调 commit() 或 rollback()），不能 restore");
+  }
+
+  const copy = structuredClone(snapshot);
+
+  // 先全部校验，再动状态——校验到一半抛错时不能留下半新半旧的状态
+  for (const s of copy.settings) requireSymbol(state, s.symbol);
+  for (const p of copy.positions) requireSymbol(state, p.symbol);
+  for (const o of copy.orders) requireSymbol(state, o.symbol);
+
+  const accounts = writable(state.accounts);
+  const settings = writable(state.settings);
+  const positions = writable(state.positions);
+  const orders = writable(state.orders);
+
+  accounts.clear();
+  settings.clear();
+  positions.clear();
+  orders.clear();
+
+  // 冻结：和 journal.ts 的 put 一致，账户类对象进了引擎就不许原地改
+  for (const a of copy.accounts) accounts.set(a.id, Object.freeze(a));
+  for (const s of copy.settings) settings.set(settingKey(s.accountId, s.symbol), Object.freeze(s));
+  for (const p of copy.positions) positions.set(positionKey(p.accountId, p.symbol, p.positionSide), Object.freeze(p));
+  for (const o of copy.orders) orders.set(o.id, Object.freeze(o));
+}
+```
+
+### 动手：改 `apply.ts`、`create-engine.ts`、`types.ts`
+
+`apply.ts`：开户不再 `state.accounts.set`（现在也写不了，编译会报错），改用 `putAccount`。顶部加：
+
+```ts
+import { putAccount } from "./journal";
+```
+
+`registerAccount` 里的写入改成：
+
+```ts
+  putAccount(state, {
+    id: input.accountId,
+    walletBalance: input.walletBalance,
+    positionMode: input.positionMode,
+  });
+```
+
+`create-engine.ts` 整个替换：
+
+```ts
+import { applyInput } from "./apply";
+import { beginJournal, commitJournal, rollbackJournal } from "./journal";
+import { createState, loadSnapshot, toSnapshot } from "./state";
+import type { Engine, EngineConfig, EngineSnapshot } from "./types";
+
+export function createEngine(config: EngineConfig, initial?: EngineSnapshot): Engine {
+  const state = createState(config);
+  if (initial) {
+    loadSnapshot(state, initial);
+  }
+
+  return {
+    apply(input) {
+      beginJournal(state);
+      try {
+        return applyInput(state, input);
+      } catch (error) {
+        // 程序错误可能发生在改了一半的时候：先撤掉本次改动，再把错误抛给宿主。
+        // 这样一次 apply 要么完整生效，要么什么都没发生，不会留下半新半旧的状态。
+        rollbackJournal(state);
+        throw error;
+      }
+    },
+    commit: () => commitJournal(state),
+    rollback: () => rollbackJournal(state),
+    snapshot: () => toSnapshot(state),
+    restore: (snapshot) => loadSnapshot(state, snapshot),
+  };
+}
+```
+
+`types.ts` 末尾的 `Engine` 接口整个替换：
+
+```ts
+/**
+ * 宿主的调用协议：
+ *
+ *   const events = engine.apply(input)
+ *   try { persist(events); engine.commit() } catch { engine.rollback() }
+ *
+ * 每次 apply 之后必须恰好调一次 commit() 或 rollback()，否则下一次 apply 直接抛错。
+ */
+export interface Engine {
+  /**
+   * 同步、确定性：同样的状态 + 同样的输入，永远得到同样的事件。
+   * 抛出程序错误时，本次改动已自动撤销，不需要（也不能）再调 rollback()。
+   */
+  apply(input: EngineInput): EngineEvent[];
+  /** 宿主落库成功后调用：本次 apply 的改动生效。代价 O(1)。 */
+  commit(): void;
+  /**
+   * 宿主落库失败后调用：账户类状态回到本次 apply 之前，行情类状态不动。
+   * 代价 O(本次改动的对象数)，和账户总数无关。
+   */
+  rollback(): void;
+  /** 返回深拷贝，调用方怎么改都影响不到引擎。代价 O(全体账户)——只用于重启恢复、测试、排查，不要每次 apply 都调。 */
+  snapshot(): EngineSnapshot;
+  /** 用快照整体替换账户类状态，行情状态保持不变。有未结算的 apply 时抛错。 */
+  restore(snapshot: EngineSnapshot): void;
+}
+```
+
+**检查点 7a**：跑测试，`harness.test.ts` 的 3 条会红：1 条报"上一次 apply 还没有 commit() 或 rollback()"，2 条报"还有未结算的 apply……不能 restore"。这是对的——脚手架还在按老协议调引擎（只 `apply` 不结算），下一步改它。
+
+### 动手：脚手架加上回滚自检
+
+`testing/invariants.ts` 末尾追加：
+
+```ts
+/**
+ * 回滚自检：apply 之后 rollback，账户类状态必须和 apply 之前一模一样。
+ * 抓的是"某处修改绕过了 journal.ts 的 put / remove"——那样的改动回滚时会被漏掉。
+ *
+ * 比较时不看顺序：回滚会把被删除的键重新放回 Map，插入顺序可能变，但内容必须一致。
+ */
+export function checkRollback(before: EngineSnapshot, afterRollback: EngineSnapshot): void {
+  for (const slot of ["accounts", "settings", "positions", "orders"] as const) {
+    const expected = canonical(before[slot]);
+    const actual = canonical(afterRollback[slot]);
+    if (expected !== actual) {
+      throw new InvariantError(
+        `回滚不完整：${slot} 在 rollback 之后和 apply 之前不一致，说明有修改没经过 journal.ts\n` +
+          `  apply 之前：${expected}\n  rollback 后：${actual}`,
+      );
+    }
+  }
+}
+
+function canonical(items: readonly object[]): string {
+  return items.map(stableStringify).sort().join("\n");
+}
+
+/** 键排序后的 JSON，bigint 写成 123n。JSON.stringify 不认 bigint，而且键顺序不稳定。 */
+function stableStringify(value: unknown): string {
+  if (typeof value === "bigint") return `${value}n`;
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  const fields = Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+  return `{${fields.join(",")}}`;
+}
+```
+
+比较时要排序，是因为回滚会把被删掉的键重新 `set` 回 Map，插入顺序跟原来不同，快照数组的顺序也就不同。**内容相同就算回滚干净**，顺序不算。
+
+`testing/harness.ts` 整个替换：
+
+```ts
+import type { Fixed } from "@binance-contract-trading-full-stack/shared";
+import { createEngine } from "../create-engine";
+import type { Engine, EngineConfig, EngineEvent, EngineInput } from "../types";
+import { InvariantError, checkInvariants, checkRollback } from "./invariants";
+
+export interface TestEngine {
+  /** 被包裹的真实引擎。测试"不变式会不会被抓到"时，可以绕过脚手架直接调它。 */
+  readonly engine: Engine;
+  /** 从创建到现在的全部输出事件，按顺序。 */
+  readonly events: readonly EngineEvent[];
+  /**
+   * 调用引擎，然后自动检查全部不变式和回滚自检。任何一条被破坏都会抛 InvariantError。
+   * 从调用方看，效果等同于"apply + 宿主落库成功 + commit"。
+   */
+  apply(input: EngineInput): EngineEvent[];
+  /** 该账户所有 balanceUpdate 的 delta 之和，相当于数据库里的 SUM(ledger_entries.amount)。 */
+  ledgerSum(accountId: string): Fixed;
+}
+
+export function createTestEngine(config: EngineConfig): TestEngine {
+  const engine = createEngine(config);
+  const events: EngineEvent[] = [];
+  const ledgerSums = new Map<string, Fixed>();
+
+  return {
+    engine,
+    events,
+    apply(input) {
+      // 回滚自检：apply → 记下结果 → rollback → 必须回到 apply 之前 → 再把结果装回去。
+      // 这样每一个测试里的每一次 apply 都顺带验证了 undo 日志没有漏记。
+      // 三次深拷贝只在测试里付，生产宿主走的是 commit，没有这份开销。
+      const before = engine.snapshot();
+      const out = engine.apply(input);
+      const after = engine.snapshot();
+      engine.rollback();
+      checkRollback(before, engine.snapshot());
+      engine.restore(after);
+
+      for (const event of out) {
+        events.push(event);
+        if (event.t !== "balanceUpdate") continue;
+
+        const sum = (ledgerSums.get(event.accountId) ?? 0n) + event.delta;
+        ledgerSums.set(event.accountId, sum);
+        // 每条流水的 balanceAfter 也要自洽，不能只在最后对总账
+        if (event.walletBalance !== sum) {
+          throw new InvariantError(
+            `不变式 ① 被破坏：balanceUpdate 声称余额 ${event.walletBalance}，但流水累加是 ${sum}`,
+          );
+        }
+      }
+
+      checkInvariants(engine.snapshot(), out, ledgerSums);
+      return out;
+    },
+    ledgerSum(accountId) {
+      return ledgerSums.get(accountId) ?? 0n;
+    },
+  };
+}
+```
+
+**这就是锁 ③**：从第 03 讲开始，所有测试都走 `createTestEngine`，**每个测试的每一次 `apply` 都自动验证了一遍回滚**。第 07 讲强平时如果漏记了一处仓位修改，不用专门写回滚测试，随便哪条强平测试都会当场红。
+
+### 动手：测试
+
+先给夹具加一个订单工厂，后面几讲会一直用。`testing/fixtures.ts` 的类型 import 加上 `Order`，末尾追加：
+
+```ts
+/** 一张 BTCUSDT 限价买单，状态 NEW。需要别的字段就用 overrides 覆盖。 */
+export function testOrder(overrides: Partial<Order> = {}): Order {
+  return {
+    id: "o-1",
+    clientOrderId: "c-1",
+    accountId: "acc-1",
+    symbol: "BTCUSDT",
+    side: "BUY",
+    positionSide: "BOTH",
+    type: "LIMIT",
+    timeInForce: "GTC",
+    price: parse("50000"),
+    stopPrice: null,
+    workingType: "MARK_PRICE",
+    qty: parse("1"),
+    executedQty: 0n,
+    avgPrice: 0n,
+    reduceOnly: false,
+    closePosition: false,
+    status: "NEW",
+    triggered: false,
+    queueAhead: 0n,
+    queueEstimated: false,
+    frozenMargin: 0n,
+    rejectReason: null,
+    createdAt: T0,
+    updatedAt: T0,
+    ...overrides,
+  };
+}
+```
+
+创建 `packages/engine/src/journal.test.ts`——直接测日志本身：
+
+```ts
+import { parse } from "@binance-contract-trading-full-stack/shared";
+import { describe, expect, it } from "vitest";
+import { applyInput } from "./apply";
+import { beginJournal, putAccount, putOrder, removeOrder, rollbackJournal } from "./journal";
+import { createState, loadSnapshot } from "./state";
+import { T0, testConfig, testOrder } from "./testing/fixtures";
+import type { Account } from "./types";
+
+function stateWithAccount(balance: string) {
+  const state = createState(testConfig());
+  loadSnapshot(state, {
+    accounts: [{ id: "acc-1", walletBalance: parse(balance), positionMode: "ONE_WAY" }],
+    settings: [],
+    positions: [],
+    orders: [testOrder({ id: "o-1" })],
+  });
+  return state;
+}
+
+describe("undo 日志", () => {
+  it("同一个键在一次 apply 里改了多次，回滚回到 apply 之前，而不是上一步", () => {
+    const state = stateWithAccount("10000");
+    beginJournal(state);
+
+    putAccount(state, { id: "acc-1", walletBalance: parse("9000"), positionMode: "ONE_WAY" });
+    putAccount(state, { id: "acc-1", walletBalance: parse("8000"), positionMode: "ONE_WAY" });
+    rollbackJournal(state);
+
+    expect(state.accounts.get("acc-1")!.walletBalance).toBe(parse("10000"));
+  });
+
+  it("本次新增的键回滚后消失，本次删除的键回滚后回来", () => {
+    const state = stateWithAccount("10000");
+    beginJournal(state);
+
+    removeOrder(state, "o-1");
+    putOrder(state, testOrder({ id: "o-2" }));
+    rollbackJournal(state);
+
+    expect([...state.orders.keys()]).toEqual(["o-1"]);
+  });
+
+  it("回滚不动行情类状态：币安的价格不会因为我们写库失败就倒退", () => {
+    const state = stateWithAccount("10000");
+    beginJournal(state);
+
+    applyInput(state, { t: "trade", symbol: "BTCUSDT", price: parse("50001.2"), qty: parse("0.3"), buyerIsMaker: false, ts: T0 });
+    rollbackJournal(state);
+
+    expect(state.lastPrices.get("BTCUSDT")).toBe(parse("50001.2"));
+  });
+
+  it("进了引擎的账户类对象被冻结：绕过类型原地改，运行时直接抛错", () => {
+    const state = stateWithAccount("10000");
+    // 日志只存旧对象的引用。如果允许原地改，旧值会被一起改掉，回滚就回不去了
+    const account = state.accounts.get("acc-1") as Account;
+    expect(() => {
+      account.walletBalance = 0n;
+    }).toThrow(TypeError);
+  });
+});
+```
+
+创建 `packages/engine/src/create-engine.test.ts`——测对外的调用协议：
+
+```ts
+import { parse } from "@binance-contract-trading-full-stack/shared";
+import { describe, expect, it } from "vitest";
+import { createEngine } from "./create-engine";
+import { T0, registerAccountInput, testConfig } from "./testing/fixtures";
+
+describe("createEngine：apply 之后必须 commit 或 rollback", () => {
+  it("commit：本次改动生效", () => {
+    const engine = createEngine(testConfig());
+
+    engine.apply(registerAccountInput("acc-1", "10000"));
+    engine.commit();
+
+    expect(engine.snapshot().accounts).toEqual([
+      { id: "acc-1", walletBalance: parse("10000"), positionMode: "ONE_WAY" },
+    ]);
+  });
+
+  it("rollback：回到 apply 之前，就像这次开户从没发生过", () => {
+    const engine = createEngine(testConfig());
+
+    engine.apply(registerAccountInput("acc-1", "10000"));
+    engine.rollback();
+
+    expect(engine.snapshot().accounts).toEqual([]);
+    // 真的回去了：同一个账户可以再注册一次，而不是报"重复注册"
+    expect(() => engine.apply(registerAccountInput("acc-1", "10000"))).not.toThrow();
+  });
+
+  it("上一次 apply 没结算就喂下一个输入，是宿主的 bug，直接抛错", () => {
+    const engine = createEngine(testConfig());
+    engine.apply(registerAccountInput("acc-1"));
+
+    expect(() => engine.apply(registerAccountInput("acc-2"))).toThrow(/还没有 commit\(\) 或 rollback\(\)/);
+  });
+
+  it("没有待结算的 apply 时，commit / rollback 都抛错", () => {
+    const engine = createEngine(testConfig());
+
+    expect(() => engine.commit()).toThrow(/commit\(\) 调用多余/);
+    expect(() => engine.rollback()).toThrow(/rollback\(\) 调用多余/);
+  });
+
+  it("apply 抛出程序错误时已经自动回滚，不会卡在未结算状态", () => {
+    const engine = createEngine(testConfig());
+
+    expect(() => engine.apply({ t: "cancelOrder", accountId: "acc-1", orderId: "o-1", ts: T0 })).toThrow(
+      /还没有实现输入/,
+    );
+
+    expect(() => engine.rollback()).toThrow(/调用多余/);
+    expect(() => engine.apply(registerAccountInput("acc-1"))).not.toThrow();
+  });
+
+  it("有未结算的 apply 时不能 restore", () => {
+    const engine = createEngine(testConfig());
+    engine.apply(registerAccountInput("acc-1"));
+
+    expect(() => engine.restore({ accounts: [], settings: [], positions: [], orders: [] })).toThrow(
+      /未结算的 apply/,
+    );
+  });
+});
+```
+
+`testing/harness.test.ts`：import 改成 `import { InvariantError, checkRollback } from "./invariants";`，在最后一个 `it` 后面追加两条"测试测试器"：
+
+```ts
+  it("回滚自检：内容一样、只是顺序不同，不算回滚不完整", () => {
+    const a = { id: "acc-1", walletBalance: parse("1"), positionMode: "ONE_WAY" } as const;
+    const b = { id: "acc-2", walletBalance: parse("2"), positionMode: "ONE_WAY" } as const;
+    const empty = { settings: [], positions: [], orders: [] };
+
+    expect(() => checkRollback({ accounts: [a, b], ...empty }, { accounts: [b, a], ...empty })).not.toThrow();
+  });
+
+  it("回滚自检：有一处改动没被撤回 → 抛出回滚不完整", () => {
+    const empty = { settings: [], positions: [], orders: [] };
+    const before = { accounts: [{ id: "acc-1", walletBalance: parse("10000"), positionMode: "ONE_WAY" as const }], ...empty };
+    const leaked = { accounts: [{ id: "acc-1", walletBalance: parse("9999"), positionMode: "ONE_WAY" as const }], ...empty };
+
+    expect(() => checkRollback(before, leaked)).toThrow(InvariantError);
+    expect(() => checkRollback(before, leaked)).toThrow(/回滚不完整：accounts/);
+  });
+```
+
+**检查点 7b**：
+
+```bash
+pnpm --filter @binance-contract-trading-full-stack/engine run check-types
+pnpm --filter @binance-contract-trading-full-stack/engine run test
+```
+
+预期 **7 个测试文件、32 条测试全部通过**。
+
+**练习（三道锁各拆一次，每次拆完恢复原样）**：
+
+1. 删掉 `putAccount` 里的 `record(state, "accounts", account.id);` → 红 5 条，其中脚手架 3 条报"回滚不完整"（锁 ③ 响了）
+2. 把 `putAccount` 和 `loadSnapshot` 里账户那行的 `Object.freeze(...)` 去掉 → "被冻结"那条红（锁 ②）
+3. 临时建一个文件，写 `state.accounts.set(...)` 和 `state.accounts.get("x")!.walletBalance = 1n` → `check-types` 报两个错（锁 ①）
+
+```bash
+git add packages/engine/src
+git commit -m "feat(engine): undo 日志 + commit/rollback；脚手架每次 apply 自检回滚"
+```
+
+---
+
+## 第 8 节：把契约改动回写设计文档
+
+第 3 节对 `02-architecture.md` 第六节的契约做了四处补充，第 7 节又给 `Engine` 接口加了 `commit()` / `rollback()`。**代码和设计文档不一致，下一个读文档的人（包括以后的你）就会照着旧契约写代码。**
 
 打开 `docs/design/02-architecture.md` 第六节"① 引擎 ↔ 宿主"，改三处：
 
-1. **`Engine` 接口**下面补一句：引擎由 `createEngine(config: EngineConfig, initial?: EngineSnapshot)` 创建，`config` 包含币对规格、分层表、费率和限额。
+1. **`Engine` 接口**：换成 `types.ts` 里带 `commit()` / `rollback()` 的版本，下面补一句：引擎由 `createEngine(config: EngineConfig, initial?: EngineSnapshot)` 创建，`config` 包含币对规格、分层表、费率和限额。
 2. **`EngineInput`** 的代码块：
    - 新增 `registerAccount` / `resetAccount` / `setPositionMode` / `adjustIsolatedMargin` 四种
    - `placeOrder` 加上 `orderId: string`，并注明"由宿主生成，引擎不生成随机 id"
@@ -1462,11 +2153,13 @@ git commit -m "feat(engine): 不变式自动检查脚手架（含测试测试器
    - `rejected` 补上 `accountId` / `input` / `orderId` / `ts`，`clientOrderId` 改成可空
    - 新增 `settingUpdate` / `positionModeUpdate`
 
-最省事的写法：直接把 `packages/engine/src/types.ts` 里 `EngineInput` 和 `EngineEvent` 两段复制过去，然后在代码块上方加一行 `> 以 packages/engine/src/types.ts 为准`。
+最省事的写法：直接把 `packages/engine/src/types.ts` 里 `Engine`、`EngineInput` 和 `EngineEvent` 三段复制过去，然后在代码块上方加一行 `> 以 packages/engine/src/types.ts 为准`。
+
+> 这一步已经做完了：`02-architecture.md` 第六节现在就是回写后的样子，可以直接对照着看。
 
 ```bash
 git add docs/design/02-architecture.md
-git commit -m "docs(design): 引擎契约回写——开户/重置等输入、订单 id 来源、事件字段对齐数据库"
+git commit -m "docs(design): 引擎契约回写——开户/重置等输入、订单 id 来源、事件字段对齐数据库、commit/rollback"
 ```
 
 ---
@@ -1474,12 +2167,14 @@ git commit -m "docs(design): 引擎契约回写——开户/重置等输入、�
 ## 验收清单
 
 - [ ] `pnpm --filter @binance-contract-trading-full-stack/engine run check-types` 通过
-- [ ] `pnpm --filter @binance-contract-trading-full-stack/engine run test`：5 个文件、20 条测试全部通过
+- [ ] `pnpm --filter @binance-contract-trading-full-stack/engine run test`：7 个文件、32 条测试全部通过
 - [ ] 做过第 3 节的练习：塞进 `Date.now()` 后纯净性守卫变红
 - [ ] 做过第 5 节的练习：`EngineInput` 加一种新输入后 `assertNever` 编译报错
+- [ ] 做过第 7 节的练习：三道锁各拆一次，都看到它们响
+- [ ] 能说清楚：为什么宿主不能每次 `apply` 前调 `snapshot()`；为什么日志只存旧对象的引用就够了
 - [ ] `packages/engine/package.json` 的 `dependencies` 里只有 `shared`
 - [ ] `02-architecture.md` 第六节已回写
 
-全部打勾之后，告诉我"第 02 讲做完了"。我会读你实际写出来的代码，然后写第 03 讲——**计算公式**：保证金、可用余额、维持保证金、强平价。那一讲会第一次用上 `createTestEngine`，也会把这一讲留空的不变式 ③ 和 ⑥ 补上。
+全部打勾之后，告诉我"第 02 讲读完了"。我接着写第 03 讲——**计算公式**：保证金、可用余额、维持保证金、强平价。那一讲会第一次用上 `createTestEngine`，也会把这一讲留空的不变式 ③ 和 ⑥ 补上。从那一讲起，所有对账户、仓位、订单的修改都必须走 `journal.ts` 的 `put` / `remove`——编译器会逼你这么做。
 
 动手之前可以先想一个问题，第 03 讲开头要用：`README.md` 设计缺口清单第 5 条——强平价 45,180.72 不是 `tickSize` 0.1 的整数倍，那它到底该不该对齐？对齐的话往哪个方向对齐才是"保守"的？

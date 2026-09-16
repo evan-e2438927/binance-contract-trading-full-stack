@@ -14,7 +14,8 @@
 | 需求探讨与技术决策 | ✅ 完成 |
 | 设计文档 | ✅ 完成，7 份在 `docs/design/`（已含邮箱 / Google 登录，14 张表版本） |
 | 第 01 讲 · 数据库层 | ✅ 用户已完成：`packages/shared` + 12 张表 + 种子/对账脚本；分层表由 `fetch:brackets` 从币安拉取，20 个币对已导入 |
-| 第 02 讲 · 引擎骨架与测试脚手架 | 📝 讲义已写（`docs/tutorial/02-engine-skeleton.md`），代码在隔离 worktree 里逐个检查点验证过，等用户动手 |
+| 第 01b 讲 · 分层表官方同步 | ✅ 2026-09-16 AI 实现 + 讲义：官方签名接口（只读 Key）+ 三道校验 + `leverage_bracket_changes` 快照表（迁移 0002）+ server 每日 UTC 00:05 同步；旧的 JSON / `fetch:brackets` / `seed:brackets` 已删除；未 commit |
+| 第 02 讲 · 引擎骨架、测试脚手架、回滚日志 | ✅ 2026-09-16 起引擎改为 **AI 写代码 + 讲义，用户对照阅读**。`packages/engine` 已实现（7 个测试文件 32 条全绿），讲义第 7 节新增 undo 日志 + `commit()`/`rollback()`，讲义代码与仓库逐字一致；未 commit |
 | 第 03–09 讲 · 引擎内核 | ⬜ 只有大纲（见教程 README），每讲等用户完成上一讲后，读其实际代码再写 |
 | 第 10–14 讲 · 服务端 | ⬜ 只有大纲 |
 | 前端 | 不出教程——`apps/web` 由 AI 直接实现 |
@@ -102,11 +103,11 @@ docs/design/
 1. 建 `packages/shared`，写 `fixed.ts`（定标 1e8、`parse`/`format`、`mul`/`div`、五种舍入）
 2. 建 `packages/engine` 骨架 + `types.ts`（`EngineInput` / `EngineEvent`，签名见 `02-architecture.md` 第六节）
 3. `packages/db` 建 12 张表（结构逐字段见 `03-database-design.md`）
-4. 人工整理 20 个币对的杠杆分层表 JSON
-   ⚠️ **必须从币安页面人工核对，不要凭记忆生成**。生成错了会导致所有强平价系统性偏差，而连续性校验只能查出内部不连续，查不出整体抄错一档。
-5. 写四个脚本：`seed:symbols`、`seed:brackets`、`verify:brackets`、`reconcile:ledger`
+4. ~~人工整理 20 个币对的杠杆分层表 JSON~~ → 已改为官方签名接口同步（见第 01b 讲）
+   ⚠️ 分层表数字**只能来自官方接口**，不要凭记忆生成。
+5. 脚本：`seed:symbols`、`sync:brackets`、`verify:brackets`、`reconcile:ledger`
 
-**M0 验收**：`db:push` 后库里有 20 个币对的规格和分层表，`verify:brackets` 全过，`fixed.ts` 单测全绿。
+**M0 验收**：`seed:symbols` + `sync:brackets` 后库里有 20 个币对的规格和分层表，`verify:brackets` 与官方 0 差异，`fixed.ts` 单测全绿。
 
 ### 一条建议
 

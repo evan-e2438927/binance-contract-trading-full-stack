@@ -8,12 +8,13 @@
 
 ## 一、表清单
 
-14 张表，按用途分四组：
+15 张表，按用途分四组：
 
 | 组 | 表 | 用途 | 写入频率 |
 | --- | --- | --- | --- |
 | **市场规格** | `symbols` | 币对规格（从币安 exchangeInfo 同步） | 每天一次 |
-| | `leverage_brackets` | 杠杆分层表（人工维护） | 季度 |
+| | `leverage_brackets` | 杠杆分层表（官方签名接口每日同步） | 每天一次，无变化不写 |
+| | `leverage_bracket_changes` | 分层表变更快照（只追加） | 币安调表时 |
 | **账户** | `accounts` | 账户与钱包余额 | 每次资金变动 |
 | | `identities` | 登录身份（钱包地址 / 邮箱 / Google），归属账户 | 每次注册 |
 | | `auth_nonces` | 钱包登录的一次性挑战值 | 每次登录 |
@@ -31,6 +32,7 @@
 
 ```
 symbols ──1:N──► leverage_brackets
+        └─1:N──► leverage_bracket_changes
 
 accounts ──1:N──► identities         应用层保证每个账户只挂一个身份，不做合并
          ├─1:N──► account_symbol_settings
@@ -128,9 +130,36 @@ export const leverageBrackets = pgTable('leverage_brackets', {
 
 **`mmr` 也走定标 1e8**：0.4% = 0.004 → `400000n`。不要用 float 存比例，否则精度问题从这里溜进强平价计算。
 
-> **必须配一个校验脚本**：对每个币对，遍历相邻两层的边界名义价值 N，断言
-> `N × mmr_低层 − cum_低层 === N × mmr_高层 − cum_高层`。
-> 不相等说明表抄错了。这个脚本进 CI，每次改分层表都跑。
+**数据来源**：官方签名接口 `GET /fapi/v1/leverageBracket`，只读 API Key，只在服务端使用。
+同步逻辑在 `packages/db/src/brackets/`，server 每天 UTC 00:05 跑一次（启动时也跑一次），手动用 `sync:brackets`。
+同步范围是 `symbols.enabled = true` 的币对，开放名单在 `brackets/open-symbols.ts`。
+
+**三道校验**：
+
+1. **写库前**校验官方数据：数值能精确表示为 1e8 定标（拒绝浮点尾巴和科学计数法）；层号从 1 连续；第 1 层下限为 0、每层下限等于上层上限；最大杠杆逐层不增、mmr 逐层不减；相邻两层边界上
+   `N × mmr_低层 − cum_低层 === N × mmr_高层 − cum_高层`；返回带 `notionalCoef ≠ 1`（账户被个性化调整）直接拒绝。
+   任何一个开放币对不过、或官方缺了某个开放币对 → **整次中止，不写库**。
+2. **写库后**读回，与官方逐层逐字段比对。
+3. **`verify:brackets`** 随时可跑：库内结构合法 + 与官方 0 差异。
+
+替换是在一个事务里 delete + insert 变化的币对，并写一条变更快照。
+
+### `leverage_bracket_changes`
+
+```ts
+export const leverageBracketChanges = pgTable('leverage_bracket_changes', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  symbol:    text('symbol').notNull().references(() => symbols.symbol),
+  before:    jsonb('before').$type<BracketRow[]>().notNull(),  // 变更前整表；首次导入为 []
+  after:     jsonb('after').$type<BracketRow[]>().notNull(),   // 变更后整表
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('lbc_symbol_changed_idx').on(t.symbol, t.changedAt.desc()),
+])
+```
+
+分层表不再进版本库，这张表替代 git 历史回答"币安哪天调了什么"。存整表快照而非字段差异：想看当时的表直接取，差异随时可用 `diffBrackets(before, after)` 重算。
+jsonb 里数值是十进制字符串（bigint 不进 JSON）。只追加；同步没有变化就不写。
 
 ---
 
@@ -492,16 +521,17 @@ pnpm run db:studio     # 可视化查看
 
 | 脚本 | 做什么 | 何时跑 |
 | --- | --- | --- |
-| `seed:symbols` | 拉 `GET /fapi/v1/exchangeInfo`，写入/更新 `symbols`，按配置置 `enabled` | 每日定时 + 手动 |
-| `seed:brackets` | 从仓库里的 JSON 导入 `leverage_brackets` | 手动，改表后 |
-| `verify:brackets` | 分层连续性校验（见第三节） | CI + 每次导入后 |
+| `seed:symbols` | 拉 `GET /fapi/v1/exchangeInfo`，写入/更新 `symbols`，按 `brackets/open-symbols.ts` 置 `enabled` / `sortOrder` | 每日定时 + 手动 |
+| `sync:brackets` | 用官方签名接口同步开放币对的 `leverage_brackets`；`--dry-run` 只看差异 | server 每日 UTC 00:05 自动 + 手动 |
+| `verify:brackets` | 对齐检查：库内分层表结构合法、且与官方 0 差异，否则退出码 1 | 怀疑数据时 + 上线前 |
 | `reconcile:ledger` | 跑第六节的对账 SQL | 每小时定时 |
 | `snapshot:equity` | 每日 UTC 00:00 写权益快照 | 定时 |
 | `clean:nonces` | 清理过期 nonce | 每日 |
 
-`seed:brackets` 的数据源是 `packages/db/src/seed/leverage-brackets.json`：**人工维护、进版本库、改动可追溯**。
+`sync:brackets` / `verify:brackets` 需要 `BINANCE_API_KEY` / `BINANCE_SECRET_KEY`（只开「允许读取」，建议绑 IP 白名单），声明在 `apps/server/.env.schema`，db 包通过 `@import` 取用。
 
-> ⚠️ 分层表的数字必须从币安页面人工核对，**不要让 AI 凭记忆生成**。生成错了会导致所有强平价系统性偏差，而且很难被发现——`verify:brackets` 只能查出内部不连续，查不出整体抄错了一档。
+> ⚠️ 分层表的数字**只能来自官方接口**，不要手写、不要让 AI 凭记忆生成。抄错一档不会破坏连续性，却会让所有强平价系统性偏差。
+> 2026-09-16 之前的 `seed/leverage-brackets.json` + `fetch:brackets`（网页 bapi）+ `seed:brackets` 已删除，可在 git 历史 `2267d10` 找回。
 
 ---
 

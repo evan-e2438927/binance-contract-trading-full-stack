@@ -41,6 +41,8 @@ apps/server/src/
 │   ├── recovery.ts           启动时从数据库恢复订单与仓位
 │   ├── persister.ts          把 EngineEvent 写进数据库（事务）
 │   └── funding-scheduler.ts  UTC 整点资金费定时器
+├── jobs/
+│   └── bracket-sync.ts       杠杆分层表每日同步（UTC 00:05，启动时先跑一次）
 ├── api/                      Hono 路由
 │   └── auth.ts  market.ts  account.ts  orders.ts  positions.ts  leaderboard.ts
 ├── ws/
@@ -83,7 +85,7 @@ packages/shared/src/
 5. 等待所有币对首次收到 depth 和 markPrice（30s 超时未就绪则退出）
 6. 从数据库恢复未完成订单和全部仓位 → 构造 Engine 实例
 7. 跑一轮全账户风控扫描（补上停机期间该强平的）
-8. 启动资金费定时器
+8. 启动资金费定时器 + 分层表每日同步任务（同步失败只记日志，不退出进程；有变化时热加载进引擎）
 9. 启动 Hono HTTP 服务 + WS 网关，开始对外提供服务
 ```
 
@@ -784,11 +786,20 @@ function settleFunding(symbol) {
 class EngineHost {
   private engine: Engine
 
-  private handle(input: EngineInput) {
+  private async handle(input: EngineInput) {
     const events = this.engine.apply(input)   // 同步纯函数
-    this.persist(events)                      // 分流落库
-    this.broadcast(events)                    // 推送前端
+    try {
+      await this.persist(events)              // 分流落库（资金类同步事务）
+      this.engine.commit()
+    } catch (err) {
+      this.engine.rollback()                  // 只撤本次改动，O(改动数)
+      throw err                               // 告警；不推送
+    }
+    this.broadcast(events)                    // 落库成功才推前端
   }
+  // ⚠️ handle 必须串行执行（一个输入队列，前一个 await 完再取下一个）。
+  //    落库是异步的，如果并发调用，下一个 apply 会撞上"上一次还没 commit/rollback"直接抛错——
+  //    这正是引擎故意设的保险：并发喂输入会让回滚撤错东西。
 }
 ```
 
@@ -811,6 +822,8 @@ class EngineHost {
 │  每日 UTC 00:00 的 equity_snapshots                  │
 └──────────────────────────────────────────────────────┘
 ```
+
+> 上面"写失败则回滚内存状态"**不要**用每次 `apply` 前调 `engine.snapshot()` 的方式实现——那是 O(全体账户) 的深拷贝。用引擎内 undo 日志 + `commit()` / `rollback()`，详见 `02-architecture.md` 第七节"回滚怎么做"。
 
 ### 重启恢复
 

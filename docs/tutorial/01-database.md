@@ -1262,6 +1262,10 @@ git commit -m "feat(db): ledger_entries + funding_payments + liquidations + equi
 
 ## 第 9 讲：杠杆分层表——为什么不能让 AI 帮你生成
 
+> **📌 2026-09-16 更新**：本讲的"人工核对 JSON + `verify:brackets` 查 JSON"流程已被替换为**官方签名接口每日同步**，
+> `seed/` 目录和 `seed:brackets` / `fetch:brackets` 已删除，`verify:brackets` 改为查数据库并与官方比对。
+> 下面保留当时的原文，理解"为什么不能让 AI 生成"仍然有用；**现行做法看 [01b · 分层表官方同步](01b-bracket-sync.md)**。
+
 ### 概念：这是唯一一处我拒绝帮你写数据的地方
 
 `03-database-design.md` 第九节写得很直白：
@@ -1609,6 +1613,8 @@ pnpm --filter @binance-contract-trading-full-stack/db run check-types
 ```
 
 ### 动手：`seed:brackets`——导入你人工核对好的分层表
+
+> **📌 2026-09-16 更新**：`seed:brackets` 已删除，由 `sync:brackets` 取代；`seed:symbols` 也新增了按开放名单设置 `enabled`。见 [01b](01b-bracket-sync.md)。
 
 创建 `packages/db/src/scripts/seed-brackets.ts`。导入前复用第 9 讲写的 `checkContinuity`：任何币对连续性校验不过，整个导入中止，不写半张表：
 

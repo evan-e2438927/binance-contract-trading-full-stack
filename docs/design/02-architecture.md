@@ -268,41 +268,120 @@ const leverageNum: number = 10           // 普通数字
 
 ### ① 引擎 ↔ 宿主
 
-引擎只暴露一个同步方法：
+> 以 `packages/engine/src/types.ts` 为准。下面三段是从那里复制过来的，改契约先改代码再同步这里。
+
+引擎由 `createEngine(config: EngineConfig, initial?: EngineSnapshot)` 创建，`config` 包含币对规格、分层表、费率和限额（宿主启动时从数据库读出来一次性喂进去；分层表每日同步有变化时，由宿主热加载——在第 11 讲接入之前需重启生效，见第九节 #9）。对外接口：
 
 ```ts
-interface Engine {
-  apply(input: EngineInput): EngineEvent[]
-  snapshot(): EngineSnapshot
-  restore(s: EngineSnapshot): void
+/**
+ * 宿主的调用协议：
+ *
+ *   const events = engine.apply(input)
+ *   try { persist(events); engine.commit() } catch { engine.rollback() }
+ *
+ * 每次 apply 之后必须恰好调一次 commit() 或 rollback()，否则下一次 apply 直接抛错。
+ */
+export interface Engine {
+  /**
+   * 同步、确定性：同样的状态 + 同样的输入，永远得到同样的事件。
+   * 抛出程序错误时，本次改动已自动撤销，不需要（也不能）再调 rollback()。
+   */
+  apply(input: EngineInput): EngineEvent[];
+  /** 宿主落库成功后调用：本次 apply 的改动生效。代价 O(1)。 */
+  commit(): void;
+  /**
+   * 宿主落库失败后调用：账户类状态回到本次 apply 之前，行情类状态不动。
+   * 代价 O(本次改动的对象数)，和账户总数无关。
+   */
+  rollback(): void;
+  /** 返回深拷贝，调用方怎么改都影响不到引擎。代价 O(全体账户)——只用于重启恢复、测试、排查，不要每次 apply 都调。 */
+  snapshot(): EngineSnapshot;
+  /** 用快照整体替换账户类状态，行情状态保持不变。有未结算的 apply 时抛错。 */
+  restore(snapshot: EngineSnapshot): void;
 }
 ```
 
-**输入事件**（全部由宿主构造，时间戳从外面带）：
+`commit()` / `rollback()` 的设计理由见第七节"回滚怎么做"。
+
+**输入事件**（全部由宿主构造，时间戳从外面带；订单 id 由宿主生成放进 `placeOrder`，引擎不生成随机 id）：
 
 ```ts
-type EngineInput =
-  | { t: 'book';          symbol: string; bids: Level[]; asks: Level[]; ts: number }
-  | { t: 'trade';         symbol: string; price: Fixed; qty: Fixed; buyerIsMaker: boolean; ts: number }
-  | { t: 'markPrice';     symbol: string; markPrice: Fixed; fundingRate: Fixed; nextFundingTs: number; ts: number }
-  | { t: 'placeOrder';    accountId: string; req: PlaceOrderRequest; ts: number }
-  | { t: 'cancelOrder';   accountId: string; orderId: string; ts: number }
-  | { t: 'settleFunding'; symbol: string; rate: Fixed; markPrice: Fixed; ts: number }
-  | { t: 'setLeverage';   accountId: string; symbol: string; leverageNum: number; ts: number }
-  | { t: 'setMarginMode'; accountId: string; symbol: string; mode: MarginMode; ts: number }
+export type EngineInput =
+  // —— 行情（来自行情层） ——
+  | { t: "book"; symbol: string; bids: Level[]; asks: Level[]; ts: number }
+  | { t: "trade"; symbol: string; price: Fixed; qty: Fixed; buyerIsMaker: boolean; ts: number }
+  | {
+      t: "markPrice";
+      symbol: string;
+      markPrice: Fixed;
+      fundingRate: Fixed;
+      nextFundingTs: number;
+      ts: number;
+    }
+  | { t: "settleFunding"; symbol: string; rate: Fixed; markPrice: Fixed; ts: number }
+  // —— 账户（来自鉴权/账户接口） ——
+  | {
+      t: "registerAccount";
+      accountId: string;
+      walletBalance: Fixed; // 开户发放的初始资金，引擎会为它产出一条 INITIAL 流水
+      positionMode: PositionMode;
+      ts: number;
+    }
+  | { t: "resetAccount"; accountId: string; walletBalance: Fixed; ts: number }
+  | { t: "setPositionMode"; accountId: string; mode: PositionMode; ts: number }
+  // —— 交易（来自交易接口） ——
+  | { t: "placeOrder"; accountId: string; orderId: string; req: PlaceOrderRequest; ts: number }
+  | { t: "cancelOrder"; accountId: string; orderId: string; ts: number }
+  | { t: "setLeverage"; accountId: string; symbol: string; leverageNum: number; ts: number }
+  | { t: "setMarginMode"; accountId: string; symbol: string; mode: MarginMode; ts: number }
+  | {
+      t: "adjustIsolatedMargin";
+      accountId: string;
+      symbol: string;
+      positionSide: PositionSide;
+      delta: Fixed; // 正数划入，负数划出
+      ts: number;
+    };
 ```
 
 **输出事件**（宿主负责落库和推送）：
 
 ```ts
-type EngineEvent =
-  | { t: 'orderUpdate';    order: Order }
-  | { t: 'fill';           fill: Fill }
-  | { t: 'positionUpdate'; position: Position }
-  | { t: 'balanceUpdate';  accountId: string; walletBalance: Fixed; reason: LedgerType; delta: Fixed; refId?: string }
-  | { t: 'liquidation';    accountId: string; symbol: string; positions: Position[]; markPrice: Fixed }
-  | { t: 'fundingPaid';    accountId: string; symbol: string; amount: Fixed; rate: Fixed }
-  | { t: 'rejected';       clientOrderId: string; code: ErrorCode; message: string }
+/** 流水关联的业务对象，对应 ledger_entries 的 ref_type / ref_id。 */
+export interface LedgerRef {
+  type: "fill" | "funding" | "liquidation";
+  id: string;
+}
+
+export type EngineEvent =
+  | { t: "orderUpdate"; order: Order }
+  | { t: "fill"; fill: Fill }
+  | { t: "positionUpdate"; position: Position }
+  | { t: "settingUpdate"; setting: AccountSymbolSetting }
+  | { t: "positionModeUpdate"; accountId: string; positionMode: PositionMode; ts: number }
+  | {
+      // ★ 唯一能改余额的事件。宿主把它落成一条 ledger_entries，balanceAfter = walletBalance
+      t: "balanceUpdate";
+      accountId: string;
+      walletBalance: Fixed; // 变动之后的余额
+      delta: Fixed; // 有符号的变动量
+      reason: LedgerType;
+      symbol: string | null;
+      ref: LedgerRef | null;
+      ts: number;
+    }
+  | { t: "liquidation"; record: LiquidationRecord }
+  | { t: "fundingPaid"; payment: FundingPayment }
+  | {
+      t: "rejected";
+      accountId: string;
+      input: EngineInputType; // 被拒绝的是哪种输入
+      clientOrderId: string | null; // 只有 placeOrder 被拒时才有
+      orderId: string | null;
+      code: ErrorCode;
+      message: string; // 给用户直接看的中文
+      ts: number;
+    };
 ```
 
 ### ② 服务层 ↔ 前端
@@ -349,6 +428,27 @@ accounts.wallet_balance === SUM(ledger_entries.amount) WHERE account_id = ?
 | 资金流水 | ❌ | ✅ | 只追加 |
 | 每日权益快照 | ❌ | ✅ | 定时任务写 |
 
+### 内存规模：有上界，不随运行时间增长
+
+会无限增长的东西（成交、流水、终态订单、权益快照）**一律不进内存**。内存里只有"当前活着的"状态，大小只取决于账户数：
+
+| 状态 | 单条估算 | 上界由什么保证 |
+| --- | --- | --- |
+| 账户 | ~1 KB | 注册数 |
+| 杠杆设置 | ~0.2 KB | 每账户 ≤ 币对数（20） |
+| 仓位 | ~0.5 KB | 每账户 ≤ 币对数 × 2（双向持仓） |
+| 未完成订单 | ~0.5 KB | 每账户 ≤ 200（下单校验链第 13 步 `TOO_MANY_ORDERS`） |
+| 盘口 / 标记价 / 最新价 | 几十 KB 合计 | 20 个币对 × 20 档，固定 |
+
+粗算：1 万个账户、人均 5 个仓位 + 10 张挂单 + 20 条设置 ≈ **125 MB**；按上界（每人 40 仓位 + 200 挂单）算也在 GB 以内。单实例模拟盘不会先撞内存墙。
+
+两条必须守住的规则，否则上界就不成立：
+
+1. **终态订单必须移出内存**——引擎不变式 ⑧ 盯着。
+2. **挂单数上限必须在引擎里校验**，不能只靠前端或路由层。
+
+真正先到的瓶颈是 CPU 和 GC，而其中最容易踩的是下面"回滚怎么做"那一条。
+
 ### 落库时机
 
 引擎返回的事件数组，宿主按类型分流：
@@ -366,6 +466,43 @@ accounts.wallet_balance === SUM(ledger_entries.amount) WHERE account_id = ?
 【定时写】
   每日 UTC 00:00 的权益快照
 ```
+
+### 回滚怎么做
+
+"写失败则回滚内存"有一个看似顺手、实际会拖垮性能的写法：
+
+```ts
+// ❌ 每次 apply 前对整个引擎拍快照
+const before = engine.snapshot()        // structuredClone 全部账户、仓位、挂单
+const events = engine.apply(input)
+try { await persist(events) } catch { engine.restore(before) }
+```
+
+`snapshot()` 的代价是 **O(全体账户)**，而一次 `apply` 通常只碰到几个账户。1 万个账户时每笔成交都要深拷贝上百 MB 临时对象，`aggTrade` 一密集，进程大部分时间在做 GC。
+
+推荐做法是 **undo 日志（只记被改动的对象的旧值）**：
+
+```
+apply(input)
+  → 修改 accounts / settings / positions / orders 中某个键之前，
+    先把这个键的旧值（不存在则记"不存在"）存进本次 apply 的日志
+  → 同一个键在一次 apply 里只记第一次
+宿主落库成功 → engine.commit()     丢弃日志
+宿主落库失败 → engine.rollback()   日志里每个键恢复成旧值（旧值是"不存在"就删掉），行情类状态不动
+```
+
+因为每个键只记第一次的旧值，恢复时和顺序无关。
+
+代价变成 **O(本次改动的对象数)**，和总账户数无关。
+
+- `snapshot()` / `restore()` 保留，用于重启恢复、测试和人工排查，**不用于每次 apply 的回滚**。
+- 每次 `apply` 之后必须恰好调一次 `commit()` 或 `rollback()`：上一次没结算就再 `apply`、没有待结算时调 `commit`/`rollback`、有待结算时 `restore`，都抛程序错误。宿主单线程顺序处理输入，这条天然满足。
+- 纯挂单变化走异步批量写：宿主 `apply` 之后直接 `commit()`，之后批量写失败**不回滚内存**，只重试和告警（它们本来就允许晚写，丢了也只是挂单状态，见下面的取舍）。
+- `apply` 自己抛出程序错误时，引擎已经自动撤销本次改动，宿主不需要也不能再调 `rollback()`。一次 `apply` 要么完整生效，要么什么都没发生。
+- 行情类状态不进日志：币安的价格不会因为我们写库失败就倒退。
+- 怎么保证"每一处修改都进了日志"：账户类 Map 在类型上是只读的，只能通过 `putAccount` / `putOrder` 等函数改；存进去的对象被冻结，原地改运行时直接抛错；测试脚手架在每次 `apply` 之后都做一次"回滚后必须和 apply 前一致"的自检。
+
+> 已实现：`packages/engine/src/journal.ts`，讲解见教程第 02 讲第 7 节。
 
 > **必须承认的取舍**：单实例 + "内存权威、事务落库"，在进程被 `kill -9` 的瞬间，最后一批异步写可能丢。丢的只是挂单状态（可重新下单恢复），资金类走同步事务不会丢。第一版接受这个风险。要做多实例就必须引入事件溯源或 Redis，那是另一套架构。
 
@@ -425,7 +562,7 @@ accounts.wallet_balance === SUM(ledger_entries.amount) WHERE account_id = ?
 | 6 | 穿仓不追偿 | 全仓爆仓后余额归零，不变成负债 | 模拟盘让用户背债没有意义 |
 | 7 | 行情断线期间暂停撮合 | 这段时间的价格变动不产生成交 | 不伪造历史 |
 | 8 | 挂单冻结保证金比币安保守 | 同时挂对敲单时占用资金更多 | 方向保守，不会超额开仓 |
-| 9 | 杠杆分层表人工维护 | 币安调整后我们会有滞后 | 签名接口拿不到，只能季度复核 |
+| 9 | 杠杆分层表每日同步一次 | 币安盘中调表，最多滞后到次日 UTC 00:05；引擎热加载接入前还要等 server 重启 | 调表是低频事件，日级同步足够；同步失败保留旧表而不是猜 |
 | 10 | 跨层杠杆超限拒单而非自动降杠杆 | 和币安行为不同 | 见 A8 |
 
 > 这不是免责声明，是设计约束。**后续任何改动如果会让某一条变得更不诚实，就不该做**，即使"体验更好"。
