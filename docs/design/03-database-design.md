@@ -8,14 +8,16 @@
 
 ## 一、表清单
 
-12 张表，按用途分四组：
+14 张表，按用途分四组：
 
 | 组 | 表 | 用途 | 写入频率 |
 | --- | --- | --- | --- |
 | **市场规格** | `symbols` | 币对规格（从币安 exchangeInfo 同步） | 每天一次 |
 | | `leverage_brackets` | 杠杆分层表（人工维护） | 季度 |
 | **账户** | `accounts` | 账户与钱包余额 | 每次资金变动 |
+| | `identities` | 登录身份（钱包地址 / 邮箱 / Google），归属账户 | 每次注册 |
 | | `auth_nonces` | 钱包登录的一次性挑战值 | 每次登录 |
+| | `email_verification_codes` | 邮箱登录的一次性验证码 | 每次登录 |
 | | `account_symbol_settings` | 每账户每币对的杠杆与保证金模式 | 低频 |
 | **交易** | `positions` | 仓位 | 每次成交 |
 | | `orders` | 订单 | 高频 |
@@ -30,7 +32,8 @@
 ```
 symbols ──1:N──► leverage_brackets
 
-accounts ──1:N──► account_symbol_settings
+accounts ──1:N──► identities         应用层保证每个账户只挂一个身份，不做合并
+         ├─1:N──► account_symbol_settings
          ├─1:N──► positions          唯一键 (accountId, symbol, positionSide)
          ├─1:N──► orders
          ├─1:N──► fills
@@ -51,6 +54,7 @@ orders ──1:N──► fills
 import { pgEnum } from 'drizzle-orm/pg-core'
 
 export const chainEnum        = pgEnum('chain', ['evm', 'solana'])
+export const authProviderEnum = pgEnum('auth_provider', ['wallet_evm', 'wallet_solana', 'email', 'google'])
 export const positionModeEnum = pgEnum('position_mode', ['ONE_WAY', 'HEDGE'])
 export const positionSideEnum = pgEnum('position_side', ['BOTH', 'LONG', 'SHORT'])
 export const marginModeEnum   = pgEnum('margin_mode', ['CROSS', 'ISOLATED'])
@@ -137,20 +141,37 @@ export const leverageBrackets = pgTable('leverage_brackets', {
 ```ts
 export const accounts = pgTable('accounts', {
   id:            uuid('id').primaryKey().defaultRandom(),
-  address:       text('address').notNull(),      // EVM 统一小写；Solana 保持 base58 原样
-  chain:         chainEnum('chain').notNull(),
   walletBalance: bigint('wallet_balance', { mode: 'bigint' }).notNull().default(0n),
   positionMode:  positionModeEnum('position_mode').notNull().default('ONE_WAY'),
   lastResetAt:   timestamp('last_reset_at', { withTimezone: true }),
-  nickname:      text('nickname'),               // 排行榜显示名，默认脱敏地址
+  nickname:      text('nickname'),               // 排行榜显示名，默认脱敏地址/邮箱
   createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   lastSeenAt:    timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+})
+```
+
+`accounts` 本身**不记录任何登录方式**，只管交易相关的状态（余额、持仓模式、昵称）。登录身份（钱包地址 / 邮箱 / Google）全部挪到下面的 `identities` 表——这样以后再加一种登录方式，不用碰这张核心表，也不用给它加新的可空列。
+
+### `identities`
+
+```ts
+export const identities = pgTable('identities', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  accountId:  uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+  provider:   authProviderEnum('provider').notNull(),
+  providerId: text('provider_id').notNull(),
+  // wallet_evm    → 小写地址
+  // wallet_solana → base58 原样
+  // email         → 小写邮箱
+  // google        → Google 的 sub（用户唯一 id，不用 email，因为 email 可换绑）
+  createdAt:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  uniqueIndex('accounts_chain_address_uq').on(t.chain, t.address),
+  uniqueIndex('identities_provider_uq').on(t.provider, t.providerId),
+  index('identities_account_idx').on(t.accountId),
 ])
 ```
 
-`(chain, address)` 唯一：一个地址在一条链上一个账户。同一个人用 MetaMask 和 Phantom 登录会得到两个独立账户，**这是有意的**。
+`(provider, providerId)` 唯一：一个身份只能对应一个账户。**应用层规定每个账户永远只挂一个身份**——注册时一起创建，之后不提供"再绑定一个身份"或"合并账户"的功能。同一个人用 MetaMask 和 Phantom 登录，或者钱包和邮箱各登录一次，会各自得到一个独立账户——这是 `00-overview.md` "跨身份账户合并"那条决定的直接延伸，**是有意的**，不是遗漏。
 
 ### `auth_nonces`
 
@@ -173,6 +194,27 @@ export const authNonces = pgTable('auth_nonces', {
 `message` 字段存完整原文是**安全要点**：验签必须用服务端存的这份原文，不能用客户端回传的文本，否则攻击者可以让你去验一段他自己构造的内容。
 
 有效期 5 分钟，用过即废（`usedAt` 非空就拒绝）。过期记录每天清一次。
+
+### `email_verification_codes`
+
+```ts
+export const emailVerificationCodes = pgTable('email_verification_codes', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  email:     text('email').notNull(),
+  codeHash:  text('code_hash').notNull(),   // sha256(6 位验证码)，不存明文
+  attempts:  integer('attempts').notNull().default(0),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt:    timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('email_codes_email_idx').on(t.email),
+  index('email_codes_expires_idx').on(t.expiresAt),
+])
+```
+
+和 `auth_nonces` 同一个模式：一次性、有效期、用过即废。区别是这里存的是**哈希**而不是原文——验证码只有 6 位数字，泄库后被拿去暴力撞库的风险比钱包签名 nonce 高得多，哈希后即使数据库被拖也不能直接拿去登录。`attempts` 到 5 次这条记录直接作废，防止在有效期内枚举。
+
+有效期 5 分钟；同一邮箱 60 秒内不能重复请求发码，防止被刷。
 
 ### `account_symbol_settings`
 
@@ -402,7 +444,7 @@ export const equitySnapshots = pgTable('equity_snapshots', {
 | --- | --- | --- |
 | `pos_symbol_open_idx`（部分） | 资金费结算、强平扫描按币对捞活跃仓位 | 每秒 |
 | `orders_open_idx`（部分） | 引擎恢复、按币对捞未完成挂单 | 启动 + 每秒 |
-| `accounts_chain_address_uq` | 登录查账户 | 登录时 |
+| `identities_provider_uq` | 登录查身份 → 查账户 | 登录时 |
 | `orders_acc_client_uq` | 下单幂等检查 | 每次下单 |
 | `ledger_acc_created_idx` | 资金流水分页 | 用户触发 |
 | `fills_acc_created_idx` | 成交历史分页 | 用户触发 |

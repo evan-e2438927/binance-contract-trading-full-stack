@@ -10,7 +10,7 @@
 
 | 路由 | 页面 | 说明 |
 | --- | --- | --- |
-| `/` | 首页 | 简介 + 币对列表 + 连接钱包入口 |
+| `/` | 首页 | 简介 + 币对列表 + 登录入口（钱包 / 邮箱 / Google） |
 | `/trade/[symbol]` | **交易主页面** | 全部交易功能都在这一页 |
 | `/orders` | 历史 | 订单 / 成交 / 资金流水 / 资金费 四个 tab |
 | `/leaderboard` | 排行榜 | 收益率榜 + 我的权益曲线 |
@@ -59,7 +59,7 @@ app/trade/[symbol]/page.tsx
     ├── TopBar
     │   ├── SymbolSwitcher          币对下拉 + 搜索
     │   ├── TickerStrip             最新价/涨跌/标记价/资金费倒计时
-    │   └── WalletButton            连接钱包 / 账户菜单
+    │   └── LoginButton             登录（钱包/邮箱/Google）/ 账户菜单
     ├── MarketStatusBanner          行情降级横幅
     ├── ChartPanel
     │   ├── IntervalTabs            1m/5m/15m/1h/4h/1d
@@ -416,7 +416,7 @@ body: { symbol, side, positionSide, price, qty, leverage, marginMode }
 ### 下单按钮
 
 ```
-未连接钱包 → "连接钱包"
+未登录     → "登录"
 行情降级   → 禁用 + "行情中断，暂停交易"
 校验不通过 → 禁用 + 具体原因
 正常       → "买入/做多"（绿） "卖出/做空"（红）
@@ -469,39 +469,67 @@ body: { symbol, side, positionSide, price, qty, leverage, marginMode }
 
 ---
 
-## 12. 钱包连接
+## 12. 登录
 
-### 两套并存
+`LoginButton` 点开是一个弹窗，三个 tab：**钱包 / 邮箱 / Google**。三条路径最后都落到同一个 `token`，存法、恢复法、登出法完全一样——差异只在"怎么拿到 token"这一步。
+
+### 12.1 钱包登录
 
 | 链 | 方案 |
 | --- | --- |
 | EVM | `wagmi` + `RainbowKit`（MetaMask、OKX、WalletConnect…） |
 | Solana | `@solana/wallet-adapter-react` + `wallet-adapter-react-ui`（Phantom、OKX…） |
 
-两套 Provider 都挂在根布局上，`WalletButton` 里让用户先选链再选钱包。
-
-### 登录流程
+两套 Provider 都挂在根布局上，"钱包" tab 里让用户先选链再选钱包。
 
 ```
-1. 用户点"连接钱包" → 选链 → 选钱包 → 拿到 address
+1. 用户选链 → 选钱包 → 拿到 address
 2. POST /auth/nonce { address, chain } → 拿到 message
 3. 请求签名：
    EVM    → signMessageAsync({ message })
    Solana → signMessage(new TextEncoder().encode(message))
 4. POST /auth/verify { address, chain, nonce, signature } → 拿到 token
-5. 存 localStorage → wsClient.setToken(token) → accountStore.hydrate()
+5. 存 token（见 12.4）
 ```
 
-### 登录态恢复
+### 12.2 邮箱登录
 
-页面加载时读 localStorage 的 token，调 `GET /auth/me` 验证。
+```
+1. 输入邮箱 → POST /auth/email/code { email }
+2. 输入框旁边出现 60 秒倒计时的"重新发送"，倒计时结束前按钮禁用（服务端也有同样的频率限制，前端这层只是省一次无效请求）
+3. 输入 6 位验证码 → POST /auth/email/verify { email, code } → 拿到 token
+4. 存 token（见 12.4）
+```
 
-- 401 → 清 token，回到未登录态，**不要自动弹签名**（用户会以为被钓鱼）
+验证码输错要显示剩余可尝试次数（服务端 5 次后作废），不要只报"验证码错误"让用户瞎试。
+
+### 12.3 Google 登录
+
+这一步是整页跳转，不是弹窗里的 API 调用：
+
+```
+1. 点"使用 Google 登录" → location.href = '/auth/google'（整页跳转，走浏览器原生 OAuth 流程）
+2. Google 授权后跳回 /auth/google/callback（服务端），再 302 重定向回前端 /login/callback#token=xxx
+3. /login/callback 页面：从 location.hash 取 token，取到后立刻用 history.replaceState 清掉 hash（避免 token 留在浏览器历史/地址栏里）
+4. 存 token（见 12.4）→ 跳回登录前的页面
+```
+
+不要尝试在弹窗里用 `window.open` + `postMessage` 做这个流程——整页跳转是 OAuth 的标准做法，浏览器弹窗拦截和第三方 cookie 限制会让弹窗方案在部分浏览器上直接失效。
+
+### 12.4 存 token / 登录态恢复 / 登出
+
+**存 token**（三种登录方式共用）：
+
+```
+存 localStorage → wsClient.setToken(token) → accountStore.hydrate()
+```
+
+**登录态恢复**：页面加载时读 localStorage 的 token，调 `GET /auth/me` 验证。
+
+- 401 → 清 token，回到未登录态，**不要自动弹钱包签名或跳 Google**（用户会以为被钓鱼）
 - 200 → 恢复登录态，`hydrate()`
 
-### 断开钱包
-
-清 token、清 `account-store`、`wsClient.setToken(null)`。**不要调用钱包的 disconnect**——那是用户和钱包之间的事，我们只管自己的会话。
+**登出**：清 token、清 `account-store`、`wsClient.setToken(null)`。如果是钱包登录，**不要调用钱包的 disconnect**——那是用户和钱包之间的事，我们只管自己的会话；邮箱/Google 登录本来就没有对应的"断开"概念，登出就是清本地状态。
 
 ---
 

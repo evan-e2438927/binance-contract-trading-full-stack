@@ -871,9 +871,13 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/auth/nonce` | 请求待签名文本 |
-| POST | `/auth/verify` | 提交签名，换 JWT |
-| GET | `/auth/me` | 校验登录态 |
+| POST | `/auth/nonce` | 钱包登录：请求待签名文本 |
+| POST | `/auth/verify` | 钱包登录：提交签名，换 JWT |
+| POST | `/auth/email/code` | 邮箱登录：发送 6 位验证码 |
+| POST | `/auth/email/verify` | 邮箱登录：提交验证码，换 JWT |
+| GET | `/auth/google` | Google 登录：302 跳转到 Google 授权页 |
+| GET | `/auth/google/callback` | Google 登录：换 token，重定向回前端并带上 JWT |
+| GET | `/auth/me` | 校验登录态（三种登录方式通用） |
 
 ```jsonc
 // POST /auth/nonce  请求
@@ -890,22 +894,66 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
 // 响应
 { "ok": true, "data": {
   "token": "eyJhbGciOi...",
-  "account": { "id": "uuid", "address": "0xabc...", "chain": "evm", "isNew": true }
+  "account": { "id": "uuid", "isNew": true }
+}}
+
+// POST /auth/email/code  请求
+{ "email": "a@b.com" }
+// 响应
+{ "ok": true, "data": { "expiresAt": 1789344300000 } }
+
+// POST /auth/email/verify  请求
+{ "email": "a@b.com", "code": "482913" }
+// 响应
+{ "ok": true, "data": {
+  "token": "eyJhbGciOi...",
+  "account": { "id": "uuid", "isNew": true }
 }}
 ```
 
-服务端验签流程：
+`GET /auth/google` 和 `/auth/google/callback` 是重定向流程，不是 JSON 接口，见下面的登录流程说明。
+
+**三种登录方式最终都收敛到同一步**：拿到一个 `(provider, providerId)`，去 `identities` 表查账户；查不到就新建账户 + 新建 identity + 发放 10,000 USDT（写一条 `INITIAL` 流水）；最后签发**同一套** JWT。差异只在"怎么证明你拥有这个 providerId"。
+
+#### 钱包（SIWE / SIWS）
 
 ```
 1. 按 nonce 取出原始 message，校验未过期、未使用
 2. EVM：viem 的 verifyMessage 恢复地址并比对（小写归一化）
    Solana：tweetnacl 的 sign.detached.verify 验证 ed25519 签名
 3. 标记 nonce 已使用
-4. 账户不存在 → 创建，发放 10,000 USDT，写一条 INITIAL 流水
+4. provider = wallet_evm / wallet_solana，providerId = 归一化后的地址 → 查/建账户
 5. 签发 JWT
 ```
 
 > ⚠️ **验签必须用第 1 步取出的原始 message**，不能用客户端重新传上来的文本——否则攻击者可以让你去验一段他自己构造的内容。
+
+#### 邮箱验证码
+
+```
+1. /auth/email/code：生成 6 位数字码，sha256 哈希后连同 5 分钟过期时间存 email_verification_codes，明文只通过邮件发出去，不落库、不回响应体
+2. /auth/email/verify：按 email 取最近一条未过期未使用的记录，比对哈希；5 次不中 → 作废该记录（EMAIL_CODE_TOO_MANY_ATTEMPTS）
+3. 校验通过，标记该记录已使用
+4. provider = email，providerId = 小写邮箱 → 查/建账户
+5. 签发 JWT
+```
+
+发信走事务性邮件 API（如 Resend），不自建 SMTP——量小、免费额度够用，也省得踩发信域名 SPF/DKIM 的坑。
+
+#### Google（OAuth2 Authorization Code + PKCE）
+
+```
+1. GET /auth/google：生成 state + PKCE verifier，写进短期 httpOnly cookie，302 跳转 Google 授权页
+2. Google 回调 GET /auth/google/callback?code=&state=
+3. 校验 state 与 cookie 一致（不一致 → OAUTH_STATE_MISMATCH），用 arctic 拿 code 换 access_token
+4. 用 access_token 查 Google userinfo，取 sub（Google 用户唯一 id，不用 email——email 允许换绑）
+5. provider = google，providerId = sub → 查/建账户
+6. 签发 JWT，302 重定向回 `${WEB_ORIGIN}/login/callback#token=...`
+   ★ 用 URL fragment（#）不用 query string：fragment 不会发到服务端、不进访问日志、不进 Referer 头
+7. 前端在 /login/callback 里从 location.hash 取 token 存下来，随后清掉 URL
+```
+
+只用 `arctic`（纯 OAuth2 客户端库）拿 token、查 userinfo，**不引入管 session/cookie 的完整认证框架**——JWT 的签发、校验、WS 鉴权全部复用钱包登录已有的那一套。三种登录方式共用一条会话链路，不会出现"网页一套登录态、接口一套登录态"的分裂，`apps/native` 以后要接的时候也只用认一种 token 格式。
 
 ### 行情（公共）
 
@@ -1137,9 +1185,14 @@ wss://api.<域名>/ws
 | 码 | HTTP | 说明 |
 | --- | --- | --- |
 | `UNAUTHORIZED` | 401 | 缺 token 或 token 无效 |
-| `TOKEN_EXPIRED` | 401 | token 过期，需重新签名登录 |
+| `TOKEN_EXPIRED` | 401 | token 过期，需重新登录 |
 | `NONCE_INVALID` | 400 | nonce 不存在、已过期或已使用 |
 | `SIGNATURE_INVALID` | 400 | 签名验证失败 |
+| `EMAIL_CODE_INVALID` | 400 | 验证码不存在或不匹配 |
+| `EMAIL_CODE_EXPIRED` | 400 | 验证码已过期或已使用 |
+| `EMAIL_CODE_TOO_MANY_ATTEMPTS` | 429 | 同一条验证码错误次数超限，请重新请求 |
+| `EMAIL_CODE_RATE_LIMITED` | 429 | 同一邮箱请求发码过于频繁 |
+| `OAUTH_STATE_MISMATCH` | 400 | Google 回调的 state 与 cookie 不一致 |
 
 ### 下单（对应第 6 节校验链）
 
