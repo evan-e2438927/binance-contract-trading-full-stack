@@ -15,7 +15,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate:deploy": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "verify:brackets": "tsx src/scripts/verify-brackets.ts"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
@@ -28,6 +29,7 @@
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.10",
     "typescript": "^6.0.3",
+    "tsx": "^4.23.13",
     "varlock": "catalog:"
   }
 }
