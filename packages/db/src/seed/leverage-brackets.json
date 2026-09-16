@@ -1,1 +1,1642 @@
-{}
+{
+  "BTCUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "300000",
+      "maxLeverage": 150,
+      "mmr": "0.004",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "300000",
+      "notionalCap": "800000",
+      "maxLeverage": 100,
+      "mmr": "0.005",
+      "cum": "300"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "800000",
+      "notionalCap": "3000000",
+      "maxLeverage": 75,
+      "mmr": "0.0065",
+      "cum": "1500"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "3000000",
+      "notionalCap": "12000000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "12000"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "12000000",
+      "notionalCap": "70000000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "132000"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "70000000",
+      "notionalCap": "100000000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "482000"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "100000000",
+      "notionalCap": "230000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "2982000"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "230000000",
+      "notionalCap": "480000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "14482000"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "480000000",
+      "notionalCap": "600000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "26482000"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "600000000",
+      "notionalCap": "800000000",
+      "maxLeverage": 3,
+      "mmr": "0.15",
+      "cum": "41482000"
+    },
+    {
+      "bracket": 11,
+      "notionalFloor": "800000000",
+      "notionalCap": "1200000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "121482000"
+    },
+    {
+      "bracket": 12,
+      "notionalFloor": "1200000000",
+      "notionalCap": "1800000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "421482000"
+    }
+  ],
+  "ETHUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "300000",
+      "maxLeverage": 150,
+      "mmr": "0.004",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "300000",
+      "notionalCap": "800000",
+      "maxLeverage": 100,
+      "mmr": "0.005",
+      "cum": "300"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "800000",
+      "notionalCap": "3000000",
+      "maxLeverage": 75,
+      "mmr": "0.0065",
+      "cum": "1500"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "3000000",
+      "notionalCap": "12000000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "12000"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "12000000",
+      "notionalCap": "50000000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "132000"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "50000000",
+      "notionalCap": "65000000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "382000"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "65000000",
+      "notionalCap": "150000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "2007000"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "150000000",
+      "notionalCap": "320000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "9507000"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "320000000",
+      "notionalCap": "400000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "17507000"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "400000000",
+      "notionalCap": "530000000",
+      "maxLeverage": 3,
+      "mmr": "0.15",
+      "cum": "27507000"
+    },
+    {
+      "bracket": 11,
+      "notionalFloor": "530000000",
+      "notionalCap": "800000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "80507000"
+    },
+    {
+      "bracket": 12,
+      "notionalFloor": "800000000",
+      "notionalCap": "1200000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "280507000"
+    }
+  ],
+  "BNBUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "10000",
+      "maxLeverage": 75,
+      "mmr": "0.005",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "10000",
+      "notionalCap": "200000",
+      "maxLeverage": 50,
+      "mmr": "0.006",
+      "cum": "10"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "200000",
+      "notionalCap": "400000",
+      "maxLeverage": 40,
+      "mmr": "0.01",
+      "cum": "810"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "400000",
+      "notionalCap": "1500000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "4810"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "1500000",
+      "notionalCap": "3000000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "12310"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "3000000",
+      "notionalCap": "15000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "87310"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "15000000",
+      "notionalCap": "30000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "837310"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "30000000",
+      "notionalCap": "37500000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "1587310"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "37500000",
+      "notionalCap": "75000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "6274810"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "75000000",
+      "notionalCap": "150000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "25024810"
+    }
+  ],
+  "SOLUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "50000",
+      "maxLeverage": 100,
+      "mmr": "0.005",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "50000",
+      "notionalCap": "400000",
+      "maxLeverage": 75,
+      "mmr": "0.0065",
+      "cum": "75"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "400000",
+      "notionalCap": "1000000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "1475"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "1000000",
+      "notionalCap": "4000000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "11475"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "4000000",
+      "notionalCap": "8000000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "31475"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "8000000",
+      "notionalCap": "40000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "231475"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "40000000",
+      "notionalCap": "80000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "2231475"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "80000000",
+      "notionalCap": "100000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "4231475"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "100000000",
+      "notionalCap": "200000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "16731475"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "200000000",
+      "notionalCap": "400000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "66731475"
+    }
+  ],
+  "XRPUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "40000",
+      "maxLeverage": 100,
+      "mmr": "0.005",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "40000",
+      "notionalCap": "80000",
+      "maxLeverage": 75,
+      "mmr": "0.006",
+      "cum": "40"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "80000",
+      "notionalCap": "150000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "360"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "150000",
+      "notionalCap": "400000",
+      "maxLeverage": 40,
+      "mmr": "0.0125",
+      "cum": "735"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "400000",
+      "notionalCap": "1000000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "3735"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "1000000",
+      "notionalCap": "2000000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "8735"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "2000000",
+      "notionalCap": "10000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "58735"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "10000000",
+      "notionalCap": "20000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "558735"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "20000000",
+      "notionalCap": "25000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "1058735"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "25000000",
+      "notionalCap": "50000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "4183735"
+    },
+    {
+      "bracket": 11,
+      "notionalFloor": "50000000",
+      "notionalCap": "100000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "16683735"
+    }
+  ],
+  "DOGEUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "80000",
+      "maxLeverage": 75,
+      "mmr": "0.0065",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "80000",
+      "notionalCap": "150000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "280"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "150000",
+      "notionalCap": "750000",
+      "maxLeverage": 40,
+      "mmr": "0.0125",
+      "cum": "655"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "750000",
+      "notionalCap": "2000000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "6280"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "2000000",
+      "notionalCap": "4000000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "16280"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "4000000",
+      "notionalCap": "20000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "116280"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "20000000",
+      "notionalCap": "40000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "1116280"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "40000000",
+      "notionalCap": "50000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "2116280"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "50000000",
+      "notionalCap": "100000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "8366280"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "100000000",
+      "notionalCap": "200000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "33366280"
+    }
+  ],
+  "ADAUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "10000",
+      "maxLeverage": 75,
+      "mmr": "0.005",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "10000",
+      "notionalCap": "50000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "50"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "50000",
+      "notionalCap": "200000",
+      "maxLeverage": 40,
+      "mmr": "0.015",
+      "cum": "300"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "200000",
+      "notionalCap": "1000000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "1300"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "1000000",
+      "notionalCap": "2000000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "6300"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "2000000",
+      "notionalCap": "10000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "56300"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "10000000",
+      "notionalCap": "20000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "556300"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "20000000",
+      "notionalCap": "25000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "1056300"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "25000000",
+      "notionalCap": "50000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "4181300"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "50000000",
+      "notionalCap": "100000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "16681300"
+    }
+  ],
+  "AVAXUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "25000",
+      "maxLeverage": 75,
+      "mmr": "0.005",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "25000",
+      "notionalCap": "80000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "125"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "80000",
+      "notionalCap": "160000",
+      "maxLeverage": 40,
+      "mmr": "0.015",
+      "cum": "525"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "160000",
+      "notionalCap": "800000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "1325"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "800000",
+      "notionalCap": "1600000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "5325"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "1600000",
+      "notionalCap": "8000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "45325"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "8000000",
+      "notionalCap": "16000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "445325"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "16000000",
+      "notionalCap": "20000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "845325"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "20000000",
+      "notionalCap": "40000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "3345325"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "40000000",
+      "notionalCap": "80000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "13345325"
+    }
+  ],
+  "LINKUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "10000",
+      "maxLeverage": 75,
+      "mmr": "0.005",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "10000",
+      "notionalCap": "200000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "50"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "200000",
+      "notionalCap": "400000",
+      "maxLeverage": 40,
+      "mmr": "0.015",
+      "cum": "1050"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "400000",
+      "notionalCap": "800000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "3050"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "800000",
+      "notionalCap": "1600000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "7050"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "1600000",
+      "notionalCap": "8000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "47050"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "8000000",
+      "notionalCap": "16000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "447050"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "16000000",
+      "notionalCap": "20000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "847050"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "20000000",
+      "notionalCap": "40000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "3347050"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "40000000",
+      "notionalCap": "80000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "13347050"
+    }
+  ],
+  "DOTUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "10000",
+      "maxLeverage": 75,
+      "mmr": "0.0065",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "10000",
+      "notionalCap": "50000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "35"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "50000",
+      "notionalCap": "100000",
+      "maxLeverage": 40,
+      "mmr": "0.015",
+      "cum": "285"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "100000",
+      "notionalCap": "500000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "785"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "500000",
+      "notionalCap": "800000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "3285"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "800000",
+      "notionalCap": "4000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "23285"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "4000000",
+      "notionalCap": "8000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "223285"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "8000000",
+      "notionalCap": "10000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "423285"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "10000000",
+      "notionalCap": "30000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "1673285"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "30000000",
+      "notionalCap": "50000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "9173285"
+    }
+  ],
+  "TRXUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "10000",
+      "maxLeverage": 75,
+      "mmr": "0.0065",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "10000",
+      "notionalCap": "90000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "35"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "90000",
+      "notionalCap": "120000",
+      "maxLeverage": 40,
+      "mmr": "0.015",
+      "cum": "485"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "120000",
+      "notionalCap": "650000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "1085"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "650000",
+      "notionalCap": "800000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "4335"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "800000",
+      "notionalCap": "3000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "24335"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "3000000",
+      "notionalCap": "6000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "174335"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "6000000",
+      "notionalCap": "12000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "324335"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "12000000",
+      "notionalCap": "20000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "1824335"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "20000000",
+      "notionalCap": "30000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "6824335"
+    }
+  ],
+  "LTCUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "10000",
+      "maxLeverage": 75,
+      "mmr": "0.005",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "10000",
+      "notionalCap": "50000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "50"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "50000",
+      "notionalCap": "160000",
+      "maxLeverage": 40,
+      "mmr": "0.015",
+      "cum": "300"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "160000",
+      "notionalCap": "800000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "1100"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "800000",
+      "notionalCap": "1600000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "5100"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "1600000",
+      "notionalCap": "8000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "45100"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "8000000",
+      "notionalCap": "16000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "445100"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "16000000",
+      "notionalCap": "20000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "845100"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "20000000",
+      "notionalCap": "40000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "3345100"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "40000000",
+      "notionalCap": "80000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "13345100"
+    }
+  ],
+  "BCHUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "10000",
+      "maxLeverage": 75,
+      "mmr": "0.005",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "10000",
+      "notionalCap": "100000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "50"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "100000",
+      "notionalCap": "160000",
+      "maxLeverage": 40,
+      "mmr": "0.015",
+      "cum": "550"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "160000",
+      "notionalCap": "800000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "1350"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "800000",
+      "notionalCap": "1600000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "5350"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "1600000",
+      "notionalCap": "8000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "45350"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "8000000",
+      "notionalCap": "16000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "445350"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "16000000",
+      "notionalCap": "20000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "845350"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "20000000",
+      "notionalCap": "40000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "3345350"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "40000000",
+      "notionalCap": "80000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "13345350"
+    }
+  ],
+  "NEARUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "20000",
+      "maxLeverage": 75,
+      "mmr": "0.01",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "20000",
+      "notionalCap": "200000",
+      "maxLeverage": 50,
+      "mmr": "0.015",
+      "cum": "100"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "200000",
+      "notionalCap": "1000000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "1100"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "1000000",
+      "notionalCap": "2000000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "6100"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "2000000",
+      "notionalCap": "10000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "56100"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "10000000",
+      "notionalCap": "20000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "556100"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "20000000",
+      "notionalCap": "25000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "1056100"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "25000000",
+      "notionalCap": "30000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "4181100"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "30000000",
+      "notionalCap": "35000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "11681100"
+    }
+  ],
+  "APTUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "10000",
+      "maxLeverage": 75,
+      "mmr": "0.01",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "10000",
+      "notionalCap": "100000",
+      "maxLeverage": 50,
+      "mmr": "0.015",
+      "cum": "50"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "100000",
+      "notionalCap": "900000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "550"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "900000",
+      "notionalCap": "1100000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "5050"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "1100000",
+      "notionalCap": "5000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "32550"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "5000000",
+      "notionalCap": "7000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "282550"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "7000000",
+      "notionalCap": "8000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "457550"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "8000000",
+      "notionalCap": "9000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "1457550"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "9000000",
+      "notionalCap": "10000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "3707550"
+    }
+  ],
+  "ARBUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "5000",
+      "maxLeverage": 75,
+      "mmr": "0.006",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "5000",
+      "notionalCap": "50000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "20"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "50000",
+      "notionalCap": "100000",
+      "maxLeverage": 25,
+      "mmr": "0.015",
+      "cum": "270"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "100000",
+      "notionalCap": "500000",
+      "maxLeverage": 20,
+      "mmr": "0.02",
+      "cum": "770"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "500000",
+      "notionalCap": "1000000",
+      "maxLeverage": 10,
+      "mmr": "0.025",
+      "cum": "3270"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "1000000",
+      "notionalCap": "5000000",
+      "maxLeverage": 5,
+      "mmr": "0.05",
+      "cum": "28270"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "5000000",
+      "notionalCap": "6000000",
+      "maxLeverage": 4,
+      "mmr": "0.1",
+      "cum": "278270"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "6000000",
+      "notionalCap": "7000000",
+      "maxLeverage": 3,
+      "mmr": "0.125",
+      "cum": "428270"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "7000000",
+      "notionalCap": "8000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "1303270"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "8000000",
+      "notionalCap": "9000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "3303270"
+    }
+  ],
+  "OPUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "10000",
+      "maxLeverage": 75,
+      "mmr": "0.006",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "10000",
+      "notionalCap": "50000",
+      "maxLeverage": 50,
+      "mmr": "0.01",
+      "cum": "40"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "50000",
+      "notionalCap": "80000",
+      "maxLeverage": 40,
+      "mmr": "0.015",
+      "cum": "290"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "80000",
+      "notionalCap": "300000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "690"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "300000",
+      "notionalCap": "600000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "2190"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "600000",
+      "notionalCap": "3000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "17190"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "3000000",
+      "notionalCap": "6000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "167190"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "6000000",
+      "notionalCap": "7500000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "317190"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "7500000",
+      "notionalCap": "18000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "1254690"
+    },
+    {
+      "bracket": 10,
+      "notionalFloor": "18000000",
+      "notionalCap": "30000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "5754690"
+    }
+  ],
+  "SUIUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "20000",
+      "maxLeverage": 75,
+      "mmr": "0.01",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "20000",
+      "notionalCap": "200000",
+      "maxLeverage": 50,
+      "mmr": "0.015",
+      "cum": "100"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "200000",
+      "notionalCap": "1000000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "1100"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "1000000",
+      "notionalCap": "2000000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "6100"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "2000000",
+      "notionalCap": "10000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "56100"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "10000000",
+      "notionalCap": "20000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "556100"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "20000000",
+      "notionalCap": "25000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "1056100"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "25000000",
+      "notionalCap": "50000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "4181100"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "50000000",
+      "notionalCap": "100000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "16681100"
+    }
+  ],
+  "TONUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "10000",
+      "maxLeverage": 75,
+      "mmr": "0.01",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "10000",
+      "notionalCap": "80000",
+      "maxLeverage": 50,
+      "mmr": "0.015",
+      "cum": "50"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "80000",
+      "notionalCap": "400000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "450"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "400000",
+      "notionalCap": "800000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "2450"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "800000",
+      "notionalCap": "3000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "22450"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "3000000",
+      "notionalCap": "5000000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "172450"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "5000000",
+      "notionalCap": "6000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "297450"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "6000000",
+      "notionalCap": "7000000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "1047450"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "7000000",
+      "notionalCap": "8000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "2797450"
+    }
+  ],
+  "FILUSDT": [
+    {
+      "bracket": 1,
+      "notionalFloor": "0",
+      "notionalCap": "20000",
+      "maxLeverage": 75,
+      "mmr": "0.01",
+      "cum": "0"
+    },
+    {
+      "bracket": 2,
+      "notionalFloor": "20000",
+      "notionalCap": "200000",
+      "maxLeverage": 50,
+      "mmr": "0.015",
+      "cum": "100"
+    },
+    {
+      "bracket": 3,
+      "notionalFloor": "200000",
+      "notionalCap": "400000",
+      "maxLeverage": 25,
+      "mmr": "0.02",
+      "cum": "1100"
+    },
+    {
+      "bracket": 4,
+      "notionalFloor": "400000",
+      "notionalCap": "800000",
+      "maxLeverage": 20,
+      "mmr": "0.025",
+      "cum": "3100"
+    },
+    {
+      "bracket": 5,
+      "notionalFloor": "800000",
+      "notionalCap": "3000000",
+      "maxLeverage": 10,
+      "mmr": "0.05",
+      "cum": "23100"
+    },
+    {
+      "bracket": 6,
+      "notionalFloor": "3000000",
+      "notionalCap": "7500000",
+      "maxLeverage": 5,
+      "mmr": "0.1",
+      "cum": "173100"
+    },
+    {
+      "bracket": 7,
+      "notionalFloor": "7500000",
+      "notionalCap": "10000000",
+      "maxLeverage": 4,
+      "mmr": "0.125",
+      "cum": "360600"
+    },
+    {
+      "bracket": 8,
+      "notionalFloor": "10000000",
+      "notionalCap": "12500000",
+      "maxLeverage": 2,
+      "mmr": "0.25",
+      "cum": "1610600"
+    },
+    {
+      "bracket": 9,
+      "notionalFloor": "12500000",
+      "notionalCap": "15000000",
+      "maxLeverage": 1,
+      "mmr": "0.5",
+      "cum": "4735600"
+    }
+  ]
+}
