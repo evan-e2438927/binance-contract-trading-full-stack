@@ -12,7 +12,7 @@ import { chainEnum, positionModeEnum } from "./enums";
 /**
  * 账户表 —— 一个钱包地址一个账户，钱包余额的落点。
  *
- * 本项目不接币安 API Key，USDT 由我们自己发放：新账户开户时发 10,000 USDT，写一条
+ * 本项目不在币安下任何真实订单，USDT 由我们自己发放：新账户开户时发 10,000 USDT，写一条
  * `INITIAL` 流水。账户重置也不是直接改 `walletBalance`，而是走正常平仓流程再补一条
  * `RESET` 流水（见 `02-architecture.md` 第九节），为的是守住那条不变式：
  *

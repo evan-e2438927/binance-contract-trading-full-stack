@@ -15,7 +15,8 @@ import {
  * 所以它必须先于任何交易数据存在（`positions`/`orders` 都外键引用 symbol）。
  *
  * `enabled` 和 `sortOrder` 是我们自己的运营字段，不属于币安数据：币安有几百个币对，
- * 我们只开放其中 20 个，同步脚本不会覆盖这两列。
+ * 我们只开放其中 20 个。这两列由 `seed:symbols` 按 `brackets/open-symbols.ts` 的名单设置，
+ * 分层表同步也只处理 `enabled = true` 的币对。
  */
 export const symbols = pgTable("symbols", {
   symbol: text("symbol").primaryKey(), // 'BTCUSDT' 这种币安原生的交易对代码，直接当主键

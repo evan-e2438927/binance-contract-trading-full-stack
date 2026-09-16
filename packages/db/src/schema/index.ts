@@ -1,6 +1,7 @@
 export * from "./enums";
 
 // 市场规格
+export * from "./leverage-bracket-changes";
 export * from "./leverage-brackets";
 export * from "./symbols";
 

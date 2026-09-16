@@ -16,11 +16,12 @@ import { symbols } from "./symbols";
  * 率越高、允许的最大杠杆越低。维持保证金 = 名义价值 × mmr − cum，`cum`（速算额）是为了
  * 让相邻两层在边界上连续（否则名义价值刚跨过边界，维持保证金会阶跃）。
  *
- * ⚠️ 这张表的数值**必须人工从币安页面核对**，不能让 AI 生成。抄错一档不会让
- * `verify:brackets` 报错（它只查层内连续性和边界衔接，查不出整体抄错一档），
- * 但会让这个币对的所有强平价系统性偏移。
+ * 数据来自币安官方签名接口 `GET /fapi/v1/leverageBracket`（只读 API Key，仅在服务端使用），
+ * 由 `brackets/sync.ts` 同步：server 每天 UTC 00:05 自动跑，也可以手动 `sync:brackets`。
+ * **不允许手写或让 AI 生成这里的数字**——抄错一档不会破坏连续性，却会让这个币对的所有
+ * 强平价系统性偏移。写库前后各校验一次，随时可以 `verify:brackets` 核对库里和官方是否一致。
  *
- * 写入频率：季度级。币安调整分层表时人工更新 `seed/leverage-brackets.json` 再跑 seed。
+ * 写入频率：每日同步，币安没调表就不写。每次变化在 `leverage_bracket_changes` 留前后快照。
  */
 export const leverageBrackets = pgTable(
   "leverage_brackets",

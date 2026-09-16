@@ -1,6 +1,7 @@
 import "varlock/auto-load";
 import { parse } from "@binance-contract-trading-full-stack/shared";
 import { eq } from "drizzle-orm";
+import { OPEN_SYMBOLS, openSymbolSetting } from "../brackets/open-symbols";
 import { createDb } from "../index";
 import { ENV } from "../env";
 import { symbols, type NewSymbol } from "../schema/symbols";
@@ -67,12 +68,19 @@ async function main() {
   }
   const body = (await res.json()) as { symbols: BinanceExchangeInfoSymbol[] };
 
+  const listed = new Set(body.symbols.map((s) => s.symbol));
+  const unknown = OPEN_SYMBOLS.filter((s) => !listed.has(s));
+  if (unknown.length > 0) {
+    throw new Error(`open-symbols.ts 里这些币对在币安 exchangeInfo 里不存在：${unknown.join(", ")}，同步中止`);
+  }
+
   const db = createDb({ DATABASE_URL: ENV.DATABASE_URL });
   let created = 0;
   let updated = 0;
 
   for (const raw of body.symbols) {
-    const row = mapExchangeInfoSymbol(raw);
+    // enabled / sortOrder 是我们自己的运营字段，按 open-symbols.ts 的名单设置
+    const row = { ...mapExchangeInfoSymbol(raw), ...openSymbolSetting(raw.symbol) };
     const existing = await db.select().from(symbols).where(eq(symbols.symbol, row.symbol)).limit(1);
 
     if (existing.length === 0) {
@@ -91,6 +99,8 @@ async function main() {
           stepSize: row.stepSize,
           minQty: row.minQty,
           minNotional: row.minNotional,
+          enabled: row.enabled,
+          sortOrder: row.sortOrder,
           updatedAt: new Date(),
         })
         .where(eq(symbols.symbol, row.symbol));
@@ -98,7 +108,7 @@ async function main() {
     }
   }
 
-  console.log(`seed:symbols 完成：新建 ${created} 个，更新 ${updated} 个。`);
+  console.log(`seed:symbols 完成：新建 ${created} 个，更新 ${updated} 个，开放 ${OPEN_SYMBOLS.length} 个。`);
 }
 
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;

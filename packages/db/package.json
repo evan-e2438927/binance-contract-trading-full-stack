@@ -17,10 +17,9 @@
     "db:migrate:deploy": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:migrate": "drizzle-kit migrate",
-    "fetch:brackets": "tsx src/scripts/fetch-brackets.ts",
+    "sync:brackets": "tsx src/scripts/sync-brackets.ts",
     "verify:brackets": "tsx src/scripts/verify-brackets.ts",
     "seed:symbols": "tsx src/scripts/seed-symbols.ts",
-    "seed:brackets": "tsx src/scripts/seed-brackets.ts",
     "reconcile:ledger": "tsx src/scripts/reconcile-ledger.ts"
   },
   "dependencies": {
