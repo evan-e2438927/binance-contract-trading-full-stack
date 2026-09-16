@@ -7,6 +7,16 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
+/**
+ * 币对规格表 —— 下单校验的规格来源。
+ *
+ * 数据来自币安 `exchangeInfo`，`seed:symbols` 每天同步一次。下单校验链里"价格是不是
+ * tickSize 的整数倍""数量够不够 minQty""名义价值够不够 minNotional"全查这张表，
+ * 所以它必须先于任何交易数据存在（`positions`/`orders` 都外键引用 symbol）。
+ *
+ * `enabled` 和 `sortOrder` 是我们自己的运营字段，不属于币安数据：币安有几百个币对，
+ * 我们只开放其中 20 个，同步脚本不会覆盖这两列。
+ */
 export const symbols = pgTable("symbols", {
   symbol: text("symbol").primaryKey(), // 'BTCUSDT' 这种币安原生的交易对代码，直接当主键
   baseAsset: text("base_asset").notNull(), // 'BTC'——标的资产

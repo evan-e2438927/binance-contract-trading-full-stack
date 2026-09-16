@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   pgTable,
@@ -8,6 +9,17 @@ import {
 } from "drizzle-orm/pg-core";
 import { chainEnum, positionModeEnum } from "./enums";
 
+/**
+ * 账户表 —— 一个钱包地址一个账户，钱包余额的落点。
+ *
+ * 本项目不接币安 API Key，USDT 由我们自己发放：新账户开户时发 10,000 USDT，写一条
+ * `INITIAL` 流水。账户重置也不是直接改 `walletBalance`，而是走正常平仓流程再补一条
+ * `RESET` 流水（见 `02-architecture.md` 第九节），为的是守住那条不变式：
+ *
+ *     accounts.wallet_balance === SUM(ledger_entries.amount)
+ *
+ * 唯一键是 (chain, address) 而不是 address：同一串十六进制在 EVM 和别的链上是两个人。
+ */
 export const accounts = pgTable(
   "accounts",
   {
@@ -19,7 +31,7 @@ export const accounts = pgTable(
     // 不变式里的左边——任何资金变动都必须同步改这个字段并写一条 ledger_entries。
     walletBalance: bigint("wallet_balance", { mode: "bigint" })
       .notNull()
-      .default(0n),
+      .default(sql`0`),
     positionMode: positionModeEnum("position_mode")
       .notNull()
       .default("ONE_WAY"),

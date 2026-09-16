@@ -13,6 +13,24 @@ import { accounts } from "./accounts";
 import { marginModeEnum, positionSideEnum } from "./enums";
 import { symbols } from "./symbols";
 
+/**
+ * 仓位表 —— "我现在手上拿着什么"，每次成交都要改。
+ *
+ * 唯一键 (accountId, symbol, positionSide) 同时兼容两种持仓模式：单向模式下
+ * positionSide 恒为 BOTH，一个币对只会有一行；双向模式下 LONG/SHORT 各占一行，
+ * 两个仓位独立记开仓价、独立算盈亏、独立强平。
+ *
+ * 三个刻意的设计选择：
+ * 1. **平仓后不删行**（留 `qty = 0`）。删了之后切持仓模式、查历史都要处理"不存在"的
+ *    分支，留着更简单，`openedAt` 也还能当历史记录看。
+ * 2. **`qty` 恒为非负**，方向完全由 `positionSide` 决定。用负数表示空头的话，bigint
+ *    运算里到处要判符号，迟早在某个分支漏掉。
+ * 3. **`leverage` 是开仓时的快照**，不跟着 `account_symbol_settings` 变。否则用户改一下
+ *    杠杆设置，已有仓位的强平价会被悄悄改掉。
+ *
+ * `pos_symbol_open_idx` 是部分索引，只索引 `qty > 0`。资金费结算（每 8 小时）和强平扫描
+ * （每个价格 tick）都要按币对捞活跃仓位，这个索引直接决定那两条热路径的性能。
+ */
 export const positions = pgTable(
   "positions",
   {
@@ -26,11 +44,11 @@ export const positions = pgTable(
     positionSide: positionSideEnum("position_side").notNull(),
     marginMode: marginModeEnum("margin_mode").notNull(),
     leverage: integer("leverage").notNull(), // 开仓时锁定的杠杆倍数，后续调杠杆不影响已开的仓位
-    qty: bigint("qty", { mode: "bigint" }).notNull().default(0n), // 恒为非负，方向看 positionSide
-    entryPrice: bigint("entry_price", { mode: "bigint" }).notNull().default(0n), // 加权平均开仓价
+    qty: bigint("qty", { mode: "bigint" }).notNull().default(sql`0`), // 恒为非负，方向看 positionSide
+    entryPrice: bigint("entry_price", { mode: "bigint" }).notNull().default(sql`0`), // 加权平均开仓价
     isolatedMargin: bigint("isolated_margin", { mode: "bigint" })
       .notNull()
-      .default(0n), // 仅逐仓模式下有意义
+      .default(sql`0`), // 仅逐仓模式下有意义
     openedAt: timestamp("opened_at", { withTimezone: true }), // 首次开仓时间，qty 归零后不清空，留作历史记录
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
