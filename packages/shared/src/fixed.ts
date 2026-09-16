@@ -13,13 +13,20 @@ export function parse(input: string): Fixed {
   return negative ? -value : value;
 }
 
-/** 定标整数 → 十进制字符串，precision 控制小数位数（默认 8）。 */
+/**
+ * 定标整数 → 十进制字符串，precision 控制小数位数（默认 8，即不损失精度）。
+ * precision < 8 时对被截掉的部分四舍五入，不是简单截断——强平价这类内部按 8 位算出来的数值，
+ * 展示时截到 2 位必须是四舍五入后的数字，否则会和按四舍五入手算出来的验证值对不上
+ * （比如 55000 ÷ 1.004 = 54780.876494…，四舍五入到 2 位是 54780.88，截断成 54780.87 就错了）。
+ */
 export function format(value: Fixed, precision = 8): string {
   const negative = value < 0n;
   const abs = negative ? -value : value;
-  const intPart = abs / SCALE;
-  const fracPart = (abs % SCALE).toString().padStart(8, "0").slice(0, precision);
-  const sign = negative ? "-" : "";
+  const divisor = 10n ** BigInt(8 - precision);
+  const rounded = ((abs + divisor / 2n) / divisor) * divisor;
+  const intPart = rounded / SCALE;
+  const fracPart = (rounded % SCALE).toString().padStart(8, "0").slice(0, precision);
+  const sign = negative && rounded !== 0n ? "-" : "";
   return precision > 0 ? `${sign}${intPart}.${fracPart}` : `${sign}${intPart}`;
 }
 
@@ -51,6 +58,15 @@ export function divRound(a: Fixed, b: Fixed): Fixed {
   const absB = b < 0n ? -b : b;
   const numerator = absA * SCALE * 2n + absB;
   const rounded = numerator / (absB * 2n);
+  return negative ? -rounded : rounded;
+}
+
+/** 乘法，四舍五入（round half up），用于未实现盈亏/保证金等展示类数值。 */
+export function mulRound(a: Fixed, b: Fixed): Fixed {
+  const negative = a < 0n !== b < 0n;
+  const absA = a < 0n ? -a : a;
+  const absB = b < 0n ? -b : b;
+  const rounded = (absA * absB * 2n + SCALE) / (SCALE * 2n);
   return negative ? -rounded : rounded;
 }
 

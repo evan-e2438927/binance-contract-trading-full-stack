@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SCALE, div, format, mul, parse } from "./fixed";
-import { alignPrice, alignQty, divRound, mulCeil } from "./fixed";
+import { alignPrice, alignQty, divRound, mulCeil, mulRound } from "./fixed";
 
 describe("fixed", () => {
   it.each([
@@ -20,6 +20,22 @@ describe("fixed", () => {
 
   it("format 支持自定义精度", () => {
     expect(format(parse("50000.25"), 2)).toBe("50000.25");
+  });
+
+  it("format 截到低精度时四舍五入，不是截断", () => {
+    // 55000 ÷ 1.004 = 54780.876494…，第 3 位小数是 6，截到 2 位要进位
+    expect(format(divRound(parse("55000"), parse("1.004")), 2)).toBe("54780.88");
+    // 截断会得到 "54780.87"——这是 03 讲发现并修掉的一个显示 bug，见 docs/tutorial/03-formulas.md
+    expect(format(parse("1.235"), 2)).toBe("1.24");
+    expect(format(parse("1.234"), 2)).toBe("1.23");
+  });
+
+  it("format 四舍五入时能正确进位到整数部分", () => {
+    expect(format(parse("1.999999996"), 2)).toBe("2.00");
+  });
+
+  it("format 精度为 0 时不带小数点", () => {
+    expect(format(parse("1.6"), 0)).toBe("2");
   });
 
   it("负数往返一致", () => {
@@ -65,6 +81,25 @@ describe("divRound（四舍五入，用于保证金率/强平价/未实现盈亏
   it("2/3 → 0.66666667（第 9 位是 6，进），和 div 的截断结果不一样", () => {
     expect(divRound(parse("2"), parse("3"))).toBe(parse("0.66666667"));
     expect(div(parse("2"), parse("3"))).toBe(parse("0.66666666"));
+  });
+});
+
+describe("mulRound（四舍五入，用于未实现盈亏/保证金）", () => {
+  it("0.1 × 0.1 精确整除，四舍五入不影响结果", () => {
+    expect(mulRound(parse("0.1"), parse("0.1"))).toBe(parse("0.01"));
+  });
+
+  it("恰好卡在半个最小单位上，进一位（round half up）", () => {
+    // 0.00000001 × 0.5 = 0.000000005，正好半个最小单位
+    expect(mulRound(parse("0.00000001"), parse("0.5"))).toBe(1n);
+  });
+
+  it("不到半个最小单位，舍去", () => {
+    expect(mulRound(parse("0.00000001"), parse("0.49999999"))).toBe(0n);
+  });
+
+  it("负数：符号在取绝对值四舍五入后再套回去", () => {
+    expect(mulRound(parse("-0.00000001"), parse("0.5"))).toBe(-1n);
   });
 });
 

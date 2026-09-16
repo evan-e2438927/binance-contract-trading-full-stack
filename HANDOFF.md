@@ -15,8 +15,9 @@
 | 设计文档 | ✅ 完成，7 份在 `docs/design/`（已含邮箱 / Google 登录，14 张表版本） |
 | 第 01 讲 · 数据库层 | ✅ 用户已完成：`packages/shared` + 12 张表 + 种子/对账脚本；分层表由 `fetch:brackets` 从币安拉取，20 个币对已导入 |
 | 第 01b 讲 · 分层表官方同步 | ✅ 2026-09-16 AI 实现 + 讲义：官方签名接口（只读 Key）+ 三道校验 + `leverage_bracket_changes` 快照表（迁移 0002）+ server 每日 UTC 00:05 同步；旧的 JSON / `fetch:brackets` / `seed:brackets` 已删除；未 commit |
-| 第 02 讲 · 引擎骨架、测试脚手架、回滚日志 | ✅ 2026-09-16 起引擎改为 **AI 写代码 + 讲义，用户对照阅读**。`packages/engine` 已实现（7 个测试文件 32 条全绿），讲义第 7 节新增 undo 日志 + `commit()`/`rollback()`，讲义代码与仓库逐字一致；未 commit |
-| 第 03–09 讲 · 引擎内核 | ⬜ 只有大纲（见教程 README），每讲等用户完成上一讲后，读其实际代码再写 |
+| 第 02 讲 · 引擎骨架、测试脚手架、回滚日志 | ✅ AI 写代码 + 讲义，用户对照阅读。`packages/engine` 骨架（7 个测试文件 32 条全绿），undo 日志 + `commit()`/`rollback()`；已 commit |
+| 第 03 讲 · 计算公式 | ✅ 2026-09-17 AI 实现 + 讲义：`formulas.ts`/`position.ts`/`liquidation.ts`，强平价三算例带反向验算；顺带定了设计缺口 #5（强平价不对齐 tickSize）#6（逐仓保证金不占 walletBalance）；`packages/shared` 补 `mulRound`，修了 `format()` 截断显示 bug（缺口 #11）；接上不变式 ③⑥；84 条测试全绿；讲义 `docs/tutorial/03-formulas.md`；已 commit |
+| 第 04–09 讲 · 引擎内核 | ⬜ 只有大纲（见教程 README），04 是下一讲：下单校验链（13 步） |
 | 第 10–14 讲 · 服务端 | ⬜ 只有大纲 |
 | 前端 | 不出教程——`apps/web` 由 AI 直接实现 |
 | 表结构 12 → 14 张（`identities` / `email_verification_codes`） | ⬜ 放在第 12 讲鉴权里做迁移，不挡引擎 |
@@ -96,9 +97,11 @@ docs/design/
 
 ## 五、下一步
 
+**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，下一讲是**第 04 讲：下单校验链（13 步）**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
+
 按 `数据库 → 后端 → 前端` 的顺序搭。前两层用户想自己一步步做，前端交给 AI。
 
-### M0 地基（第一步）
+### M0 地基（第一步，已完成）
 
 1. 建 `packages/shared`，写 `fixed.ts`（定标 1e8、`parse`/`format`、`mul`/`div`、五种舍入）
 2. 建 `packages/engine` 骨架 + `types.ts`（`EngineInput` / `EngineEvent`，签名见 `02-architecture.md` 第六节）

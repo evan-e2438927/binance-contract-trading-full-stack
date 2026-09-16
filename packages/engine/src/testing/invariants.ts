@@ -1,4 +1,5 @@
 import type { Fixed } from "@binance-contract-trading-full-stack/shared";
+import { availableBalance, initialMargin, unrealizedPnl } from "../formulas";
 import type { EngineEvent, EngineSnapshot } from "../types";
 
 export class InvariantError extends Error {
@@ -15,13 +16,20 @@ function fail(rule: string, detail: string): never {
 /**
  * 06-testing-design.md 第 4 节的引擎层不变式，每次 apply 之后自动跑。
  *
- * ③ 可用余额非负、⑥ 冻结保证金总额，要等模块 03 写出公式之后才能加进来。
  * ⑧ 是我们自己加的：内存里只能有未完成订单。
  */
 export function checkInvariants(
   snapshot: EngineSnapshot,
   events: readonly EngineEvent[],
   ledgerSums: ReadonlyMap<string, Fixed>,
+  /**
+   * 每个币对当前已知的标记价，用来算全仓仓位的未实现盈亏（③ 需要）。
+   * 来自 harness.ts 里对 markPrice 输入的旁路记录，EngineSnapshot 本身不含行情状态
+   * （02-architecture.md 第七节："行情不进快照"）。第 03 讲还没有任何代码会创建仓位/挂单，
+   * 这两条不变式目前恒为"平凡成立"，是为第 04 讲之后打好的地基——一旦有仓位/挂单，
+   * 它们会自动开始起作用，不需要再回来接线。
+   */
+  marks: ReadonlyMap<string, Fixed>,
 ): void {
   // ① 钱包余额 == 该账户所有 balanceUpdate 的 delta 之和
   //    引擎内存里不存流水（02-architecture.md 第七节），所以"流水之和"由测试脚手架从事件里累加
@@ -60,6 +68,62 @@ export function checkInvariants(
   for (const o of snapshot.orders) {
     if (o.status !== "NEW" && o.status !== "PARTIALLY_FILLED") {
       fail("⑧", `订单 ${o.id} 状态是 ${o.status}，终态订单不应该留在引擎内存里`);
+    }
+  }
+
+  // ③ 可用余额非负
+  const positionsByAccount = new Map<string, typeof snapshot.positions>();
+  for (const p of snapshot.positions) {
+    positionsByAccount.set(p.accountId, [...(positionsByAccount.get(p.accountId) ?? []), p]);
+  }
+  const ordersByAccount = new Map<string, typeof snapshot.orders>();
+  for (const o of snapshot.orders) {
+    ordersByAccount.set(o.accountId, [...(ordersByAccount.get(o.accountId) ?? []), o]);
+  }
+
+  for (const acc of snapshot.accounts) {
+    let crossUnrealizedPnlSum = 0n;
+    let crossInitialMarginSum = 0n;
+    let isolatedMarginSum = 0n;
+    let markPriceMissing = false;
+
+    for (const p of positionsByAccount.get(acc.id) ?? []) {
+      if (p.marginMode === "ISOLATED") {
+        isolatedMarginSum += p.isolatedMargin;
+        continue;
+      }
+      const mark = marks.get(p.symbol);
+      if (mark === undefined) {
+        // 全仓仓位的未实现盈亏离不开标记价：还没收到过这个币对的 markPrice 输入就没法算，
+        // 跳过而不是报错——"不知道"和"算出来是负的"是两回事，不能把前者当成后者处理。
+        markPriceMissing = true;
+        continue;
+      }
+      crossUnrealizedPnlSum += unrealizedPnl(p, mark);
+      crossInitialMarginSum += initialMargin(p.qty, p.entryPrice, p.leverageNum);
+    }
+    if (markPriceMissing) continue;
+
+    const frozenMarginSum = (ordersByAccount.get(acc.id) ?? []).reduce(
+      (sum, o) => sum + o.frozenMargin,
+      0n,
+    );
+    const available = availableBalance({
+      walletBalance: acc.walletBalance,
+      crossUnrealizedPnlSum,
+      crossInitialMarginSum,
+      isolatedMarginSum,
+      frozenMarginSum,
+    });
+    if (available < 0n) {
+      fail("③", `账户 ${acc.id} 可用余额为负：${available}`);
+    }
+  }
+
+  // ⑥ 只减仓 / 全部平仓单永远不冻结保证金——它们只会释放保证金，不会占用新的（见 formulas.ts frozenMargin）
+  for (const o of snapshot.orders) {
+    if ((o.reduceOnly || o.closePosition) && o.frozenMargin !== 0n) {
+      fail("⑥", `订单 ${o.id} reduceOnly/closePosition=true 但 frozenMargin=${o.frozenMargin} ≠ 0`);
     }
   }
 }

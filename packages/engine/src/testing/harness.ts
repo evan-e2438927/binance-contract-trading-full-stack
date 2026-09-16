@@ -21,11 +21,16 @@ export function createTestEngine(config: EngineConfig): TestEngine {
   const engine = createEngine(config);
   const events: EngineEvent[] = [];
   const ledgerSums = new Map<string, Fixed>();
+  // ③ 用：每个币对最后一次见到的标记价。EngineSnapshot 不含行情状态，所以这份记录
+  // 只存在于测试脚手架里，旁路记录调用方喂给 apply() 的 markPrice 输入，不问引擎内部。
+  const marks = new Map<string, Fixed>();
 
   return {
     engine,
     events,
     apply(input) {
+      if (input.t === "markPrice") marks.set(input.symbol, input.markPrice);
+
       // 回滚自检：apply → 记下结果 → rollback → 必须回到 apply 之前 → 再把结果装回去。
       // 这样每一个测试里的每一次 apply 都顺带验证了 undo 日志没有漏记。
       // 三次深拷贝只在测试里付，生产宿主走的是 commit，没有这份开销。
@@ -50,7 +55,7 @@ export function createTestEngine(config: EngineConfig): TestEngine {
         }
       }
 
-      checkInvariants(engine.snapshot(), out, ledgerSums);
+      checkInvariants(engine.snapshot(), out, ledgerSums, marks);
       return out;
     },
     ledgerSum(accountId) {
