@@ -20,7 +20,8 @@
   "dependencies": {
     "drizzle-orm": "catalog:",
     "pg": "^8.23.0",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@binance-contract-trading-full-stack/shared": "workspace:*"
   },
   "devDependencies": {
     "@binance-contract-trading-full-stack/config": "workspace:*",
