@@ -11,12 +11,17 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
+    "test": "vitest run",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate:deploy": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:migrate": "drizzle-kit migrate",
-    "verify:brackets": "tsx src/scripts/verify-brackets.ts"
+    "fetch:brackets": "tsx src/scripts/fetch-brackets.ts",
+    "verify:brackets": "tsx src/scripts/verify-brackets.ts",
+    "seed:symbols": "tsx src/scripts/seed-symbols.ts",
+    "seed:brackets": "tsx src/scripts/seed-brackets.ts",
+    "reconcile:ledger": "tsx src/scripts/reconcile-ledger.ts"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
@@ -30,6 +35,7 @@
     "drizzle-kit": "^0.31.10",
     "typescript": "^6.0.3",
     "tsx": "^4.23.13",
-    "varlock": "catalog:"
+    "varlock": "catalog:",
+    "vitest": "catalog:"
   }
 }
