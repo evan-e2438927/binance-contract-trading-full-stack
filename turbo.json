@@ -3,15 +3,28 @@
   "ui": "tui",
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**"
+      ]
     },
     "lint": {
-      "dependsOn": ["^lint"]
+      "dependsOn": [
+        "^lint"
+      ]
     },
     "check-types": {
-      "dependsOn": ["^check-types"]
+      "dependsOn": [
+        "^check-types"
+      ]
     },
     "dev": {
       "cache": false,
@@ -44,6 +57,11 @@
     "destroy": {
       "cache": false,
       "interactive": true
+    },
+    "test": {
+      "dependsOn": [
+        "^test"
+      ]
     }
   },
   "globalEnv": [
@@ -59,5 +77,9 @@
     "VERCEL_URL",
     "_VARLOCK_ENV_KEY"
   ],
-  "globalDependencies": [".env*", "apps/*/.env*", "packages/*/.env*"]
+  "globalDependencies": [
+    ".env*",
+    "apps/*/.env*",
+    "packages/*/.env*"
+  ]
 }
