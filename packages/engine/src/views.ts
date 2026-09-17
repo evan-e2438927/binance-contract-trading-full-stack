@@ -1,0 +1,144 @@
+import { divRound, type Fixed } from "@binance-contract-trading-full-stack/shared";
+import { initialMargin, notional, unrealizedPnl } from "./formulas";
+import { liquidationPrice, marginRatio } from "./liquidation";
+import { crossWalletBalance, positionMaintMargin } from "./risk";
+import { sortedOrders, sortedPositions, type EngineState } from "./state";
+import type { AccountView, Order, Position, PositionView } from "./types";
+import { accountAvailable } from "./validate-order";
+
+/**
+ * 只读视图（第 13 讲）：把引擎状态算成 REST / WS 要展示的数。
+ *
+ * 为什么放在引擎里而不是服务端：强平价、可用余额、维持保证金必须和风控用同一套公式、同一份分层表，
+ * 两处各算一遍迟早漂移——设计文档说的"强平价由服务端算好返回，前端不自己算"再往前推一步，服务端也不另算。
+ *
+ * 缺标记价（比如已下架币对上的旧仓位）就返回 null，并在 missingMarkPrices 里点名，不拿 0 顶替。
+ */
+
+function requireSettled(state: EngineState): void {
+  if (state.journal) throw new Error("有未结算的 apply（没调 commit() 或 rollback()），不能读视图：读到的可能是还没落库的状态");
+}
+
+export function accountView(state: EngineState, accountId: string): AccountView | null {
+  requireSettled(state);
+  const account = state.accounts.get(accountId);
+  if (!account) return null;
+
+  const positions = sortedPositions(state, (p) => p.accountId === accountId && p.qty > 0n);
+  const missing = new Set<string>();
+  let unrealized = 0n;
+  let crossUnrealized = 0n;
+  let positionIm = 0n;
+  let maint = 0n;
+  let crossMaint = 0n;
+  for (const position of positions) {
+    const mark = state.marks.get(position.symbol)?.markPrice;
+    if (mark === undefined) {
+      missing.add(position.symbol);
+      continue;
+    }
+    const pnl = unrealizedPnl(position, mark);
+    const mm = positionMaintMargin(state, position, mark);
+    unrealized += pnl;
+    positionIm += initialMargin(position.qty, mark, position.leverageNum);
+    maint += mm;
+    if (position.marginMode === "CROSS") {
+      crossUnrealized += pnl;
+      crossMaint += mm;
+    }
+  }
+
+  let openOrderMargin = 0n;
+  for (const order of state.orders.values()) {
+    if (order.accountId === accountId) openOrderMargin += order.frozenMargin;
+  }
+
+  const crossWallet = crossWalletBalance(state, accountId);
+  const known = missing.size === 0;
+  const available = accountAvailable(state, account);
+  return {
+    accountId,
+    positionMode: account.positionMode,
+    walletBalance: account.walletBalance,
+    crossWalletBalance: crossWallet,
+    unrealizedPnl: known ? unrealized : null,
+    crossUnrealizedPnl: known ? crossUnrealized : null,
+    marginBalance: known ? account.walletBalance + unrealized : null,
+    positionInitialMargin: known ? positionIm : null,
+    openOrderMargin,
+    maintMargin: known ? maint : null,
+    availableBalance: typeof available === "string" ? null : available,
+    marginRatio: known ? (crossMaint === 0n ? 0n : marginRatio(crossMaint, crossWallet + crossUnrealized)) : null,
+    missingMarkPrices: [...missing].sort(),
+  };
+}
+
+export function positionViews(state: EngineState, accountId: string): PositionView[] {
+  requireSettled(state);
+  if (!state.accounts.has(accountId)) return [];
+  const positions = sortedPositions(state, (p) => p.accountId === accountId && p.qty > 0n);
+  return positions.map((position) => {
+    const mark = state.marks.get(position.symbol)?.markPrice ?? null;
+    const value = mark === null ? null : notional(position.qty, mark);
+    const pnl = mark === null ? null : unrealizedPnl(position, mark);
+    const im = mark === null ? null : initialMargin(position.qty, mark, position.leverageNum);
+    return {
+      symbol: position.symbol,
+      positionSide: position.positionSide as "LONG" | "SHORT",
+      marginMode: position.marginMode,
+      leverageNum: position.leverageNum,
+      qty: position.qty,
+      entryPrice: position.entryPrice,
+      markPrice: mark,
+      notional: value,
+      unrealizedPnl: pnl,
+      initialMargin: im,
+      maintMargin: mark === null ? null : positionMaintMargin(state, position, mark),
+      isolatedMargin: position.marginMode === "ISOLATED" ? position.isolatedMargin : 0n,
+      liquidationPrice: liquidationPriceOf(state, position, positions),
+      roe: pnl === null || im === null || im === 0n ? null : divRound(pnl, im),
+      openedAt: position.openedAt,
+      updatedAt: position.updatedAt,
+    };
+  });
+}
+
+/**
+ * 逐仓：这个仓位单独算，WB = 它的逐仓保证金。
+ * 全仓：WB = 全仓钱包余额；TMM₁ / UPNL₁ = 其它币对的全仓仓位；本币对的全仓仓位（双向模式多空两条）一起进公式。
+ * 其它币对缺标记价时算不出 TMM₁ / UPNL₁，返回 null。
+ */
+function liquidationPriceOf(state: EngineState, position: Readonly<Position>, accountPositions: readonly Readonly<Position>[]): Fixed | null {
+  const brackets = state.brackets.get(position.symbol)!;
+  const leg = (p: Readonly<Position>) => ({ side: p.positionSide as "LONG" | "SHORT", qty: p.qty, entryPrice: p.entryPrice });
+  if (position.marginMode === "ISOLATED") {
+    return liquidationPrice({ walletBalance: position.isolatedMargin, otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n, legs: [leg(position)], brackets });
+  }
+
+  let otherMaint = 0n;
+  let otherPnl = 0n;
+  const legs = [];
+  for (const p of accountPositions) {
+    if (p.marginMode !== "CROSS") continue;
+    if (p.symbol === position.symbol) {
+      legs.push(leg(p));
+      continue;
+    }
+    const mark = state.marks.get(p.symbol)?.markPrice;
+    if (mark === undefined) return null;
+    otherMaint += positionMaintMargin(state, p, mark);
+    otherPnl += unrealizedPnl(p, mark);
+  }
+  return liquidationPrice({
+    walletBalance: crossWalletBalance(state, position.accountId),
+    otherMaintMarginSum: otherMaint,
+    otherUnrealizedPnlSum: otherPnl,
+    legs,
+    brackets,
+  });
+}
+
+export function openOrders(state: EngineState, accountId: string): Order[] {
+  requireSettled(state);
+  return structuredClone(sortedOrders(state, (o) => o.accountId === accountId));
+}

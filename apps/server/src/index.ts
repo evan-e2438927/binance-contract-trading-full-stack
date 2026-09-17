@@ -1,26 +1,4 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { logger } from "hono/logger";
-
 import { env } from "./env.server";
-import { createErrorHandler } from "./http/respond";
-
-const app = new Hono();
-
-app.onError(createErrorHandler());
-
-app.use(logger());
-app.use(
-  "/*",
-  cors({
-    origin: env.CORS_ORIGIN,
-    allowMethods: ["GET", "POST", "OPTIONS"],
-  }),
-);
-
-app.get("/", (c) => {
-  return c.text("OK");
-});
 
 import { serve } from "@hono/node-server";
 import {
@@ -29,13 +7,11 @@ import {
 } from "@binance-contract-trading-full-stack/db";
 import { createConsoleSender, createResendSender } from "./auth/email";
 import { createGoogleOAuth } from "./auth/google";
-import { createAuthRoutes } from "./auth/routes";
+import { createApp } from "./app";
 import { startTradingCore } from "./engine-host/start";
 import { startBracketSyncJob } from "./jobs/bracket-sync";
 import { booksRoute } from "./routers/books";
 import { getDb } from "./services";
-
-app.route("/books", booksRoute); // 👈 新增
 
 // 交易内核：从数据库恢复引擎状态、连币安行情、等就绪（30 秒没就绪就退出，04-backend-design.md 第 1 节）。
 // 先于 HTTP 服务启动：盘口和标记价没就位就不对外接受请求
@@ -58,18 +34,18 @@ const google =
       })
     : null;
 if (!google) console.log("[auth] 未配置 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI，Google 登录不可用");
-app.route(
-  "/auth",
-  createAuthRoutes({
-    db: getDb(),
-    registrar: trading.accounts,
-    jwtSecret: env.JWT_SECRET,
-    webOrigin: env.CORS_ORIGIN,
-    mailer,
-    google,
-    secureCookies: isProduction,
-  }),
-);
+const app = createApp({
+  db: getDb(),
+  host: trading.host,
+  registrar: trading.accounts,
+  symbols: trading.symbols,
+  jwtSecret: env.JWT_SECRET,
+  webOrigin: env.CORS_ORIGIN,
+  mailer,
+  google,
+  secureCookies: isProduction,
+});
+app.route("/books", booksRoute); // 练手链路，和业务无关
 
 serve(
   {

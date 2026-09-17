@@ -26,6 +26,15 @@ export async function parseBody<S extends z.ZodType>(c: Context, schema: S): Pro
   return parsed.data;
 }
 
+/** 查询参数按 zod schema 校验，不合法抛 INVALID_PARAMS */
+export function parseQuery<S extends z.ZodType>(c: Context, schema: S): z.infer<S> {
+  const parsed = schema.safeParse(c.req.query());
+  if (!parsed.success) {
+    throw new AppError("INVALID_PARAMS", parsed.error.issues.map((issue) => issue.message).join("；"));
+  }
+  return parsed.data;
+}
+
 /** app.onError：AppError 按错误码表给 HTTP 状态；其它一律 INTERNAL_ERROR，不把内部错误细节回给前端 */
 export function createErrorHandler(logger: Pick<Console, "error"> = console): ErrorHandler {
   return (error, c) => {

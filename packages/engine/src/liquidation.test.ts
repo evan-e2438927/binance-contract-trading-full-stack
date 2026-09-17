@@ -45,140 +45,103 @@ describe("4.6 保证金率", () => {
   });
 });
 
-describe("4.6 强平价——三个算例都要连反向验算一起过", () => {
-  const bracket1 = BTCUSDT_BRACKETS[0]!; // mmr 0.4%, cum 0
+describe("4.6 强平价——算例连反向验算一起过，另加币安 FAQ 的真实算例", () => {
+  const long1 = { side: "LONG" as const, qty: parse("1"), entryPrice: parse("50000") };
+  const short1 = { side: "SHORT" as const, qty: parse("1"), entryPrice: parse("50000") };
+  const isolated = (margin: string, leg: typeof long1 | typeof short1) =>
+    liquidationPrice({ walletBalance: parse(margin), otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n, legs: [leg], brackets: BTCUSDT_BRACKETS });
+
+  /** ★ 反向验算：强平价上，权益必须等于维持保证金——独立于公式本身的第二条路径，用生产代码里真正用的函数 */
+  function equityMinusMaint(wallet: string, legs: readonly (typeof long1 | typeof short1)[], price: bigint): bigint {
+    let equity = parse(wallet);
+    let maint = 0n;
+    for (const leg of legs) {
+      equity += unrealizedPnl({ positionSide: leg.side, qty: leg.qty, entryPrice: leg.entryPrice }, price);
+      const value = notional(leg.qty, price);
+      maint += maintMargin(value, findBracket(BTCUSDT_BRACKETS, value));
+    }
+    return marginBalance(equity, 0n) - maint;
+  }
 
   it("算例 A · 逐仓多头：45,180.72", () => {
-    const liq = liquidationPrice({
-      positionSide: "LONG",
-      marginMode: "ISOLATED",
-      qty: parse("1"),
-      entryPrice: parse("50000"),
-      isolatedMargin: parse("5000"),
-      walletBalance: 0n, // 逐仓不看这个字段
-      otherCrossMaintMarginSum: 0n,
-      otherCrossUnrealizedPnlSum: 0n,
-      bracket: bracket1,
-    });
+    const liq = isolated("5000", long1)!;
     expect(format(liq, 2)).toBe("45180.72");
-
-    // ★ 反向验算：强平价上，保证金余额必须等于维持保证金——这是独立于公式本身的第二条路径。
-    // 两边都要走生产代码里真正用的函数（unrealizedPnl/maintMargin），不能手写 mul() 重算一遍——
-    // liq 本身已经四舍五入过一次，手写的截断算法和公式内部的四舍五入对不上，会差 1e-8。
-    const pos = { positionSide: "LONG" as const, qty: parse("1"), entryPrice: parse("50000") };
-    const marginBalanceAtLiq = marginBalance(parse("5000"), unrealizedPnl(pos, liq));
-    const maintMarginAtLiq = maintMargin(notional(pos.qty, liq), bracket1);
-    expect(marginBalanceAtLiq).toBe(maintMarginAtLiq);
+    expect(equityMinusMaint("5000", [long1], liq)).toBe(0n);
   });
 
-  it("算例 B · 逐仓空头：54,780.88", () => {
-    const liq = liquidationPrice({
-      positionSide: "SHORT",
-      marginMode: "ISOLATED",
-      qty: parse("1"),
-      entryPrice: parse("50000"),
-      isolatedMargin: parse("5000"),
-      walletBalance: 0n,
-      otherCrossMaintMarginSum: 0n,
-      otherCrossUnrealizedPnlSum: 0n,
-      bracket: bracket1,
-    });
-    expect(format(liq, 2)).toBe("54780.88");
-
-    const pos = { positionSide: "SHORT" as const, qty: parse("1"), entryPrice: parse("50000") };
-    const marginBalanceAtLiq = marginBalance(parse("5000"), unrealizedPnl(pos, liq));
-    const maintMarginAtLiq = maintMargin(notional(pos.qty, liq), bracket1);
-    expect(marginBalanceAtLiq).toBe(maintMarginAtLiq);
+  it("算例 B · 逐仓空头：54,776.12（缺口 #24：强平价处名义价值已进第 2 层，换档重算；旧文档按第 1 层写的 54,780.88）", () => {
+    const liq = isolated("5000", short1)!;
+    expect(format(liq, 2)).toBe("54776.12");
+    expect(findBracket(BTCUSDT_BRACKETS, notional(short1.qty, liq)).bracketNum).toBe(2);
+    expect(equityMinusMaint("5000", [short1], liq)).toBe(0n);
   });
 
   it("算例 C · 全仓多头（只有这一个仓位）：40,160.64", () => {
-    const liq = liquidationPrice({
-      positionSide: "LONG",
-      marginMode: "CROSS",
-      qty: parse("1"),
-      entryPrice: parse("50000"),
-      isolatedMargin: 0n,
-      walletBalance: parse("10000"),
-      otherCrossMaintMarginSum: 0n,
-      otherCrossUnrealizedPnlSum: 0n,
-      bracket: bracket1,
-    });
+    const liq = liquidationPrice({ walletBalance: parse("10000"), otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n, legs: [long1], brackets: BTCUSDT_BRACKETS })!;
     expect(format(liq, 2)).toBe("40160.64");
-
-    const pos = { positionSide: "LONG" as const, qty: parse("1"), entryPrice: parse("50000") };
-    const marginBalanceAtLiq = marginBalance(parse("10000"), unrealizedPnl(pos, liq));
-    const maintMarginAtLiq = maintMargin(notional(pos.qty, liq), bracket1);
-    expect(marginBalanceAtLiq).toBe(maintMarginAtLiq);
+    expect(equityMinusMaint("10000", [long1], liq)).toBe(0n);
   });
 
-  it("对比 A 和 C：同样的仓位，全仓强平价比逐仓低——全仓拿整个账户兜底", () => {
-    const isolated = liquidationPrice({
-      positionSide: "LONG",
-      marginMode: "ISOLATED",
-      qty: parse("1"),
-      entryPrice: parse("50000"),
-      isolatedMargin: parse("5000"),
-      walletBalance: 0n,
-      otherCrossMaintMarginSum: 0n,
-      otherCrossUnrealizedPnlSum: 0n,
-      bracket: bracket1,
-    });
-    const cross = liquidationPrice({
-      positionSide: "LONG",
-      marginMode: "CROSS",
-      qty: parse("1"),
-      entryPrice: parse("50000"),
-      isolatedMargin: 0n,
-      walletBalance: parse("10000"),
-      otherCrossMaintMarginSum: 0n,
-      otherCrossUnrealizedPnlSum: 0n,
-      bracket: bracket1,
-    });
-    expect(cross < isolated).toBe(true);
+  // 币安 FAQ「How to Calculate Liquidation Price of USDⓈ-M Futures Contracts」的单向全仓算例（2026-09-17 抄录）：
+  // 钱包 1,535,443.01，两个多头仓位；FAQ 只给了各自所在档的 MMR / cum，所以分层表只传那一档
+  const faqTier = (mmr: string, cum: string) => [{ bracketNum: 1, notionalFloor: 0n, notionalCap: parse("100000000"), maxLeverageNum: 125, mmr: parse(mmr), cum: parse(cum) }];
+
+  it("★ 币安 FAQ 算例 · ETHUSDT：1,153.26（第 13 讲前的旧写法算出 1,234.91——全仓 cum 符号反了，缺口 #39）", () => {
+    const liq = liquidationPrice({
+      walletBalance: parse("1535443.01"),
+      otherMaintMarginSum: parse("71200.81144"),
+      otherUnrealizedPnlSum: parse("-56354.57"),
+      legs: [{ side: "LONG", qty: parse("3683.979"), entryPrice: parse("1456.84") }],
+      brackets: faqTier("0.10", "135365"),
+    })!;
+    expect(format(liq, 2)).toBe("1153.26");
   });
 
-  it("全仓下别的仓位的维持保证金/浮亏会推高本仓位的强平价", () => {
-    const withoutOthers = liquidationPrice({
-      positionSide: "LONG",
-      marginMode: "CROSS",
-      qty: parse("1"),
-      entryPrice: parse("50000"),
-      isolatedMargin: 0n,
-      walletBalance: parse("10000"),
-      otherCrossMaintMarginSum: 0n,
-      otherCrossUnrealizedPnlSum: 0n,
-      bracket: bracket1,
-    });
-    const withOthersLosing = liquidationPrice({
-      positionSide: "LONG",
-      marginMode: "CROSS",
-      qty: parse("1"),
-      entryPrice: parse("50000"),
-      isolatedMargin: 0n,
-      walletBalance: parse("10000"),
-      otherCrossMaintMarginSum: parse("100"),
-      otherCrossUnrealizedPnlSum: parse("-500"), // 别的仓位在浮亏
-      bracket: bracket1,
-    });
-    // 别的仓位占用维持保证金、又在浮亏，会更早触发这个仓位的强平——强平价应该更高（更容易碰到）
-    expect(withOthersLosing > withoutOthers).toBe(true);
+  it("★ 币安 FAQ 算例 · BTCUSDT：26,316.89", () => {
+    const liq = liquidationPrice({
+      walletBalance: parse("1535443.01"),
+      otherMaintMarginSum: parse("356512.508"),
+      otherUnrealizedPnlSum: parse("-448192.89"),
+      legs: [{ side: "LONG", qty: parse("109.488"), entryPrice: parse("32481.98") }],
+      brackets: faqTier("0.025", "16300"),
+    })!;
+    expect(format(liq, 2)).toBe("26316.89");
   });
 
-  it("分母为 0（mmr 和方向凑巧抵消）时抛错，不返回一个没有意义的数字", () => {
-    // 100% mmr、杠杆 1x 的极端层，做多时分母 = qty×1 − qty = 0
-    const weirdBracket = { mmr: parse("1"), cum: 0n };
-    expect(() =>
-      liquidationPrice({
-        positionSide: "LONG",
-        marginMode: "ISOLATED",
-        qty: parse("1"),
-        entryPrice: parse("50000"),
-        isolatedMargin: parse("50000"),
-        walletBalance: 0n,
-        otherCrossMaintMarginSum: 0n,
-        otherCrossUnrealizedPnlSum: 0n,
-        bracket: weirdBracket,
-      }),
-    ).toThrow();
+  it("全仓 cum 不为 0 的档位也要反算对得上（第 03 讲的算例都在 cum = 0 的第 1 层，漏掉了这种情况）", () => {
+    const big = { side: "LONG" as const, qty: parse("10"), entryPrice: parse("50000") }; // 名义价值 500,000，第 3 层 cum 1,050
+    const liq = liquidationPrice({ walletBalance: parse("60000"), otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n, legs: [big], brackets: BTCUSDT_BRACKETS })!;
+    expect(findBracket(BTCUSDT_BRACKETS, notional(big.qty, liq)).cum > 0n).toBe(true);
+    expect(equityMinusMaint("60000", [big], liq)).toBe(0n);
+  });
+
+  it("双向持仓全仓：多、空两条腿一起算，得到同一个强平价，反算对得上", () => {
+    const hedgeShort = { side: "SHORT" as const, qty: parse("0.4"), entryPrice: parse("52000") };
+    const liq = liquidationPrice({ walletBalance: parse("5000"), otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n, legs: [long1, hedgeShort], brackets: BTCUSDT_BRACKETS })!;
+    expect(liq < parse("50000")).toBe(true); // 净多 0.6，价格往下走才会强平
+    const diff = equityMinusMaint("5000", [long1, hedgeShort], liq);
+    expect(diff >= -2n && diff <= 2n).toBe(true); // 两条腿各自四舍五入，允许 1e-8 量级的舍入差
+  });
+
+  it("全仓下别的仓位的维持保证金 / 浮亏会推高本仓位的强平价", () => {
+    const base = { walletBalance: parse("10000"), legs: [long1], brackets: BTCUSDT_BRACKETS };
+    const alone = liquidationPrice({ ...base, otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n })!;
+    const withOthersLosing = liquidationPrice({ ...base, otherMaintMarginSum: parse("100"), otherUnrealizedPnlSum: parse("-500") })!;
+    expect(withOthersLosing > alone).toBe(true);
+  });
+
+  it("多空完全对冲也有强平价，在上方：浮盈浮亏抵消，但维持保证金随价格上涨，涨得够高权益就不够了", () => {
+    const base = { otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n, brackets: BTCUSDT_BRACKETS };
+    const liq = liquidationPrice({ ...base, walletBalance: parse("1000"), legs: [long1, short1] })!;
+    expect(liq > parse("50000")).toBe(true);
+    const diff = equityMinusMaint("1000", [long1, short1], liq);
+    expect(diff >= -2n && diff <= 2n).toBe(true);
+  });
+
+  it("没有强平价时返回 null，不编数字：钱包足够扛到价格归零 / 没有仓位", () => {
+    const base = { otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n, brackets: BTCUSDT_BRACKETS };
+    // 钱包比名义价值还多的多头：价格跌到 0 也爆不了，公式算出负数
+    expect(liquidationPrice({ ...base, walletBalance: parse("60000"), legs: [long1] })).toBeNull();
+    expect(liquidationPrice({ ...base, walletBalance: parse("1000"), legs: [] })).toBeNull();
   });
 });

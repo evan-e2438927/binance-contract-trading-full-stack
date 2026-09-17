@@ -1,5 +1,5 @@
 import { leverageBrackets, type DbExecutor } from "@binance-contract-trading-full-stack/db";
-import { createEngine, type EngineInput, type LeverageBracket } from "@binance-contract-trading-full-stack/engine";
+import { createEngine, type EngineInput, type LeverageBracket, type SymbolSpec } from "@binance-contract-trading-full-stack/engine";
 import type { PositionMode } from "@binance-contract-trading-full-stack/shared";
 import { asc, inArray } from "drizzle-orm";
 import { startMarketFeed, type FeedStatus, type MarketFeed, type MarketFeedOptions } from "../market/market-feed";
@@ -27,6 +27,8 @@ export interface TradingCore {
   feed: MarketFeed;
   /** 开户（第 12 讲鉴权层调用）：账户行 + 身份行 + INITIAL 流水一个事务落库 */
   accounts: AccountRegistrar;
+  /** 引擎配置里的全部币对（REST 层校验币对用，第 13 讲） */
+  symbols: readonly SymbolSpec[];
   /** 分层表每日同步发现变化后调用：从数据库读这些币对的新表，喂进引擎并立刻扫风控 */
   reloadBrackets(symbols: readonly string[]): Promise<void>;
   stop(): Promise<void>;
@@ -120,6 +122,7 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
     host,
     feed,
     accounts: registrar,
+    symbols: config.symbols,
     async reloadBrackets(symbols) {
       const known = symbols.filter((s) => config.symbols.some((spec) => spec.symbol === s));
       if (known.length === 0) return;

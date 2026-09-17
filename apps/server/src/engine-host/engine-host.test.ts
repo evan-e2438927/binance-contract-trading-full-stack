@@ -132,3 +132,32 @@ describe("盘口合并", () => {
     expect(engine.snapshot().orders).toEqual([]);
   });
 });
+
+describe("只读查询 read（第 13 讲）", () => {
+  it("排在正在落库的输入后面：读到的是落库成功之后的状态，不是 apply 了还没提交的", async () => {
+    const { host, state } = setup();
+    await ready(host);
+    state.persistDelayMs = 20;
+    const placing = host.submit(placeOrderInput(orderRequest({ clientOrderId: "c-1", price: parse("49000"), qty: parse("0.1") }), "acc-1", "o-1"));
+    const orders = await host.read((engine) => engine.openOrders("acc-1").map((o) => o.id));
+    expect(orders).toEqual(["o-1"]);
+    await placing;
+  });
+
+  it("落库失败回滚之后，读不到那张单", async () => {
+    const { host, state } = setup();
+    await ready(host);
+    state.failNext = true;
+    const placing = host.submit(placeOrderInput(orderRequest({ clientOrderId: "c-1", price: parse("49000"), qty: parse("0.1") }), "acc-1", "o-1"));
+    const read = host.read((engine) => engine.openOrders("acc-1"));
+    await expect(placing).rejects.toThrow("数据库挂了");
+    expect(await read).toEqual([]);
+  });
+
+  it("查询函数抛错只 reject 这一次读，队列照常往下走", async () => {
+    const { host } = setup();
+    await ready(host);
+    await expect(host.read(() => { throw new Error("读炸了"); })).rejects.toThrow("读炸了");
+    expect(await host.read((engine) => engine.accountView("acc-1")?.walletBalance)).toBe(parse("100000"));
+  });
+});

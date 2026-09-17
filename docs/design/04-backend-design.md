@@ -413,6 +413,8 @@ function liquidationPrice(acc, target: Position, ctx): Fixed {
 }
 ```
 
+> **更正（缺口 #39，第 13 讲）**：上面伪代码全仓分支 `cumL` 取了减号、WB 用了钱包余额，和币安 FAQ 不符：cum 一律加号，全仓 WB = crossWalletBalance，双向持仓同币对多空两条腿一起算，并按强平价处的名义价值换档重算。实现 `packages/engine/src/liquidation.ts`，FAQ 算例 ETH 1,153.26 / BTC 26,316.89 进了测试。算例 B 按换档规则为 **54,776.12**。
+
 > **已定（设计缺口 #5）**：强平价**不对齐 `tickSize`**，上面最后一行的 `alignPrice` 作废。强平价是风控阈值，不是要挂上盘口的委托价；下面算例 A 的 45,180.72 本身也不是 0.1 的整数倍。实现只在最后一步 `divRound` 四舍五入到 8 位（第 03 讲 `liquidation.ts`）。详见 `docs/tutorial/README.md` 设计缺口清单。
 
 **三个算例**（单测直接用，验算过程见 `01-domain-knowledge.md` 第六节）：
@@ -1127,6 +1129,12 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
 
 > `liquidationPrice` 由**服务端算好返回**，前端不自己算。两处算法一旦漂移，用户看到的强平价和实际执行的就不一样了。
 
+> **已定（第 13a 讲）**：实际字段对照币安 `GET /fapi/v3/account` 和 `GET /fapi/v3/positionRisk`（2026-09-17 核对），和上面示例有出入：
+> - `GET /account`：`walletBalance` `crossWalletBalance` `unrealizedPnl` `crossUnrealizedPnl` `marginBalance` `availableBalance` `positionInitialMargin`（按标记价）`openOrderMargin`（挂单冻结，含手续费预留，缺口 #40）`totalMaintMargin` `marginRatio`（全仓）`positionMode` `missingMarkPrices` `nickname` `canReset` `resetAvailableAt`；算不出来的字段为 `null`
+> - `GET /account/positions`：`positionSide` + 带符号的 `positionAmt`（缺口 #12，单向模式 BOTH）、`initialMargin` 按标记价、`roe` = 未实现盈亏 ÷ 按标记价的起始保证金（币安 FAQ ROI% 标记价口径）、`liquidationPrice` 没有强平价时为 `null`
+> - 强平价、可用余额这些数由引擎的只读视图算（`packages/engine/src/views.ts`），和风控用同一套公式、同一份分层表，服务端也不另算
+> - 列表接口统一 `{ items, nextCursor }`；挂单（`status=open`）从引擎读、不分页，历史从数据库读
+
 ### 交易（需鉴权）
 
 | 方法 | 路径 | 说明 |
@@ -1170,6 +1178,8 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
 > `queueAhead` 返回给前端是刻意的：挂单列表里显示"前方排队约 3.0 BTC"，这是这个模拟盘区别于玩具的地方，**要让用户看见**。
 
 **幂等**：相同 `(accountId, clientOrderId)` 重复提交返回已存在的那张单，不重复下单。
+
+> **已定（第 13a 讲）**：`clientOrderId` 可选（不传服务端生成），格式按币安 `^[.A-Z:/a-z0-9_-]{1,36}$`；幂等对历史订单也生效，重复提交返回原单并带响应头 `X-Idempotent-Replay: true`（缺口 #41）；并发两次同样的请求靠 `orders_acc_client_uq` 唯一索引兜底。数值字段必须是字符串、最多 8 位小数（超出拒绝，不截断）；不认识的参数（`priceProtect`、`goodTillDate` 等）直接 `INVALID_PARAMS`（缺口 #28）。按币对全撤是引擎的一个输入（`cancelAllOrders`），一个事务。调逐仓保证金 `POST /positions/isolated-margin` 请求体 `{ symbol, positionSide, amount, type: "ADD" | "REDUCE" }`（缺口 #42）；一键平仓 `POST /positions/close` 请求体 `{ symbol, positionSide }`，按仓位数量下市价单，超过市价单最大数量会被拒，不自动拆单。
 
 **参数组合速查**
 

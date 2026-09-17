@@ -47,8 +47,9 @@
 | 09 | 触发单与只减仓 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[09-trigger-orders.md](09-trigger-orders.md) |
 | 10 | 行情层：接币安 WebSocket | `apps/server/src/market` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[10-market-feed.md](10-market-feed.md) |
 | 11 | 仓储层与引擎宿主：落库、恢复、定时任务 | `apps/server` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[11-engine-host.md](11-engine-host.md) |
-| 12 | 鉴权：钱包 / 邮箱 / Google 三种登录 | `apps/server` `packages/db` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[12-auth.md](12-auth.md) |
-| 13 | REST 接口 | `apps/server/src/api` | ⬜ |
+| 12 | 鉴权：钱包 / 邮箱 / Google 三种登录 | `apps/server` `packages/db` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[12-auth.md](12-auth.md) ✅ 13a：REST `/account/positions` 按币安表示法输出（`positionSide` BOTH + `positionAmt` 带符号） |
+| 13a | REST 接口（上）：HTTP 基础设施、交易、账户 | `apps/server/src/api` `apps/server/src/http` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[13a-rest-trading-account.md](13a-rest-trading-account.md) |
+| 13b | REST 接口（下）：行情、权益快照、排行榜 | `apps/server/src/api` | ⬜ |
 | 14 | WebSocket 网关 | `apps/server/src/ws` | ⬜ |
 | — | 前端 | `apps/web` | 由 AI 直接实现 |
 
@@ -149,6 +150,9 @@
 
 - **做什么**：统一响应包络；zod 校验；`bigint` 序列化边界；限流；游标分页；交易/账户/行情/排行榜路由
 - **验收**：每个接口一条集成测试；同一个 `clientOrderId` 提交两次只产生一张单
+- **拆成两讲**（2026-09-17）：接口有 25 个，13a 做 HTTP 基础设施 + 交易 + 账户，13b 做行情 + 权益快照 + 排行榜
+- **13a 实际完成**：`http/`（数值边界：只收字符串、超过 8 位小数拒绝不截断；固定窗口限流三档；游标分页 (时间, id)）；引擎只读视图 `views.ts`（账户资产 / 仓位视图，字段对照币安 account v3 / positionRisk v3，缺标记价返回 null）+ 宿主 `read()` 排队读；引擎新输入 `cancelAllOrders`；**修了全仓强平价 cum 符号 bug（缺口 #39）**，按币安 FAQ 重写并换档重算；修了宿主队列只剩同步任务时卡死的 bug；`api/` 交易 3 + 仓位 4 + 账户 10 个接口，`app.ts` 组装；缺口 #12 #24 #26～#29 定了，新记 #39～#44；真数据库集成测试 7 条（含并发幂等、并发重置、限流、分页不重不漏）；真 server 对真实行情下单撤单
+- **13b 待做**：`/market/*` 6 个（K 线、历史资金费率代理币安并缓存，缺口 #31）、每日权益快照（#34）、`/account/equity-curve`、`/leaderboard`、杠杆最大可开（#44）
 
 ### 14 · WebSocket 网关
 
@@ -188,21 +192,27 @@
 | 21 | 排队位置变化要不要发事件落库：`queue_ahead` 是 `orders` 表的列，但 depth 每 100ms 一次 | ✅ 06：**不发事件**。内存值是准的；数据库里的值跟着成交、撤单的 `orderUpdate` 顺带写，重启后按当时盘口保守重置（`04` 第 10 节第 4 步），旧值本来就不用。仍然走 `putOrder` 进 undo 日志 |
 | 22 | **币安合约 WebSocket 地址拆分**：depth / bookTicker 走 `wss://fstream.binance.com/public/`，aggTrade / markPrice / kline 走 `/market/`（币安 "Important WebSocket Change Notice"：旧地址 `/ws`、`/stream` 2026-04-23 之后只推 `/public` 那一类数据）。`04` 第 2 节还是旧的 `/stream`，2026-09-17 实测旧地址收得到 depth、收不到 aggTrade，和公告一致。另外 aggTrade 推送有 `nq`（不含 RPI 订单的成交量），RPI 挂单不在 depth 流里 | ✅ 10：`streams.ts` 按新地址拆成两条连接；`parse.ts` 数量取 `nq`、id 取 `a`；`04` 第 2 节已加"已定" |
 | 23 | 挂单的冻结保证金只在下单、自己部分成交时算，**仓位变了不会重算别的挂单**：单向模式持多 1、挂普通限价卖 2（只冻结开空 1 的成本），之后市价平掉多头，这张挂单全成交会开空 2，冻结却只有 1 份，可用余额被高估 | ✅ 07：成交改变仓位后，同账户同币对的其它挂单按新仓位重算冻结保证金，变了就发 `orderUpdate`（`refreshFrozenMargins`）。只在仓位变化时重算，标记价变化不重算。重算后可用余额可能变负，挂单不撤——强平只看维持保证金 |
-| 24 | `01-domain-knowledge.md` 算例 B（逐仓空头强平价 54,780.88）固定用了第 1 层 0.4%，但 54,780.88 的名义价值已经超过第 1 层上限 50,000，应该用第 2 层 | ✅ 07：真实强平价 54,776.12。第 03 讲的公式测试保留（它演示公式，分层是传进去的），风控扫描按名义价值查层。`01` 第六节已加注 |
+| 24 | `01-domain-knowledge.md` 算例 B（逐仓空头强平价 54,780.88）固定用了第 1 层 0.4%，但 54,780.88 的名义价值已经超过第 1 层上限 50,000，应该用第 2 层 | ✅ 07：真实强平价 54,776.12。第 03 讲的公式测试保留（它演示公式，分层是传进去的），风控扫描按名义价值查层。`01` 第六节已加注 ✅ 13a：强平价按币安 FAQ 换档重算，算例 B 的展示强平价 = 54,776.12，和风控真正强平的位置一致（`views.test.ts` 标记价比强平价高 / 低 0.01 验证） |
 | 25 | 第 07 讲要数据库跟进的两处：① `order_type` 枚举加 `LIQUIDATION`（`packages/shared` 已改，要生成迁移）② `symbols` 表加 `liquidation_fee`（币安 exchangeInfo 币对字段，`seed:symbols` 同步），引擎 `SymbolSpec.liquidationFeeRate` 读它；`FeeConfig` 里原来的全局 `liquidationFeeRate` 已删 | ✅ 11：已做（AI 写并应用到本地库，用户 2026-09-17 授权） |
-| 26 | `ledger_entries` 的 `MARGIN_TRANSFER` 类型现在没有任何事件会产生：调逐仓保证金不改钱包余额（缺口 #6），不写流水。用户要看"调过几次保证金"的历史，只能从 `positionUpdate` 里看 | 08 定：暂不用。第 13 讲做 REST 时如果需要调整历史（币安有 `GET /fapi/v1/positionMargin/history`），再决定加表还是复用这个类型 |
-| 27 | 账户操作的错误码和币安不是一一对应：调逐仓保证金减太多，币安是 `-4051 ISOLATED_BALANCE_INSUFFICIENT`，我们沿用设计文档的 `MARGIN_WOULD_LIQUIDATE`（名字窄了：币安的上限还包括"不能低于起始保证金"）；调杠杆超范围、逐仓不能调低、设置没变都归到 `INVALID_PARAMS`。对照表见 `07-binance-reference.md` 第 9 节 | 13：REST 层返回错误时决定要不要细分，改 `packages/shared` 的 `ERROR_CODES` |
-| 28 | 触发单没实现的币安参数 / 规则：`priceProtect`（触发时标记价和最新价偏差不能超过币对 `triggerProtect`，币安默认 false）；止损 / 止盈限价单委托价相对触发价的上下限（-4183 / -4184，文档没写用哪个字段）；`TRAILING_STOP_MARKET`；`GTD` | 13：REST 下单接口定参数时决定要不要支持；支持前 zod 直接拒这些参数 |
-| 29 | 触发后沿用同一张订单（`triggered = true`），不像币安那样新开一张普通单（algoId → actualOrderId）。好处是 `orders` 表不用加映射；代价是对外接口的订单 id 语义和币安不同 | 13：REST / WS 输出订单时确认是否需要区分条件单和触发后的普通单 |
+| 26 | `ledger_entries` 的 `MARGIN_TRANSFER` 类型现在没有任何事件会产生：调逐仓保证金不改钱包余额（缺口 #6），不写流水。用户要看"调过几次保证金"的历史，只能从 `positionUpdate` 里看 | 08 定：暂不用。第 13 讲做 REST 时如果需要调整历史（币安有 `GET /fapi/v1/positionMargin/history`），再决定加表还是复用这个类型 13a：不做保证金调整历史接口，`MARGIN_TRANSFER` 继续不用 |
+| 27 | 账户操作的错误码和币安不是一一对应：调逐仓保证金减太多，币安是 `-4051 ISOLATED_BALANCE_INSUFFICIENT`，我们沿用设计文档的 `MARGIN_WOULD_LIQUIDATE`（名字窄了：币安的上限还包括"不能低于起始保证金"）；调杠杆超范围、逐仓不能调低、设置没变都归到 `INVALID_PARAMS`。对照表见 `07-binance-reference.md` 第 9 节 | 13：REST 层返回错误时决定要不要细分，改 `packages/shared` 的 `ERROR_CODES` 13a：不细分，沿用现在的错误码（`MARGIN_WOULD_LIQUIDATE` / `INVALID_PARAMS`），`message` 里写清楚最多可调多少 |
+| 28 | 触发单没实现的币安参数 / 规则：`priceProtect`（触发时标记价和最新价偏差不能超过币对 `triggerProtect`，币安默认 false）；止损 / 止盈限价单委托价相对触发价的上下限（-4183 / -4184，文档没写用哪个字段）；`TRAILING_STOP_MARKET`；`GTD` | 13：REST 下单接口定参数时决定要不要支持；支持前 zod 直接拒这些参数 ✅ 13a：`POST /orders` 用 zod 严格模式，这些参数一律 `INVALID_PARAMS`"不支持的参数：xxx" |
+| 29 | 触发后沿用同一张订单（`triggered = true`），不像币安那样新开一张普通单（algoId → actualOrderId）。好处是 `orders` 表不用加映射；代价是对外接口的订单 id 语义和币安不同 | 13：REST / WS 输出订单时确认是否需要区分条件单和触发后的普通单 13a：不区分。订单输出带 `triggered` 字段，触发后还是同一个 id |
 | 30 | **TONUSDT 已下架结算**：2026-09-17 exchangeInfo 状态 `SETTLING`（`deliveryDate` = 2026-06-23），盘口为空，但还在 `packages/db/src/brackets/open-symbols.ts` 的 `OPEN_SYMBOLS` 里。订阅它行情源永远 ready 不了 | 行情层只订阅 `TRADING` 的币对（已做）。✅ 11：用户定去掉，开放名单 19 个，`seed:symbols` 已跑；`seed:symbols` 现在遇到开放名单里不是 TRADING 的币对直接中止 |
-| 31 | 行情层第 10 讲没做的：K 线缓存和历史 K 线（设计第 1 节 `kline-store.ts`、`binance-rest.ts`）。K 线只给前端画图，引擎不用 | 13 / 14：REST 行情接口和 WS 公共频道时再做 |
+| 31 | 行情层第 10 讲没做的：K 线缓存和历史 K 线（设计第 1 节 `kline-store.ts`、`binance-rest.ts`）。K 线只给前端画图，引擎不用 | 13 / 14：REST 行情接口和 WS 公共频道时再做 → 13b |
 | 32 | 设计文档第七节"纯挂单变化（下单成功、撤单）异步批量写"没做：第 11 讲**所有事件同步、一个事务**落库。实测会产生事件的输入很少（盘口、大部分行情成交、标记价推送都是 0 个事件，不碰库），同步换来"内存 == 数据库"始终成立、kill -9 什么都不丢 | 压测（06-testing-design 第 7 节）发现落库成为瓶颈时再做批量写 |
 | 33 | 资金费结算用的是结算时间之前最后一条标记价推送（最多早 1 秒）的费率和标记价，不是币安结算那一刻的精确值；结算前最后一条推送离结算时间超过 10 秒（行情断过）就跳过这次结算 | 币安 `GET /fapi/v1/fundingRate` 能查每次结算的精确费率和标记价，要更准可以结算后异步核对（未排期） |
-| 34 | 每日权益快照（`equity_snapshots`，大纲写在第 11 讲）没做：它只服务排行榜和收益曲线，和账目正确性无关 | 13：做排行榜接口时一起做 |
+| 34 | 每日权益快照（`equity_snapshots`，大纲写在第 11 讲）没做：它只服务排行榜和收益曲线，和账目正确性无关 | 13：做排行榜接口时一起做 → 13b |
 | 35 | **JWT 载荷**：`04` 第 11 节写 `{ sub: accountId, addr, chain, iat, exp }`，是只有钱包登录时的形状；拆出 `identities` 后账户没有地址，邮箱 / Google 账户也没有链 | ✅ 12：载荷只放 `{ sub: accountId, iat, exp }`，身份信息查 `/auth/me`。第 14 讲 WS 鉴权用同一个 `verifyToken`。`04` 已加注 |
 | 36 | **SIWE statement 不能是中文**：`04` 第 11 节示例的待签名文本里声明句是"登录币安合约模拟交易平台"；EIP-4361 规定 statement 是 ASCII（viem 只检查换行，中文能生成，但严格解析的钱包 / 库会拒） | ✅ 12：用英文声明句，写明"不是交易、不花 gas"（`wallet.ts` `SIGN_IN_STATEMENT`）。Solana SIWS 用同一句。`04` 已加注 |
 | 37 | **Google 取 sub 的方式**：`04` 写"用 access_token 查 userinfo" | ✅ 12：从 token 端点直接返回的 ID token 里取 sub（OpenID Connect Core 3.1.3.7：服务端经 TLS 直接从 token 端点拿到的 ID token 可用 TLS 校验代替签名校验），少一次请求，sub 相同。`04` 已加注 |
 | 38 | **钱包 nonce 标记已用的时机**：`04` 写"取出 → 验签 → 标记已使用"，两个并发请求拿同一个签名会都通过 | ✅ 12：先用条件 `UPDATE … WHERE used_at IS NULL AND expires_at > now RETURNING message` 原子领走，再用返回的原文验签；签名不对也算用掉。邮箱验证码同理（错误计数 SQL 内 +1、条件 UPDATE 领走）。`04` 已加注 |
+| 39 | **全仓强平价公式 cum 的符号写反了**（第 03 讲 `liquidation.ts`）：写成 `+ cumB − cumL`，全仓时 cum 取了减号。第 03 讲三个算例都在 cum = 0 的第 1 层，测试没发现。另外三处和币安 FAQ 不一致：全仓 WB 用的是钱包余额（应为 crossWalletBalance）、双向持仓没把同币对多空两条腿放进同一个公式、没按"强平价处的名义价值"换档重算 | ✅ 13a：按 FAQ「How to Calculate Liquidation Price of USDⓈ-M Futures Contracts」重写，FAQ 的 ETH 1,153.26 / BTC 26,316.89 算例进测试（旧写法得 1,234.91）。这个函数只用于展示，风控强平不经过它，没影响过任何资金。`01` 第六节、`04` 4.6 节已加注 |
+| 40 | 资产接口的 `openOrderMargin` 是挂单冻结保证金之和，含 Taker 手续费预留（第 04 讲 `frozenMargin`）；币安 `totalOpenOrderInitialMargin` 只是起始保证金 | 13a：字段名不叫 openOrderInitialMargin，避免让人以为口径相同；要完全对齐得查币安挂单保证金是否含手续费（未查） |
+| 41 | **下单幂等的范围**：设计文档是"同一 `(accountId, clientOrderId)` 返回已存在的单"；币安 `newClientOrderId` 只要求"在未完成订单里唯一"，重复时报错 | 13a：按设计文档做，而且对历史订单也生效（数据库唯一索引），重复提交返回原单 + 响应头 `X-Idempotent-Replay: true`。被拒的单不入库，同一个 id 改参数可以重下 |
+| 42 | 调逐仓保证金的 `type`：币安 Modify Isolated Position Margin 用 `1` 增加 / `2` 减少 | 13a：用可读的 `"ADD"` / `"REDUCE"`。我们的接口本来就不兼容币安（`qty` 不叫 `quantity`、数值是字符串） |
+| 43 | **可用余额里全仓起始保证金按开仓价算**（`04` 4.2 节、第 04 讲），币安 positionRisk 的 `initialMargin` 是 "with current mark price"。仓位展示已按币安用标记价，但可用余额（下单校验用的那个数）还是开仓价口径，两者对不上 | 待查：币安 `availableBalance` 的全仓起始保证金用哪个价（FAQ 没查到原文前不改引擎的下单校验）。13a 在 `views.test.ts` 里明确断言了现在的口径，改的时候会红 |
+| 44 | `POST /positions/leverage` 只返回 `{ symbol, leverage }`；币安 Change Initial Leverage 还返回 `maxNotionalValue`（当前杠杆下最大可开名义价值），前端"最大可开"要用 | 13b：做 `/market/symbols` 时一起暴露分层表或最大可开 |
 
 ---
 

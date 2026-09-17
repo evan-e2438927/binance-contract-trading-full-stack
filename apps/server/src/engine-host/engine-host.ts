@@ -37,22 +37,25 @@ export interface EngineHost {
   submit(input: EngineInput): Promise<EngineEvent[]>;
   /** 行情推送：排队处理，不等结果，出错只记日志。同一币对还没处理的旧盘口会被新盘口替换掉 */
   feedMarket(input: MarketInput): void;
+  /**
+   * 只读查询（第 13 讲 REST）：排进同一个队列，轮到时同步读引擎。
+   * 不能在队列外直接读：上一个输入可能已经 apply、正在 await 落库，这时读到的是还没落库、可能被回滚的状态。
+   */
+  read<T>(fn: (engine: Engine) => T): Promise<T>;
   /** 等队列清空，测试和优雅退出用 */
   idle(): Promise<void>;
 }
 
-interface Task {
-  input: EngineInput;
-  resolve?: (events: EngineEvent[]) => void;
-  reject?: (error: unknown) => void;
-}
+type Task =
+  | { kind: "input"; input: EngineInput; resolve?: (events: EngineEvent[]) => void; reject?: (error: unknown) => void }
+  | { kind: "read"; run: () => void };
 
 export function createEngineHost(options: EngineHostOptions): EngineHost {
   const { engine, persist, isSymbolReady } = options;
   const logger = options.logger ?? console;
   const queue: Task[] = [];
   /** 还在队列里没处理的盘口任务：新盘口到了直接替换 input，不再排一个新任务（盘口是快照，只有最新的有用） */
-  const pendingBooks = new Map<string, Task>();
+  const pendingBooks = new Map<string, Extract<Task, { kind: "input" }>>();
   let running: Promise<void> | null = null;
 
   function enqueue(task: Task): void {
@@ -66,11 +69,19 @@ export function createEngineHost(options: EngineHostOptions): EngineHost {
    * 也没人处理它（写测试时真的踩到了：标记价推送卡在队列里没进引擎）。
    */
   async function drain(): Promise<void> {
+    // 先让出一次：保证 enqueue 里 `running = drain()` 的赋值发生在 drain 结束之前。
+    // 只读任务没有 await，如果不让出，drain 会同步跑完、先把 running 置 null，
+    // 随后赋值又把它设成一个已完成的 Promise——之后再入队的任务永远没人处理（第 13 讲加 read 时踩到）
+    await Promise.resolve();
     for (;;) {
       const task = queue.shift();
       if (!task) {
         running = null;
         return;
+      }
+      if (task.kind === "read") {
+        task.run();
+        continue;
       }
       if (task.input.t === "book") pendingBooks.delete(task.input.symbol);
       try {
@@ -139,7 +150,21 @@ export function createEngineHost(options: EngineHostOptions): EngineHost {
 
   return {
     submit(input) {
-      return new Promise((resolve, reject) => enqueue({ input, resolve, reject }));
+      return new Promise((resolve, reject) => enqueue({ kind: "input", input, resolve, reject }));
+    },
+    read(fn) {
+      return new Promise((resolve, reject) =>
+        enqueue({
+          kind: "read",
+          run: () => {
+            try {
+              resolve(fn(engine));
+            } catch (error) {
+              reject(error);
+            }
+          },
+        }),
+      );
     },
     feedMarket(input) {
       if (input.t === "book") {
@@ -148,12 +173,12 @@ export function createEngineHost(options: EngineHostOptions): EngineHost {
           pending.input = input;
           return;
         }
-        const task: Task = { input };
+        const task = { kind: "input" as const, input };
         pendingBooks.set(input.symbol, task);
         enqueue(task);
         return;
       }
-      enqueue({ input });
+      enqueue({ kind: "input", input });
     },
     async idle() {
       while (running) await running;

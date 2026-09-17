@@ -1,12 +1,4 @@
-import {
-  SCALE,
-  divRound,
-  mul,
-  mulRound,
-  type Fixed,
-  type MarginMode,
-  type PositionSide,
-} from "@binance-contract-trading-full-stack/shared";
+import { SCALE, divRound, mul, mulRound, type Fixed } from "@binance-contract-trading-full-stack/shared";
 import type { LeverageBracket } from "./types";
 
 /**
@@ -48,54 +40,76 @@ export function marginRatio(maintMarginSum: Fixed, marginBalanceValue: Fixed): F
   return divRound(maintMarginSum, marginBalanceValue);
 }
 
-export interface LiquidationPriceInput {
-  positionSide: PositionSide; // 调用前把 BOTH 按仓位实际方向解析成 LONG/SHORT
-  marginMode: MarginMode;
-  qty: Fixed;
+/** 强平价公式里的一条腿：这个币对上的一个仓位（单向模式一条；双向全仓时多、空两条一起算）。 */
+export interface LiquidationLeg {
+  side: "LONG" | "SHORT";
+  qty: Fixed; // 非负
   entryPrice: Fixed;
-  /** 仅 ISOLATED 用：这个仓位自己的逐仓保证金。 */
-  isolatedMargin: Fixed;
-  /** 仅 CROSS 用：账户钱包余额。 */
+}
+
+export interface LiquidationPriceInput {
+  /**
+   * WB。全仓：全仓钱包余额 crossWalletBalance（钱包余额 − 逐仓保证金，缺口 #6）；
+   * 逐仓：这个仓位自己的逐仓保证金。
+   */
   walletBalance: Fixed;
-  /** 仅 CROSS 用：除本仓位外，其余全仓仓位的维持保证金之和（TMM₁）。 */
-  otherCrossMaintMarginSum: Fixed;
-  /** 仅 CROSS 用：除本仓位外，其余全仓仓位的未实现盈亏之和（UPNL₁）。 */
-  otherCrossUnrealizedPnlSum: Fixed;
-  /** 本仓位名义价值所在的分层。 */
-  bracket: Pick<LeverageBracket, "mmr" | "cum">;
+  /** TMM₁：其它币对全仓仓位的维持保证金之和（按各自标记价）。逐仓传 0。 */
+  otherMaintMarginSum: Fixed;
+  /** UPNL₁：其它币对全仓仓位的未实现盈亏之和（按各自标记价）。逐仓传 0。 */
+  otherUnrealizedPnlSum: Fixed;
+  /** 本币对参与计算的仓位。全仓双向模式把多、空两条都传进来；逐仓每个仓位单独算，只传一条。 */
+  legs: readonly LiquidationLeg[];
+  /** 本币对的分层表（按 notionalCap 升序）：每条腿按"强平价处的名义价值"选层 */
+  brackets: readonly LeverageBracket[];
 }
 
 /**
- * 强平价——币安通用公式，01-domain-knowledge.md 第六节推导过，三个算例都验过反算：
+ * 强平价，按币安 FAQ「How to Calculate Liquidation Price of USDⓈ-M Futures Contracts」（2026-09-17 核对，页面更新于 2025-12-31）：
  *
- *   强平价 = (WB − TMM₁ + UPNL₁ + cumB − cumL − Side₁×Pos₁×EP₁) ÷ (Pos₁×MMR₁ − Side₁×Pos₁)
+ *   强平价 = (WB − TMM₁ + UPNL₁ + cumB + cumL + cumS − Side_B×Pos_B×EP_B − Pos_L×EP_L + Pos_S×EP_S)
+ *          ÷ (Pos_B×MMR_B + Pos_L×MMR_L + Pos_S×MMR_S − Side_B×Pos_B − Pos_L + Pos_S)
  *
- * ⚠️ 设计缺口 #5 的结论：**不对齐 tickSize**。4.6 节伪代码里写了 alignPrice(...)，
- * 但算例 A 的强平价 45,180.72 本身就不是 0.1（典型 tickSize）的整数倍——强平价是一个纯粹的
- * 计算阈值，不是要挂到盘口上的委托价，不需要对齐任何交易所的价格粒度。这里只在最终一步
- * 用 divRound 四舍五入到 8 位（02-architecture.md 舍入表："强平价……四舍五入到 8 位"），
- * 公式中间的每一项乘法都用默认截断的 mul——多步都四舍五入只会累积误差，不会更准。
+ * 写成"腿"的形式就是：分子 = WB − TMM₁ + UPNL₁ + Σcum − Σ(方向×数量×开仓价)，分母 = Σ(数量×MMR) − Σ(方向×数量)，
+ * 方向多头 +1、空头 −1。推导：强平价处 全仓权益 WB + UPNL₁ + Σ方向×数量×(P − 开仓价) = TMM₁ + Σ(数量×P×MMR − cum)，解出 P。
+ *
+ * ⚠️ 第 13 讲修正（缺口 #39）：原来的写法是 `+ cumB − cumL`，把全仓的 cum 当成减号。
+ * 第 03 讲三个算例都落在 cum = 0 的第 1 层，测试没发现；拿 FAQ 的 ETH / BTC 算例一对就错了
+ * （ETHUSDT 应为 1,153.26，旧写法得 1,234.91）。这个函数只用于展示，风控强平不经过它，没有影响过任何资金。
+ *
+ * 选层（FAQ "Note"）：假设一个档位算出强平价，如果强平价处的名义价值落在别的档，就换那一档重算。
+ * 这里从开仓价处的名义价值起步，最多迭代到档位数那么多次；分层表在边界上连续（维持保证金两层相等），
+ * 边界上来回跳时两种选法结果相同，取最后一次。这也顺带修了缺口 #24（算例 B 应该是第 2 层的 54,776.12）。
+ *
+ * 返回 null = 没有强平价：分母为 0（双向全仓多空数量对冲、价格怎么走权益都不降到维持保证金）
+ * 或算出来 ≤ 0（钱包足够扛到价格归零）。币安这两种情况显示 0 / "--"，我们返回 null，不编一个数。
+ *
+ * 不对齐 tickSize（缺口 #5）：强平价是计算阈值，不是委托价。最后一步 divRound 四舍五入到 8 位。
  */
-export function liquidationPrice(input: LiquidationPriceInput): Fixed {
-  const isShort = input.positionSide === "SHORT";
-  const isIsolated = input.marginMode === "ISOLATED";
+export function liquidationPrice(input: LiquidationPriceInput): Fixed | null {
+  const legs = input.legs.filter((leg) => leg.qty > 0n);
+  if (legs.length === 0) return null;
 
-  const WB = isIsolated ? input.isolatedMargin : input.walletBalance;
-  const TMM = isIsolated ? 0n : input.otherCrossMaintMarginSum;
-  const UPNL = isIsolated ? 0n : input.otherCrossUnrealizedPnlSum;
-  const cumB = isIsolated ? input.bracket.cum : 0n;
-  const cumL = isIsolated ? 0n : input.bracket.cum;
-
-  // Side₁ × Pos₁ × EP₁：用符号分支代替真的去乘一个 ±1，省掉一次没有意义的 Fixed 乘法
-  const sideTerm = mul(input.qty, input.entryPrice);
-  const numerator = WB - TMM + UPNL + cumB - cumL - (isShort ? -sideTerm : sideTerm);
-
-  // Pos₁ × MMR₁ − Side₁ × Pos₁
-  const mmrTerm = mul(input.qty, input.bracket.mmr);
-  const denominator = mmrTerm - (isShort ? -input.qty : input.qty);
-
-  if (denominator === 0n) {
-    throw new Error("强平价分母为 0：说明分层 mmr 和仓位方向凑巧抵消，检查分层表或调用参数");
+  let chosen = legs.map((leg) => findBracket(input.brackets, mul(leg.qty, leg.entryPrice)));
+  let price: Fixed | null = null;
+  for (let round = 0; round <= input.brackets.length; round++) {
+    price = solve(input, legs, chosen);
+    if (price === null) return null;
+    const next = legs.map((leg) => findBracket(input.brackets, mul(leg.qty, price!)));
+    if (next.every((bracket, i) => bracket === chosen[i])) break;
+    chosen = next;
   }
+  return price !== null && price > 0n ? price : null;
+}
+
+function solve(input: LiquidationPriceInput, legs: readonly LiquidationLeg[], brackets: readonly LeverageBracket[]): Fixed | null {
+  let numerator = input.walletBalance - input.otherMaintMarginSum + input.otherUnrealizedPnlSum;
+  let denominator = 0n;
+  legs.forEach((leg, i) => {
+    const bracket = brackets[i]!;
+    const sideTerm = mul(leg.qty, leg.entryPrice);
+    numerator += bracket.cum - (leg.side === "LONG" ? sideTerm : -sideTerm);
+    denominator += mul(leg.qty, bracket.mmr) - (leg.side === "LONG" ? leg.qty : -leg.qty);
+  });
+  if (denominator === 0n) return null;
   return divRound(numerator, denominator);
 }

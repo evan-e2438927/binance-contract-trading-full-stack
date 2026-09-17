@@ -272,6 +272,8 @@ export type EngineInput =
       ts: number;
     }
   | { t: "cancelOrder"; accountId: string; orderId: string; ts: number }
+  // 撤掉这个账户在这个币对上的全部未完成订单（含未触发的条件单），一次 apply、一个事务（第 13 讲，币安 DELETE /fapi/v1/allOpenOrders）
+  | { t: "cancelAllOrders"; accountId: string; symbol: string; ts: number }
   | {
       t: "setLeverage";
       accountId: string;
@@ -365,6 +367,50 @@ export interface EngineSnapshot {
   orders: Order[];
 }
 
+// ─────────────────────────────────────────────────────────────
+// 只读视图：REST / WS 展示用（第 13 讲）。算不出来的字段为 null，不拿 0 顶替
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 账户资产，字段口径对照币安 `GET /fapi/v3/account`（2026-09-17 核对）。
+ * 缺标记价的币对列在 missingMarkPrices 里，依赖它们的字段为 null。
+ */
+export interface AccountView {
+  accountId: string;
+  positionMode: PositionMode;
+  walletBalance: Fixed; // totalWalletBalance
+  crossWalletBalance: Fixed; // totalCrossWalletBalance：钱包余额 − 逐仓保证金
+  unrealizedPnl: Fixed | null; // totalUnrealizedProfit：全部仓位按标记价
+  crossUnrealizedPnl: Fixed | null; // totalCrossUnPnl
+  marginBalance: Fixed | null; // totalMarginBalance = 钱包余额 + 全部未实现盈亏
+  positionInitialMargin: Fixed | null; // totalPositionInitialMargin：按标记价 ÷ 杠杆
+  openOrderMargin: Fixed; // 挂单冻结保证金之和（含 Taker 手续费预留，比币安 openOrderInitialMargin 口径多一点，见缺口 #40）
+  maintMargin: Fixed | null; // totalMaintMargin
+  availableBalance: Fixed | null; // 4.2 节可用余额（引擎下单校验用的同一个数）
+  marginRatio: Fixed | null; // 全仓保证金率 = 全仓维持保证金 ÷ (全仓钱包余额 + 全仓未实现盈亏)，1 = 100%
+  missingMarkPrices: string[];
+}
+
+/** 仓位视图，字段口径对照币安 `GET /fapi/v3/positionRisk`（2026-09-17 核对）。方向仍是引擎表示法 LONG / SHORT + 非负数量 */
+export interface PositionView {
+  symbol: string;
+  positionSide: "LONG" | "SHORT";
+  marginMode: MarginMode;
+  leverageNum: number;
+  qty: Fixed;
+  entryPrice: Fixed;
+  markPrice: Fixed | null;
+  notional: Fixed | null; // 按标记价
+  unrealizedPnl: Fixed | null;
+  initialMargin: Fixed | null; // 币安："initial margin required with current mark price"
+  maintMargin: Fixed | null;
+  isolatedMargin: Fixed; // 全仓为 0
+  liquidationPrice: Fixed | null; // null = 没有强平价，或缺标记价算不出来
+  roe: Fixed | null; // 未实现盈亏 ÷ 按标记价的起始保证金（币安 FAQ ROI% 标记价口径），0.2 = 20%
+  openedAt: number;
+  updatedAt: number;
+}
+
 /**
  * 宿主的调用协议：
  *
@@ -390,4 +436,11 @@ export interface Engine {
   snapshot(): EngineSnapshot;
   /** 用快照整体替换账户类状态，行情状态保持不变。有未结算的 apply 时抛错。 */
   restore(snapshot: EngineSnapshot): void;
+  /**
+   * 只读查询（第 13 讲，views.ts）。有未结算的 apply 时抛错——读到的必须是已落库的状态，
+   * 宿主通过队列（engine-host 的 read）保证这一点。账户不存在返回 null / 空数组。
+   */
+  accountView(accountId: string): AccountView | null;
+  positionViews(accountId: string): PositionView[];
+  openOrders(accountId: string): Order[];
 }

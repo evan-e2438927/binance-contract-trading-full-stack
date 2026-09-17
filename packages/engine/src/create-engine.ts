@@ -2,6 +2,7 @@ import { applyInput } from "./apply";
 import { beginJournal, commitJournal, rollbackJournal } from "./journal";
 import { createState, loadSnapshot, toSnapshot } from "./state";
 import type { Engine, EngineConfig, EngineSnapshot } from "./types";
+import { accountView, openOrders, positionViews } from "./views";
 
 export function createEngine(config: EngineConfig, initial?: EngineSnapshot): Engine {
   const state = createState(config);
@@ -25,5 +26,8 @@ export function createEngine(config: EngineConfig, initial?: EngineSnapshot): En
     rollback: () => rollbackJournal(state),
     snapshot: () => toSnapshot(state),
     restore: (snapshot) => loadSnapshot(state, snapshot),
+    accountView: (accountId) => accountView(state, accountId),
+    positionViews: (accountId) => positionViews(state, accountId),
+    openOrders: (accountId) => openOrders(state, accountId),
   };
 }

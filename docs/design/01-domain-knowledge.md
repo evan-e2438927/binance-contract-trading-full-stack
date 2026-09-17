@@ -220,6 +220,12 @@ ROE = 未实现盈亏 ÷ 起始保证金
 
 看着吓人，但**单仓位**时会塌缩成很简单的式子。
 
+> **更正（缺口 #39，第 13 讲，2026-09-17 对照币安 FAQ「How to Calculate Liquidation Price of USDⓈ-M Futures Contracts」）**：上面这个式子有两处不对。
+> ① cum 全是加号：FAQ 原文是 `WB − TMM₁ + UPNL₁ + cumB + cumL + cumS − …`，其中 cumB 是**单向模式**仓位的速算额、cumL / cumS 是**双向模式**多 / 空仓位的，不是"逐仓 / 全仓"。
+> 按"权益 = 维持保证金"自己推一遍也是加号：`WB + Q×(P − EP) = Q×P×MMR − cum`，解出 `P = (WB + cum − Q×EP) ÷ (Q×MMR − Q)`。
+> ② 全仓时 WB 是 crossWalletBalance（钱包余额 − 逐仓保证金）；双向持仓时同币对的多空两个仓位一起进分子分母；假设的档位和强平价处的名义价值对不上时换档重算。
+> 下面三个算例 cum 都是 0，结果不受影响，只有算例 B 按换档规则应为 54,776.12（缺口 #24）。实现和 FAQ 的 ETH / BTC 算例测试见 `packages/engine/src/liquidation.ts`。
+
 ### 算例 A · 逐仓多头
 
 BTCUSDT 逐仓开多，开仓价 50,000，数量 1 BTC，10 倍杠杆。

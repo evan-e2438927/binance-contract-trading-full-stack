@@ -373,3 +373,25 @@ describe("撤单", () => {
     expect(rejected("acc-1", "o-1")[0]).toMatchObject({ t: "rejected", code: "ORDER_NOT_FOUND" }); // 撤两次
   });
 });
+
+describe("按币对全撤 cancelAllOrders（第 13 讲）", () => {
+  it("撤掉这个账户在这个币对上的全部挂单，释放冻结保证金；别的账户不受影响；没有挂单也不报错", () => {
+    const t = createTestEngine(testConfig());
+    t.apply(registerAccountInput("acc-1"));
+    t.apply(registerAccountInput("acc-2"));
+    t.apply(bookInput());
+    t.apply(markPriceInput("50000"));
+    t.apply(placeOrderInput(orderRequest({ clientOrderId: "a", price: parse("49000"), qty: parse("0.1") }), "acc-1", "o-a"));
+    t.apply(placeOrderInput(orderRequest({ clientOrderId: "b", price: parse("48900"), qty: parse("0.1") }), "acc-1", "o-b"));
+    t.apply(placeOrderInput(orderRequest({ clientOrderId: "c", price: parse("49000"), qty: parse("0.1") }), "acc-2", "o-c"));
+
+    const events = t.apply({ t: "cancelAllOrders", accountId: "acc-1", symbol: "BTCUSDT", ts: T0 + 5 });
+    expect(events.map((e) => (e.t === "orderUpdate" ? [e.order.id, e.order.status, e.order.frozenMargin] : e.t))).toEqual([
+      ["o-a", "CANCELED", 0n],
+      ["o-b", "CANCELED", 0n],
+    ]);
+    expect(t.engine.openOrders("acc-1")).toEqual([]);
+    expect(t.engine.openOrders("acc-2").map((o) => o.id)).toEqual(["o-c"]);
+    expect(t.apply({ t: "cancelAllOrders", accountId: "acc-1", symbol: "BTCUSDT", ts: T0 + 6 })).toEqual([]);
+  });
+});

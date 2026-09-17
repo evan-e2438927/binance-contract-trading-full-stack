@@ -1,7 +1,7 @@
 import { putAccount } from "./journal";
 import { requireSymbol, type EngineState } from "./state";
 import { executeOrder } from "./execute-order";
-import { cancelOrder, matchTrade, reconcileBook } from "./resting-orders";
+import { cancelAllOrders, cancelOrder, matchTrade, reconcileBook } from "./resting-orders";
 import { accountsHolding, riskScan } from "./risk";
 import { adjustIsolatedMargin, resetAccount, setLeverage, setMarginMode, setPositionMode } from "./account-ops";
 import { settleFunding } from "./funding";
@@ -32,6 +32,8 @@ export function applyInput(state: EngineState, input: EngineInput): EngineEvent[
       return placeOrder(state, input);
     case "cancelOrder":
       return cancelOrder(state, input);
+    case "cancelAllOrders":
+      return cancelAllOrders(state, input);
     case "settleFunding":
       return settleFunding(state, input);
     case "setLeverage":

@@ -8,7 +8,7 @@ import {
   refreshFrozenMargins,
   restingFrozenMargin,
 } from "./execute-order";
-import { sortedOrders, type EngineState } from "./state";
+import { requireSymbol, sortedOrders, type EngineState } from "./state";
 import type { EngineEvent, EngineInput, Order } from "./types";
 
 /**
@@ -150,4 +150,16 @@ export function cancelOrder(state: EngineState, input: InputOf<"cancelOrder">): 
   }
   removeOrder(state, order.id);
   return [{ t: "orderUpdate", order: { ...order, status: "CANCELED", frozenMargin: 0n, updatedAt: input.ts } }];
+}
+
+/**
+ * 按币对全撤（第 13 讲）。没有挂单也算成功、返回空事件——币安 DELETE /fapi/v1/allOpenOrders 同样不报错。
+ * 未知币对是宿主接线错误（REST 层应该先挡掉），直接抛。
+ */
+export function cancelAllOrders(state: EngineState, input: InputOf<"cancelAllOrders">): EngineEvent[] {
+  requireSymbol(state, input.symbol);
+  return sortedOrders(state, (o) => o.accountId === input.accountId && o.symbol === input.symbol).map((order) => {
+    removeOrder(state, order.id);
+    return { t: "orderUpdate", order: { ...order, status: "CANCELED", frozenMargin: 0n, updatedAt: input.ts } };
+  });
 }

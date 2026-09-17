@@ -268,10 +268,27 @@
 
 ---
 
-## 11. 还没核对、写到时要查的
+## 11. 账户与仓位展示（第 13a 讲）
+
+**出处**：REST `GET /fapi/v3/account`、`GET /fapi/v3/positionRisk` 网页版字段说明；FAQ「How to Calculate Liquidation Price of USDⓈ-M Futures Contracts」（页面更新于 2025-12-31）、「How to Calculate Profit and Loss for Futures Contracts」（页面更新于 2026-02-02）｜核对：2026-09-17
+
+| 项 | 币安 | 我们 |
+| --- | --- | --- |
+| 账户字段 | `totalWalletBalance` `totalUnrealizedProfit` `totalMarginBalance` `totalPositionInitialMargin` `totalOpenOrderInitialMargin` `totalMaintMargin` `totalCrossWalletBalance` `totalCrossUnPnl` `availableBalance` | `GET /account` 同口径（`openOrderMargin` 含手续费预留，缺口 #40） |
+| 仓位起始保证金 | positionRisk `initialMargin`："initial margin required with current mark price" | 按标记价 ÷ 杠杆（可用余额里还是开仓价口径，缺口 #43） |
+| 强平价公式 | `(WB − TMM₁ + UPNL₁ + cumB + cumL + cumS − Side_B×Pos_B×EP_B − Pos_L×EP_L + Pos_S×EP_S) ÷ (Pos_B×MMR_B + Pos_L×MMR_L + Pos_S×MMR_S − Side_B×Pos_B − Pos_L + Pos_S)`；全仓 WB = crossWalletBalance，逐仓 WB = 该仓位逐仓钱包、TMM = UPNL = 0；档位对不上时换档重算 | `liquidation.ts`，FAQ 算例 ETH 1,153.26 / BTC 26,316.89 进测试（缺口 #39） |
+| ROI% | 标记价口径：未实现盈亏 ÷ (标记价 × 数量 × IMR)，IMR = 1 / 杠杆 | 仓位 `roe` 同口径 |
+| 撤单 | `DELETE /fapi/v1/allOpenOrders` 按币对全撤 | `DELETE /orders?symbol=`，含未触发的条件单 |
+| `newClientOrderId` | "A unique id among open orders. Automatically generated if not sent"，规则 `^[\.A-Z\:/a-z0-9_-]{1,36}$` | 同规则；幂等范围比币安大（缺口 #41） |
+| 调杠杆 | 参数说明只有 "target initial leverage"，上限按分层表（BTCUSDT 第 1 层现在 150x） | 接口只校验 ≥ 1 的整数，上限由引擎按分层表判 |
+
+---
+
+## 12. 还没核对、写到时要查的
 
 | 讲 | 要查的币安规则 |
 | --- | --- |
-| 07 | ✅ 已核对，见第 8 节。**还没查**：强平价展示公式的最新口径（FAQ "How to Calculate Liquidation Price of USDⓈ-M Futures Contracts"，第 13 讲 REST 仓位接口要展示强平价时再查）；可用余额 `availableBalance` 能不能为负（不影响引擎：强平线在维持保证金，缺口 #19 已按"下单不能把它变负"定） |
+| 07 | ✅ 已核对，见第 8 节；强平价展示公式 ✅ 13a 已查，见第 11 节。**还没查**：可用余额 `availableBalance` 能不能为负（不影响引擎：强平线在维持保证金，缺口 #19 已按"下单不能把它变负"定） |
 | 08 | ✅ 已核对，见第 9 节 |
 | 09 | ✅ 已核对，见第 10 节。**还没查**：`priceProtect` 触发时怎么判（`triggerProtect` 的含义）、止损限价单委托价上下限用的是哪个字段（缺口 #28，要做时再查） |
+| 13a | ✅ 账户 / 仓位字段、强平价公式、ROI% 已查，见第 11 节。**还没查**：`availableBalance` 的全仓起始保证金按开仓价还是标记价（缺口 #43）；`totalOpenOrderInitialMargin` 含不含手续费（缺口 #40） |
