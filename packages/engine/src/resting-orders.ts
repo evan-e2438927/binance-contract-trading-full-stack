@@ -1,8 +1,14 @@
 import { putOrder, removeOrder } from "./journal";
 import { addToPosition } from "./position";
 import { consumeQueue, reconcileQueue } from "./queue";
-import { applyFill, cancelResidualClosingOrders, nothingLeftToClose, restingFrozenMargin } from "./execute-order";
-import type { EngineState } from "./state";
+import {
+  applyFill,
+  cancelResidualClosingOrders,
+  nothingLeftToClose,
+  refreshFrozenMargins,
+  restingFrozenMargin,
+} from "./execute-order";
+import { sortedOrders, type EngineState } from "./state";
 import type { EngineEvent, EngineInput, Order } from "./types";
 
 /**
@@ -18,20 +24,10 @@ import type { EngineEvent, EngineInput, Order } from "./types";
 
 type InputOf<T extends EngineInput["t"]> = Extract<EngineInput, { t: T }>;
 
-/**
- * 某个币对上参与撮合的挂单，按下单时间、再按 id 排序。
- * 不能直接用 Map 的迭代顺序：rollback 会把删掉的键重新放回 Map 末尾，顺序就变了，
- * 同样的输入会产出不同顺序的事件——引擎承诺的"确定性"就破了。
- */
+/** 某个币对上参与撮合的挂单，按下单时间、再按 id 排序（排序的理由见 state.ts 的 sortedOrders）。 */
 function restingOrders(state: EngineState, symbol: string): Readonly<Order>[] {
-  const list: Readonly<Order>[] = [];
-  for (const order of state.orders.values()) {
-    if (order.symbol !== symbol || order.price === null) continue;
-    // 还没触发的触发单不在盘口上（第 09 讲）
-    if (order.type !== "LIMIT" && !order.triggered) continue;
-    list.push(order);
-  }
-  return list.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // 还没触发的触发单不在盘口上（第 09 讲）
+  return sortedOrders(state, (o) => o.symbol === symbol && o.price !== null && (o.type === "LIMIT" || o.triggered));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -123,6 +119,7 @@ function fillResting(
     { t: "orderUpdate", order: updated },
     ...(result ? result.events : []),
     ...(result ? cancelResidualClosingOrders(state, updated, new Set(result.closedSides), input.ts) : []),
+    ...(result ? refreshFrozenMargins(state, updated, input.ts) : []),
   ];
 }
 

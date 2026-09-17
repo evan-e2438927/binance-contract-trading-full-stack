@@ -24,6 +24,18 @@
 
 `docs/books-tutorial.md` 和 `docs/db-notes.md` 是早前跑通全栈链路的练手记录，**和本项目业务无关**，不要照着它们建表。
 
+### 查币安规则的顺序
+
+设计文档没说清、拿不准时以币安为标准（决策规则见 `HANDOFF.md` 第六节）。查的时候按这个顺序，**不要凭记忆写币安的规则或数字**：
+
+1. `docs/design/07-binance-reference.md`：已经核对过的规则，带出处和核对日期
+2. 本地副本 `docs/vendor/binance/`（说明见同目录 `README.md`）：
+   - `usds-futures.txt`：U 本位合约的错误码、更新日志、WebSocket 行情流
+   - `rest-api/TradeAPI.md` 等：REST 接口参数说明（下单、条件单、仓位、杠杆）
+   - 这些文件**不进 git**。目录里只有 `README.md` 和 `fetch.mjs` 时，先跑 `pnpm run docs:binance`
+3. 本地没有的（参数默认值、接口下方的备注、FAQ 里的公式）：用浏览器打开币安网页版，文档站是动态页面，`curl` 拿不到正文
+4. 查到新规则或发现和 07 不一致：补进 `07-binance-reference.md`，写明出处和核对日期
+
 ---
 
 ## 五条硬约束

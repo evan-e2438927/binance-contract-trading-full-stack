@@ -2,6 +2,7 @@ import { putAccount } from "./journal";
 import { requireSymbol, type EngineState } from "./state";
 import { executeOrder } from "./execute-order";
 import { cancelOrder, matchTrade, reconcileBook } from "./resting-orders";
+import { accountsHolding, riskScan } from "./risk";
 import { validateOrder } from "./validate-order";
 import type { EngineEvent, EngineInput } from "./types";
 
@@ -63,15 +64,16 @@ function applyMarkPrice(state: EngineState, input: InputOf<"markPrice">): Engine
     nextFundingTs: input.nextFundingTs,
     ts: input.ts,
   });
-  // 模块 07/09：标记价更新后要检查触发单、跑风控扫描
-  return [];
+  // 5.2 节：① 更新标记价 ② 未实现盈亏是现算的，不用存 ③ 触发单（第 09 讲）④ 风控扫描：这个币对上有仓位的账户
+  return riskScan(state, accountsHolding(state, input.symbol), input.ts);
 }
 
 function applyTrade(state: EngineState, input: InputOf<"trade">): EngineEvent[] {
   requireSymbol(state, input.symbol);
-  // 5.2 节：① 更新最新价 ② 消耗挂单队列、轮到的按挂单价成交并落账；④ 风控扫描是第 07 讲
+  // 5.2 节：① 更新最新价 ② 消耗挂单队列、轮到的按挂单价成交并落账 ④ 有成交的账户跑风控扫描
   state.lastPrices.set(input.symbol, input.price);
-  return matchTrade(state, input);
+  const events = matchTrade(state, input);
+  return [...events, ...riskScan(state, filledAccounts(events), input.ts)];
 }
 
 function registerAccount(state: EngineState, input: InputOf<"registerAccount">): EngineEvent[] {
@@ -127,7 +129,14 @@ function placeOrder(state: EngineState, input: InputOf<"placeOrder">): EngineEve
   }
 
   // 第 05 讲：市价单逐档成交、限价单穿透部分成交；第 06 讲：不穿透的挂单估算排队位置后入簿；第 09 讲：触发单入簿
-  return executeOrder(state, input, result.order);
+  const events = executeOrder(state, input, result.order);
+  // 成交之后跑风控扫描（04-backend-design.md 第 8 节"检测时机"）
+  return [...events, ...riskScan(state, filledAccounts(events), input.ts)];
+}
+
+/** 这批事件里有成交的账户。 */
+function filledAccounts(events: readonly EngineEvent[]): string[] {
+  return events.flatMap((e) => (e.t === "fill" ? [e.fill.accountId] : []));
 }
 
 function assertNever(value: never): never {

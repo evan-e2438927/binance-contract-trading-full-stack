@@ -347,6 +347,7 @@ export function validateOrder(
  * 币安报 -1106 PARAM_NOT_REQUIRED，我们同样拒。
  */
 function checkParams(req: PlaceOrderRequest, positionMode: PositionMode): string | null {
+  if (req.type === "LIQUIDATION") return "LIQUIDATION 是系统强平单，不能手动下单";
   const isTrigger = TRIGGER_TYPES.includes(req.type);
   const isPriced = PRICED_TYPES.includes(req.type);
 

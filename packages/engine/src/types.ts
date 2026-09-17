@@ -44,6 +44,8 @@ export interface SymbolSpec {
   percentPriceDown: Fixed; // multiplierDown，BTCUSDT 0.95 → parse("0.95")
   // MAX_NUM_ORDERS（校验链第 13 步）
   maxNumOrdersNum: number; // 每个账户在这个币对上最多挂多少单，BTCUSDT 200
+  // exchangeInfo 币对级字段 liquidationFee（第 07 讲）
+  liquidationFeeRate: Fixed; // 强平清算费率，按币对不同：BTCUSDT 0.0125（1.25%）、SOLUSDT 0.015
 }
 
 /**
@@ -64,7 +66,7 @@ export interface LeverageBracket {
 export interface FeeConfig {
   makerFeeRate: Fixed; // 挂单方手续费率
   takerFeeRate: Fixed; // 吃单方手续费率
-  liquidationFeeRate: Fixed; // 强平清算费率（设计文档第 8 节：0.5%）
+  // 强平清算费率不在这里：币安按币对设置，见 SymbolSpec.liquidationFeeRate（第 07 讲）
 }
 
 /**
@@ -238,7 +240,13 @@ export type EngineInput =
       nextFundingTs: number;
       ts: number;
     }
-  | { t: "settleFunding"; symbol: string; rate: Fixed; markPrice: Fixed; ts: number }
+  | {
+      t: "settleFunding";
+      symbol: string;
+      rate: Fixed;
+      markPrice: Fixed;
+      ts: number;
+    }
   // —— 账户（来自鉴权/账户接口） ——
   | {
       t: "registerAccount";
@@ -250,10 +258,28 @@ export type EngineInput =
   | { t: "resetAccount"; accountId: string; walletBalance: Fixed; ts: number }
   | { t: "setPositionMode"; accountId: string; mode: PositionMode; ts: number }
   // —— 交易（来自交易接口） ——
-  | { t: "placeOrder"; accountId: string; orderId: string; req: PlaceOrderRequest; ts: number }
+  | {
+      t: "placeOrder";
+      accountId: string;
+      orderId: string;
+      req: PlaceOrderRequest;
+      ts: number;
+    }
   | { t: "cancelOrder"; accountId: string; orderId: string; ts: number }
-  | { t: "setLeverage"; accountId: string; symbol: string; leverageNum: number; ts: number }
-  | { t: "setMarginMode"; accountId: string; symbol: string; mode: MarginMode; ts: number }
+  | {
+      t: "setLeverage";
+      accountId: string;
+      symbol: string;
+      leverageNum: number;
+      ts: number;
+    }
+  | {
+      t: "setMarginMode";
+      accountId: string;
+      symbol: string;
+      mode: MarginMode;
+      ts: number;
+    }
   | {
       t: "adjustIsolatedMargin";
       accountId: string;
@@ -280,7 +306,12 @@ export type EngineEvent =
   | { t: "fill"; fill: Fill }
   | { t: "positionUpdate"; position: Position }
   | { t: "settingUpdate"; setting: AccountSymbolSetting }
-  | { t: "positionModeUpdate"; accountId: string; positionMode: PositionMode; ts: number }
+  | {
+      t: "positionModeUpdate";
+      accountId: string;
+      positionMode: PositionMode;
+      ts: number;
+    }
   | {
       // ★ 唯一能改余额的事件。宿主把它落成一条 ledger_entries，balanceAfter = walletBalance
       t: "balanceUpdate";

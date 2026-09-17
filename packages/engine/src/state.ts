@@ -130,6 +130,32 @@ export function createState(config: EngineConfig): EngineState {
   };
 }
 
+/**
+ * 按条件取未完成订单，按下单时间、再按 id 排序。
+ * 不能直接用 Map 的迭代顺序：rollback 会把删掉的键重新放回 Map 末尾，顺序就变了，
+ * 同样的输入会产出不同顺序的事件——引擎承诺的"确定性"就破了（第 06 讲）。
+ */
+export function sortedOrders(
+  state: EngineState,
+  filter: (order: Readonly<Order>) => boolean,
+): Readonly<Order>[] {
+  return [...state.orders.values()]
+    .filter(filter)
+    .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/** 按币对、再按方向排序的仓位列表，理由同 sortedOrders。 */
+export function sortedPositions(
+  state: EngineState,
+  filter: (position: Readonly<Position>) => boolean,
+): Readonly<Position>[] {
+  return [...state.positions.values()]
+    .filter(filter)
+    .sort((a, b) =>
+      a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : a.positionSide < b.positionSide ? -1 : a.positionSide > b.positionSide ? 1 : 0,
+    );
+}
+
 export function requireSymbol(state: EngineState, symbol: string): SymbolSpec {
   const spec = state.symbols.get(symbol);
   if (!spec) {

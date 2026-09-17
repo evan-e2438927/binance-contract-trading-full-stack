@@ -779,6 +779,17 @@ if (positionEquity <= maintMargin(该仓位)) → 该仓位强平
 
 **为什么单收清算费**：币安把清算成本包在 MMR 里，穿仓部分由保险基金承担。我们不做保险基金，所以显式收一笔 0.5%，让"爆仓比自己平仓亏得多"这件事在模拟盘里也成立——这正是强平最重要的教学点。
 
+> **已定（第 07 讲，按币安核对后改了上面四处）**，依据币安 FAQ "Binance Futures Liquidation Protocols"（2026-01-04 更新）、"What Is Auto-Deleveraging (ADL)"（2026-01-13 更新）、`GET /fapi/v1/exchangeInfo`（2026-09-17）：
+>
+> 1. **全仓权益要减逐仓保证金**：上面伪代码的 `marginBalance = walletBalance + Σ unrealizedPnl(所有仓位)` 是在"逐仓保证金从钱包扣出去"的假设下写的。缺口 #6 定了逐仓保证金留在钱包里，所以全仓判定用 `全仓钱包余额（钱包 − Σ 逐仓保证金）+ Σ 全仓仓位的未实现盈亏 ≤ Σ 全仓仓位维持保证金`，和币安 `crossWalletBalance + crossUnPnl` 一致
+> 2. **撤单范围按币安**：全仓撤账户所有挂单；逐仓撤账户在**这个币对**上的所有挂单（不只是同一个 positionSide）。状态是 `EXPIRED`，不是 `CANCELED`（币安订单到期原因 5 "Order has expired when the account was liquidated"）
+> 3. **不按标记价平仓**（用户 2026-09-17 定）：币安的强平单是限价 = 破产价的 IOC 单，打进市场；吃不完的部分是"破产仓位"，由保险基金按破产价接管。我们让强平单逐档吃可见盘口，比破产价差的档位不吃，剩余按破产价平掉——对用户来说结果和币安一致。不做币安"保证金够了就停"的部分强平，整个仓位一次平掉
+> 4. **清算费不是 0.5%**：币安本身就单收清算费（"Liquidation Clearance Fee"），费率按币对放在 exchangeInfo 的 `liquidationFee` 里（BTCUSDT 1.25%、SOLUSDT 1.5%）。按成交的名义价值（数量 × 成交价，币安 FAQ "What Fees are Generated in Binance Futures Trading?"）收，最多收到这个仓位剩下的资产为止（币安：小仓位的维持保证金率低于清算费率时会变成破产仓位）；有剩余被按破产价接管（破产仓位）时不收。上面"币安把清算成本包在 MMR 里"的说法不对
+> 5. 强平单是一张 `type = LIQUIDATION` 的订单（币安同样有这个订单类型，`clientOrderId` 以 `autoclose-` 开头），`fills.order_id` 引用它（缺口 #7）
+> 6. **强平成交也收交易手续费**（用户定；币安 Commission Fee "Incurred every time an order is executed"），吃盘口的每笔按 Taker 收，按破产价接管的部分不收。扣费顺序：已实现盈亏 → 交易手续费 → 清算费，每一项最多扣到剩余资产为 0。流水：已实现盈亏记 `LIQUIDATION`，手续费记 `FEE`（引用成交），清算费记 `LIQUIDATION_FEE`
+>
+> 实现见 `packages/engine/src/risk.ts`，讲义 `docs/tutorial/07-risk-liquidation.md`。
+
 ---
 
 ## 9. 引擎：资金费

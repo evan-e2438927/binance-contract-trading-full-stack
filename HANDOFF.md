@@ -1,13 +1,13 @@
 # 会话交接说明
 
 > 给接手这个项目的 Claude Code（或任何人）。
-> 生成时间：2026-09-15 ｜ 最后更新：2026-09-17（第 06 讲完成）｜ 来源：Claude 桌面端 Cowork 会话
+> 生成时间：2026-09-15 ｜ 最后更新：2026-09-17（第 07 讲完成）｜ 来源：Claude 桌面端 Cowork 会话
 
 ---
 
 ## 一、目前走到哪了
 
-**数据库层已完成，引擎内核做到第 06 讲（限价单与拟真排队），下一讲 07：风控与强平。教程按模块一讲一讲写，总览和进度见 `docs/tutorial/README.md`。**
+**数据库层已完成，引擎内核做到第 07 讲（风控与强平），下一讲 08：资金费与账户操作。教程按模块一讲一讲写，总览和进度见 `docs/tutorial/README.md`。**
 
 | 阶段 | 状态 |
 | --- | --- |
@@ -19,15 +19,16 @@
 | 第 03 讲 · 计算公式 | ✅ 2026-09-17 AI 实现 + 讲义：`formulas.ts`/`position.ts`/`liquidation.ts`，强平价三算例带反向验算；顺带定了设计缺口 #5（强平价不对齐 tickSize）#6（逐仓保证金不占 walletBalance）；`packages/shared` 补 `mulRound`，修了 `format()` 截断显示 bug（缺口 #11）；接上不变式 ③⑥；84 条测试全绿；讲义 `docs/tutorial/03-formulas.md`；已 commit |
 | 第 04 讲 · 下单校验链 | ✅ 2026-09-17 AI 实现 + 讲义：`validate-order.ts` 13 步，`apply` 接上 `placeOrder` 的拒单路径（通过时仍明确抛错，等 05 讲）；定了缺口 #12（引擎内部存 LONG/SHORT；数据库侧用户定为按币安标准：BOTH + 带符号数量，第 11 讲迁移）#13（GTX 拒单 vs 过期）；新记 #14～#16；169 条测试全绿；讲义 `docs/tutorial/04-order-validation.md`；已 commit |
 | 第 05 讲 · 市价单与成交落账 | ✅ 2026-09-17 AI 实现 + 讲义：`execute-order.ts`（市价逐档吃单、限价穿透部分 Taker 成交、IOC / FOK / GTC 剩余处理、`applyFill` 落账）；缺口 #14 开仓亏损按币安实现、#18 只减仓成交时截断 + 残余撤销；已实现盈亏改 `mulFloor`；新记 #19；引擎 189 条、shared 34 条测试全绿；讲义 `docs/tutorial/05-market-order-fills.md`；币安规则汇总 `docs/design/07-binance-reference.md`；已 commit |
-| 第 06 讲 · 限价单与拟真排队 | ✅ 2026-09-17 AI 实现 + 讲义：`queue.ts`（估算 / 夹逼 / 消耗三个纯函数）、`resting-orders.ts`（`book` 夹逼、`trade` Maker 成交、撤单）；`trade` 输入加 `tradeId`、`qty` 取币安 `nq`（不含 RPI）；定了缺口 #20（排队估算两处修正设计伪代码）#21（排队位置变化不发事件）；新记 #22（币安行情流地址拆成 /public、/market，第 10 讲）#23（其它挂单冻结保证金不随仓位重算，第 07 讲）；引擎 223 条测试全绿；讲义 `docs/tutorial/06-limit-orders-queue.md`；**未 commit** |
-| 第 07–09 讲 · 引擎内核 | ⬜ 只有大纲（见教程 README），07 是下一讲：风控与强平 |
+| 第 06 讲 · 限价单与拟真排队 | ✅ 2026-09-17 AI 实现 + 讲义：`queue.ts`（估算 / 夹逼 / 消耗三个纯函数）、`resting-orders.ts`（`book` 夹逼、`trade` Maker 成交、撤单）；`trade` 输入加 `tradeId`、`qty` 取币安 `nq`（不含 RPI）；定了缺口 #20（排队估算两处修正设计伪代码）#21（排队位置变化不发事件）；新记 #22（币安行情流地址拆成 /public、/market，第 10 讲）#23（其它挂单冻结保证金不随仓位重算，第 07 讲）；引擎 223 条测试全绿；讲义 `docs/tutorial/06-limit-orders-queue.md`；已 commit |
+| 第 07 讲 · 风控与强平 | ✅ 2026-09-17 AI 实现 + 讲义：`risk.ts`（逐仓逐个判、全仓整户判；撤单 → 强平单逐档吃盘口、比破产价差的不吃、剩余按破产价平 → Taker 手续费 → 清算费，每项封顶到剩余资产）；用户定：强平成交"吃盘口 + 破产价兜底"、不做部分强平、强平收交易手续费、费用不够扣到 0 为止；清算费按币安币对费率（BTC 1.25%）× 成交价名义价值；`LIQUIDATION` 订单类型（缺口 #7）；不变式 ③ 收窄、新增 ⑨（#19）；其它挂单冻结保证金随仓位重算（#23）；发现算例 B 选层错误（#24）；引擎 243 条测试全绿；讲义 `docs/tutorial/07-risk-liquidation.md`；**未 commit** |
+| 第 08–09 讲 · 引擎内核 | ⬜ 只有大纲（见教程 README），08 是下一讲：资金费与账户操作 |
 | 第 10–14 讲 · 服务端 | ⬜ 只有大纲 |
 | 前端 | 不出教程——`apps/web` 由 AI 直接实现 |
 | 表结构 12 → 14 张（`identities` / `email_verification_codes`） | ⬜ 放在第 12 讲鉴权里做迁移，不挡引擎 |
 
 **拿不定的地方以币安为标准**，见第六节"决策规则"。
 
-**写下一讲之前必看**：`docs/tutorial/README.md` 的"设计缺口清单"。第 6 条（逐仓保证金算不算在钱包余额里）已在第 03 讲定了：不算。写第 07 讲前必看缺口 #19（不变式 ③ 遇到价格不利变动会误报）和 #23（其它挂单的冻结保证金不随仓位变化重算），两条都和"可用余额能不能为负"有关，先核对币安再一起定；`trade` 输入之后的风控扫描接在 `apply.ts` 的 `applyTrade` 里 `matchTrade` 之后（5.2 节第 ④ 步）。
+**写下一讲之前必看**：`docs/tutorial/README.md` 的"设计缺口清单"。第 6 条（逐仓保证金算不算在钱包余额里）已在第 03 讲定了：不算。写第 08 讲前：资金费结算后要立刻跑风控扫描，直接调 `risk.ts` 的 `riskScan(state, accountsHolding(state, symbol), ts)`；调杠杆 / 切保证金模式要同步已有仓位（`applyFill` 遇到不一致会抛错）；第十二节整张流水表重放是 08 的毕业考试，第 4 步 Maker 平仓第 06 讲已经有测试。
 
 > **本节踩过的一个坑，供参考**：上一位接手者一开始把"M0 地基"理解成"AI 直接写代码"，写了一份完整的实现计划（`docs/superpowers/plans/2026-09-15-m0-foundation.md`）。用户确认后发现本意是"数据库/后端两层用户自己动手，AI 写教程带路，前端才是 AI 直接写"，于是那份计划改成了仅供参考（教程内容是从它转写的，代码经过和设计文档核对，可以放心抄），真正要跟的是 `docs/tutorial/01-database.md`。**如果又看到类似"AI 要不要直接写数据库/后端代码"的模糊指令，先跟用户确认这一点，别想当然直接开始写实现。**
 
@@ -58,7 +59,7 @@ docs/design/
 
 ## 三、仓库现状
 
-分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 commit，最近一次是第 05 讲（市价单与成交落账，`98886b8`）。
+分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 commit，最近一次是第 06 讲（限价单与拟真排队，`40d91d6`）。
 
 技术栈：Better-T-Stack 脚手架 —— Next.js 16 + React 19 + Hono + Drizzle + Supabase Postgres + Turborepo + pnpm 11 catalog。Node v22.23.2。脚手架的 `api` 和 `auth` 都是 `none`，所以前后端走 Hono 接口 + fetch，鉴权要自己实现。
 
@@ -85,7 +86,7 @@ docs/design/
 
 ## 五、下一步
 
-**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，下一讲是**第 07 讲：风控与强平**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
+**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，下一讲是**第 08 讲：资金费与账户操作**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
 
 按 `数据库 → 后端 → 前端` 的顺序搭。前两层用户想自己一步步做，前端交给 AI。
 
@@ -122,7 +123,7 @@ docs/design/
 设计文档没说清、前后矛盾、或者拿不准怎么做的地方：
 
 1. **以币安官方做法为标准**，自己定下来直接实现，不用停下来等拍板。
-   **已核对过的币安规则汇总在 `docs/design/07-binance-reference.md`**（出处、核对日期、查阅方法、和币安刻意不同的地方），先查它，没有的再去币安文档查，查完补进去。
+   查找顺序写在 `CLAUDE.md`"查币安规则的顺序"：先查 `docs/design/07-binance-reference.md`（已核对的规则），再查本地副本 `docs/vendor/binance/`（没有就先跑 `pnpm run docs:binance`），最后才去网页版；查完补进 07。
 2. **实现不了的，问用户。** "实现不了"包括：
    - 模拟盘条件做不到（没有真实流动性、只有 20 档深度、看不到真实排队等，对应 `02-architecture.md` 第九节的失真点）
    - 按币安做会违反 `CLAUDE.md` 硬约束或"宁可说做不到，不要编数字"
@@ -141,4 +142,4 @@ docs/design/
 | Supabase 项目 | 复用 books 练手那个还是新建，未定 |
 | 前端 UI 设计稿 | 用户说交给 Figma 做，尚未产出 |
 | 域名与 TLS | 未开始（浏览器 WSS 要求 https 来源） |
-| 数据库跟进第 04 讲（**用户来写**） | `symbols` 表按币安 `exchangeInfo` 加 9 列并更新 `seed:symbols`；`orders.working_type` 默认值改 `CONTRACT_PRICE`；`positions` 按缺口 #12 改名 `position_amt` + 改部分索引。字段清单见 `docs/tutorial/04-order-validation.md` 第 7 节。第 11 讲接宿主之前完成 |
+| 数据库跟进第 04 讲（**用户来写**） | `symbols` 表按币安 `exchangeInfo` 加 9 列并更新 `seed:symbols`；`orders.working_type` 默认值改 `CONTRACT_PRICE`；`positions` 按缺口 #12 改名 `position_amt` + 改部分索引。字段清单见 `docs/tutorial/04-order-validation.md` 第 7 节。**第 07 讲追加（缺口 #25）**：`order_type` 枚举加 `LIQUIDATION`；`symbols` 表加 `liquidation_fee`。第 11 讲接宿主之前完成 |

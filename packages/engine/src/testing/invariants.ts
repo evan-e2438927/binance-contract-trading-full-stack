@@ -1,6 +1,7 @@
 import type { Fixed } from "@binance-contract-trading-full-stack/shared";
-import { availableBalance, initialMargin, unrealizedPnl } from "../formulas";
-import type { EngineEvent, EngineSnapshot } from "../types";
+import { availableBalance, initialMargin, notional, unrealizedPnl } from "../formulas";
+import { findBracket, maintMargin } from "../liquidation";
+import type { EngineEvent, EngineSnapshot, LeverageBracket } from "../types";
 
 export class InvariantError extends Error {
   constructor(message: string) {
@@ -13,10 +14,22 @@ function fail(rule: string, detail: string): never {
   throw new InvariantError(`不变式 ${rule} 被破坏：${detail}`);
 }
 
+export interface InvariantOptions {
+  /**
+   * ③ 只检查这些账户；不传 = 检查全部账户（单元测试直接构造快照时用）。
+   * 设计缺口 #19（第 07 讲定）："可用余额非负"不是任何时刻都成立——全仓仓位浮亏、标记价不利变动，
+   * 可用余额在强平之前就会变负，币安也一样（此时开不了新仓，但不会被强平）。它真正要守的是：
+   * **一次成功的下单不会把可用余额从非负变成负数**。测试脚手架据此只在那种 apply 之后对下单账户检查。
+   */
+  availableScope?: ReadonlySet<string>;
+  /** ⑨ 要用的分层表（symbol → 按 notionalCap 升序）。不传就不检查 ⑨。 */
+  brackets?: Readonly<Record<string, readonly LeverageBracket[]>>;
+}
+
 /**
  * 06-testing-design.md 第 4 节的引擎层不变式，每次 apply 之后自动跑。
  *
- * ⑧ 是我们自己加的：内存里只能有未完成订单。
+ * ⑧ ⑨ 是我们自己加的：⑧ 内存里只能有未完成订单；⑨ 风控扫描之后不能留下该强平没强平的仓位（第 07 讲）。
  */
 export function checkInvariants(
   snapshot: EngineSnapshot,
@@ -30,6 +43,7 @@ export function checkInvariants(
    * 它们会自动开始起作用，不需要再回来接线。
    */
   marks: ReadonlyMap<string, Fixed>,
+  options: InvariantOptions = {},
 ): void {
   // ① 钱包余额 == 该账户所有 balanceUpdate 的 delta 之和
   //    引擎内存里不存流水（02-architecture.md 第七节），所以"流水之和"由测试脚手架从事件里累加
@@ -82,6 +96,7 @@ export function checkInvariants(
   }
 
   for (const acc of snapshot.accounts) {
+    if (options.availableScope && !options.availableScope.has(acc.id)) continue;
     let crossUnrealizedPnlSum = 0n;
     let crossInitialMarginSum = 0n;
     let isolatedMarginSum = 0n;
@@ -117,6 +132,48 @@ export function checkInvariants(
     });
     if (available < 0n) {
       fail("③", `账户 ${acc.id} 可用余额为负：${available}`);
+    }
+  }
+
+  // ⑨ 不能留下该强平没强平的仓位：逐仓 仓位权益 > 维持保证金；全仓 全仓权益 > 全仓维持保证金之和
+  if (options.brackets) {
+    const brackets = options.brackets;
+    const mmOf = (p: (typeof snapshot.positions)[number], mark: Fixed) => {
+      const value = notional(p.qty, mark);
+      return maintMargin(value, findBracket(brackets[p.symbol]!, value));
+    };
+    for (const acc of snapshot.accounts) {
+      const own = positionsByAccount.get(acc.id) ?? [];
+      let isolatedMarginSum = 0n;
+      let crossEquity = 0n;
+      let crossMaintMargin = 0n;
+      let crossCount = 0;
+      let crossMarkMissing = false;
+      for (const p of own) {
+        const mark = marks.get(p.symbol);
+        if (p.marginMode === "ISOLATED") {
+          isolatedMarginSum += p.isolatedMargin;
+          if (mark === undefined) continue;
+          const equity = p.isolatedMargin + unrealizedPnl(p, mark);
+          const mm = mmOf(p, mark);
+          if (equity <= mm) {
+            fail("⑨", `逐仓仓位 ${acc.id}/${p.symbol}/${p.positionSide} 权益 ${equity} ≤ 维持保证金 ${mm}，应该已经被强平`);
+          }
+          continue;
+        }
+        crossCount++;
+        if (mark === undefined) {
+          crossMarkMissing = true;
+          continue;
+        }
+        crossEquity += unrealizedPnl(p, mark);
+        crossMaintMargin += mmOf(p, mark);
+      }
+      if (crossCount === 0 || crossMarkMissing) continue;
+      crossEquity += acc.walletBalance - isolatedMarginSum;
+      if (crossEquity <= crossMaintMargin) {
+        fail("⑨", `账户 ${acc.id} 全仓权益 ${crossEquity} ≤ 全仓维持保证金 ${crossMaintMargin}，应该已经被强平`);
+      }
     }
   }
 

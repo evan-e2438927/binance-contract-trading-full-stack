@@ -46,6 +46,8 @@ export type OrderSide = (typeof ORDER_SIDE)[number];
  * - STOP_MARKET         止损市价单：触发后立即按市价成交。
  * - TAKE_PROFIT         止盈限价单：触发后以 price 挂一张限价单。
  * - TAKE_PROFIT_MARKET  止盈市价单：触发后立即按市价成交。
+ * - LIQUIDATION         强平单：系统在强平时代替用户下的单，用户不能手动下（和币安订单类型一致，第 07 讲）。
+ *                       有了它，强平成交的 fills.order_id 才有订单可引用（设计缺口 #7）。
  */
 export const ORDER_TYPE = [
   "LIMIT",
@@ -54,6 +56,7 @@ export const ORDER_TYPE = [
   "STOP_MARKET",
   "TAKE_PROFIT",
   "TAKE_PROFIT_MARKET",
+  "LIQUIDATION",
 ] as const;
 export type OrderType = (typeof ORDER_TYPE)[number];
 

@@ -2,7 +2,7 @@ import { parse } from "@binance-contract-trading-full-stack/shared";
 import { describe, expect, it } from "vitest";
 import type { Account, EngineSnapshot, Order, Position } from "../types";
 import { InvariantError, checkInvariants } from "./invariants";
-import { T0, testOrder } from "./fixtures";
+import { BTCUSDT_BRACKETS, T0, testOrder } from "./fixtures";
 
 /**
  * 第 02 讲留空的不变式 ③（可用余额非负）⑥（只减仓/全部平仓单不冻结保证金），
@@ -121,5 +121,46 @@ describe("⑥ 只减仓 / 全部平仓单不冻结保证金", () => {
       orders: [testOrder({ frozenMargin: parse("5025") }) satisfies Order],
     });
     expect(() => checkInvariants(s, noEvents, ledgerSums, new Map())).not.toThrow();
+  });
+});
+
+describe("③ 的检查范围（缺口 #19）", () => {
+  it("availableScope 里没有的账户不检查：标记价不利变动让可用余额变负是正常的", () => {
+    const s = snapshot({
+      accounts: [account({ walletBalance: parse("100") })],
+      orders: [testOrder({ frozenMargin: parse("5025") })],
+    });
+    const ledgerSums = ledgerSumsFor("acc-1", parse("100"));
+    expect(() => checkInvariants(s, noEvents, ledgerSums, new Map(), { availableScope: new Set() })).not.toThrow();
+    expect(() =>
+      checkInvariants(s, noEvents, ledgerSums, new Map(), { availableScope: new Set(["acc-1"]) }),
+    ).toThrow(/不变式 ③/);
+  });
+});
+
+describe("⑨ 不能留下该强平没强平的仓位", () => {
+  const brackets = { BTCUSDT: BTCUSDT_BRACKETS };
+
+  it("逐仓仓位权益 ≤ 维持保证金时抓到", () => {
+    const s = snapshot({ accounts: [account({ walletBalance: parse("9975") })], positions: [position()] });
+    const ledgerSums = ledgerSumsFor("acc-1", parse("9975"));
+    const options = { availableScope: new Set<string>(), brackets };
+    expect(() => checkInvariants(s, noEvents, ledgerSums, new Map([["BTCUSDT", parse("45180.73")]]), options)).not.toThrow();
+    expect(() => checkInvariants(s, noEvents, ledgerSums, new Map([["BTCUSDT", parse("45180.72")]]), options)).toThrow(
+      /不变式 ⑨/,
+    );
+  });
+
+  it("全仓整户权益 ≤ 维持保证金之和时抓到；缺标记价时跳过", () => {
+    const s = snapshot({
+      accounts: [account({ walletBalance: parse("9975") })],
+      positions: [position({ marginMode: "CROSS", isolatedMargin: 0n })],
+    });
+    const ledgerSums = ledgerSumsFor("acc-1", parse("9975"));
+    const options = { availableScope: new Set<string>(), brackets };
+    expect(() => checkInvariants(s, noEvents, ledgerSums, new Map([["BTCUSDT", parse("40185.74")]]), options)).toThrow(
+      /不变式 ⑨/,
+    );
+    expect(() => checkInvariants(s, noEvents, ledgerSums, new Map(), options)).not.toThrow();
   });
 });

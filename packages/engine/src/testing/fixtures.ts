@@ -39,6 +39,7 @@ export const BTCUSDT: SymbolSpec = {
   percentPriceUp: parse("1.05"),
   percentPriceDown: parse("0.95"),
   maxNumOrdersNum: 200,
+  liquidationFeeRate: parse("0.0125"),
 };
 
 function bracket(
@@ -80,7 +81,6 @@ export function testConfig(): EngineConfig {
     fees: {
       makerFeeRate: parse("0.0002"),
       takerFeeRate: parse("0.0005"),
-      liquidationFeeRate: parse("0.005"),
     },
     limits: {
       marketDepthRatio: parse("0.5"),

@@ -1,6 +1,7 @@
 import type { Fixed } from "@binance-contract-trading-full-stack/shared";
 import { createEngine } from "../create-engine";
-import type { Engine, EngineConfig, EngineEvent, EngineInput } from "../types";
+import { availableBalance, initialMargin, unrealizedPnl } from "../formulas";
+import type { Engine, EngineConfig, EngineEvent, EngineInput, EngineSnapshot } from "../types";
 import { InvariantError, checkInvariants, checkRollback } from "./invariants";
 
 export interface TestEngine {
@@ -55,11 +56,53 @@ export function createTestEngine(config: EngineConfig): TestEngine {
         }
       }
 
-      checkInvariants(engine.snapshot(), out, ledgerSums, marks);
+      checkInvariants(engine.snapshot(), out, ledgerSums, marks, {
+        availableScope: availableScopeOf(input, out, before, marks),
+        brackets: config.brackets,
+      });
       return out;
     },
     ledgerSum(accountId) {
       return ledgerSums.get(accountId) ?? 0n;
     },
   };
+}
+
+/**
+ * 不变式 ③ 的检查范围（设计缺口 #19）：只有"下单成功、而且下单之前可用余额非负"时，检查下单账户。
+ * 标记价不利变动让可用余额变负是正常的（强平线在维持保证金，不在可用余额）；
+ * 下单之前就已经是负的，平仓单成交后仍可能是负的，也不算下单的错。
+ */
+function availableScopeOf(
+  input: EngineInput,
+  out: readonly EngineEvent[],
+  before: EngineSnapshot,
+  marks: ReadonlyMap<string, Fixed>,
+): ReadonlySet<string> {
+  if (input.t !== "placeOrder" || out.some((e) => e.t === "rejected")) return new Set();
+  const account = before.accounts.find((a) => a.id === input.accountId);
+  if (!account) return new Set();
+  let crossUnrealizedPnlSum = 0n;
+  let crossInitialMarginSum = 0n;
+  let isolatedMarginSum = 0n;
+  for (const p of before.positions) {
+    if (p.accountId !== account.id) continue;
+    if (p.marginMode === "ISOLATED") {
+      isolatedMarginSum += p.isolatedMargin;
+      continue;
+    }
+    const mark = marks.get(p.symbol);
+    if (mark === undefined) return new Set();
+    crossUnrealizedPnlSum += unrealizedPnl(p, mark);
+    crossInitialMarginSum += initialMargin(p.qty, p.entryPrice, p.leverageNum);
+  }
+  const frozenMarginSum = before.orders.filter((o) => o.accountId === account.id).reduce((s, o) => s + o.frozenMargin, 0n);
+  const available = availableBalance({
+    walletBalance: account.walletBalance,
+    crossUnrealizedPnlSum,
+    crossInitialMarginSum,
+    isolatedMarginSum,
+    frozenMarginSum,
+  });
+  return available >= 0n ? new Set([account.id]) : new Set();
 }

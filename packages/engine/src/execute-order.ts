@@ -3,7 +3,7 @@ import { fee as feeOf, initialMargin, notional } from "./formulas";
 import { putAccount, putOrder, putPosition, removeOrder, removePosition } from "./journal";
 import { addToPosition, reducePosition, splitReverseFill } from "./position";
 import { estimateQueueAhead } from "./queue";
-import { positionKey, settingOf, type EngineState } from "./state";
+import { positionKey, settingOf, sortedOrders, type EngineState } from "./state";
 import type { EngineEvent, EngineInput, Fill, Level, Order, Position } from "./types";
 import { limitOpenCost, type Direction, type ValidatedOrder } from "./validate-order";
 
@@ -142,6 +142,7 @@ export function executeOrder(state: EngineState, input: PlaceOrderInput, validat
     { t: "orderUpdate", order },
     ...fillEvents,
     ...cancelResidualClosingOrders(state, order, closedSides, input.ts),
+    ...(fillCount > 0 ? refreshFrozenMargins(state, order, input.ts) : []),
   ];
 }
 
@@ -414,6 +415,34 @@ export function cancelResidualClosingOrders(
     const canceled: Order = { ...order, status: "CANCELED", rejectReason: "仓位已平完，只减仓单自动撤销", updatedAt: ts };
     removeOrder(state, order.id);
     events.push({ t: "orderUpdate", order: canceled });
+  }
+  return events;
+}
+
+/**
+ * 设计缺口 #23（第 07 讲定）：成交改变了仓位之后，同一账户同一币对上**其它**挂单的冻结保证金按新仓位重算。
+ *
+ * 冻结保证金只算"会开仓"的那部分（restingFrozenMargin），而"会开仓"多少取决于当前仓位：
+ * 单向模式持多 1、挂卖 2，只冻结开空 1 的成本；多头被别的单平掉之后，这张卖单全成交会开空 2，
+ * 不重算的话冻结只有一半，可用余额被高估，用户能多开仓。反过来仓位变大时，冻结会变少，同样要跟上。
+ *
+ * 只在仓位变化时重算，标记价 / 最新价变化时不重算（开仓亏损、空单假设价格会跟着变，但每个 tick 重算所有挂单代价太大）。
+ * 冻结保证金是 orders 表的一列，变了就发 orderUpdate。
+ */
+export function refreshFrozenMargins(state: EngineState, current: Readonly<Order>, ts: number): EngineEvent[] {
+  const events: EngineEvent[] = [];
+  const others = sortedOrders(
+    state,
+    (o) => o.accountId === current.accountId && o.symbol === current.symbol && o.id !== current.id && o.price !== null,
+  );
+  for (const order of others) {
+    // 未触发的触发单不冻结保证金（第 09 讲），不参与
+    if (order.type !== "LIMIT" && !order.triggered) continue;
+    const next = restingFrozenMargin(state, order, order.qty - order.executedQty);
+    if (next === order.frozenMargin) continue;
+    const updated: Order = { ...order, frozenMargin: next, updatedAt: ts };
+    putOrder(state, updated);
+    events.push({ t: "orderUpdate", order: updated });
   }
   return events;
 }

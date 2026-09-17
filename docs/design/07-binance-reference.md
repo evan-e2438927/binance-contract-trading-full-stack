@@ -137,6 +137,8 @@
 | 行情断线 | 交易所不会断 | 暂停撮合、恢复后不补算 | 失真点 #7 |
 | 市价 / IOC / FOK 是否占挂单数上限 | 文档没写 | 不占 | 挂满了也要能平仓；是我们的判断 |
 | 只减仓单是否扣掉其它挂单数量 | 文档没写清（`-2022`） | 下单时只和当前仓位比，成交时截断到剩余仓位 | 用户 2026-09-17 定（缺口 #18） |
+| 强平成交价 | 限价破产价的 IOC 单打进真实市场，会消耗流动性 | 逐档吃可见 20 档（不消耗盘口），吃不完按破产价 | 失真点 #2、#4；用户 2026-09-17 定 |
+| 部分强平 | Smart Liquidation，保证金够了就停 | 整仓一次平掉 | IOC 单大小文档没写，不编；用户 2026-09-17 定 |
 | 挂单什么时候成交 | 真实订单簿按价格时间优先撮合 | 用行情成交流推算排队位置（撤单假设在我后面 + 盘口总量夹逼） | 看不到币安队列内部（失真点 #3），设计文档 5.5 节；第 06 讲 |
 
 ---
@@ -173,10 +175,33 @@
 
 ---
 
-## 8. 还没核对、写到时要查的
+## 8. 强平
+
+**出处**：币安 FAQ "Binance Futures Liquidation Protocols"（2026-01-04 更新）、"What Is Auto-Deleveraging (ADL) and How Does It Work?"（2026-01-13 更新）、"What Fees are Generated in Binance Futures Trading?"（2026-01-05 更新）、"How to Calculate Liquidation Price of USDⓈ-M Futures Contracts"、`GET /fapi/v1/exchangeInfo` 实时数据、U 本位合约公共定义（订单类型、到期原因）｜核对：2026-09-17
+
+| 规则 | 币安 | 我们（第 07 讲） |
+| --- | --- | --- |
+| 触发 | 保证金余额 < 维持保证金；保证金率达到 100%；标记价触及强平价 | 权益 ≤ 维持保证金（恰好相等也强平，对应"触及"） |
+| 全仓的钱包口径 | `crossWalletBalance`（不含逐仓保证金）+ `crossUnPnl` | 钱包 − Σ 逐仓保证金 + Σ 全仓未实现盈亏 |
+| 撤单 | 全仓：所有币对的挂单；逐仓：同一币对的挂单 | 同左，状态 `EXPIRED`（到期原因 5） |
+| 强平单 | 订单类型 `LIQUIDATION`，`clientOrderId` 以 `autoclose-` 开头；限价 = 破产价的 IOC 单 | 同左 |
+| 破产价 | "the price at which the margin balance of the liquidated user is equal to zero"；强平单按它作限价 | 多：开仓价 − 可用资产 ÷ 数量；空：开仓价 + 可用资产 ÷ 数量 |
+| 吃不完的部分 | 破产仓位，保险基金按破产价接管；保险基金不够再 ADL | 按破产价平掉（没有保险基金和 ADL，失真点 #5） |
+| 部分强平 | Smart Liquidation：先发大 IOC 单，保证金够了就停 | **不做**，整仓平（用户 2026-09-17 定：IOC 单多大文档没说） |
+| 交易手续费 | Commission Fee "Incurred every time an order is executed"，名义价值 = 数量 × 成交价 | 强平单吃盘口的每笔按 Taker 收；按破产价接管的部分不收 |
+| 清算费 | Insurance Clearance Fee = 数量 × **成交价** × 币对费率，从这个仓位的资产里扣；破产仓位不收；小仓位维持保证金率低于清算费率时"进入强平就会变成破产仓位" | 同左；扣费顺序 已实现盈亏 → 交易手续费 → 清算费，每一项最多扣到剩余资产为 0 |
+| 维持保证金选层 | 按名义价值所在的层算；假设的层和名义价值对不上时，换对应层重算强平价 | 风控扫描按标记价名义价值查层（缺口 #24） |
+| 清算费率 | exchangeInfo 币对字段 `liquidationFee` | 2026-09-17：BTC / ETH / BNB / XRP / ADA / DOT / TRX / LTC / BCH / LINK 0.0125；SOL / DOGE / AVAX / NEAR / APT / ARB / OP / SUI / TON / FIL 0.015 |
+| 负余额 | 保险基金每 10 分钟自动清零（Automated Negative Balance Clearance） | 按破产价平仓保证不会出现负余额（失真点 #6） |
+
+**没核对到、我们自己定的**：强平单的手续费角色（我们按 Taker：IOC 单吃盘口）；手续费和清算费谁先扣（我们先手续费后清算费）。2026-09-17 用户定：强平要收交易手续费；剩余资产不够交费时扣到 0 为止。
+
+---
+
+## 9. 还没核对、写到时要查的
 
 | 讲 | 要查的币安规则 |
 | --- | --- |
-| 07 | 强平价公式和维持保证金的最新口径（FAQ "How to Calculate Liquidation Price of USDⓈ-M Futures Contracts"）；强平清算费；可用余额能不能为负 |
+| 07 | ✅ 已核对，见第 8 节。**还没查**：强平价展示公式的最新口径（FAQ "How to Calculate Liquidation Price of USDⓈ-M Futures Contracts"，第 13 讲 REST 仓位接口要展示强平价时再查）；可用余额 `availableBalance` 能不能为负（不影响引擎：强平线在维持保证金，缺口 #19 已按"下单不能把它变负"定） |
 | 08 | 资金费结算时间和公式；调杠杆、切保证金模式、切持仓模式的限制（`-4047` / `-4048` / `-4067` / `-4068` / `-4161`） |
 | 09 | 条件单 `priceProtect` / `triggerProtect`；条件单数量上限（`-4045`）；止损限价单的委托价限制（`-4183` / `-4184`） |
