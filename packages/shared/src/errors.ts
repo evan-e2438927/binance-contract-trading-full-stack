@@ -1,9 +1,14 @@
 export const ERROR_CODES = [
   // 认证
   "UNAUTHORIZED", // 缺 token 或 token 无效
-  "TOKEN_EXPIRED", // token 过期，需要重新签名登录
+  "TOKEN_EXPIRED", // token 过期，需要重新登录
   "NONCE_INVALID", // 登录用的 nonce 不存在、已过期或已用过一次
   "SIGNATURE_INVALID", // 钱包签名验证失败
+  "EMAIL_CODE_INVALID", // 邮箱验证码不存在或不匹配
+  "EMAIL_CODE_EXPIRED", // 邮箱验证码已过期或已使用
+  "EMAIL_CODE_TOO_MANY_ATTEMPTS", // 同一条验证码错误次数到上限（5 次），这条作废，要重新请求
+  "EMAIL_CODE_RATE_LIMITED", // 同一邮箱 60 秒内重复请求发码
+  "OAUTH_STATE_MISMATCH", // Google 回调的 state 和 cookie 里的对不上（可能是 CSRF，或 cookie 过期）
 
   // 下单校验链（严格按顺序执行，见 04-backend-design.md 第 6 节，前一步没过不会走到后一步）
   "SYMBOL_NOT_TRADING", // 第 1 步：币对不存在，或未开放交易
@@ -43,6 +48,11 @@ export const ERROR_HTTP_STATUS: Record<ErrorCode, number> = {
   TOKEN_EXPIRED: 401,
   NONCE_INVALID: 400,
   SIGNATURE_INVALID: 400,
+  EMAIL_CODE_INVALID: 400,
+  EMAIL_CODE_EXPIRED: 400,
+  EMAIL_CODE_TOO_MANY_ATTEMPTS: 429,
+  EMAIL_CODE_RATE_LIMITED: 429,
+  OAUTH_STATE_MISMATCH: 400,
   SYMBOL_NOT_TRADING: 400,
   MARKET_NOT_READY: 503,
   INVALID_PARAMS: 400,

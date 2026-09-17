@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { AppError, ERROR_CODES, ERROR_HTTP_STATUS } from "./errors";
 
 describe("errors", () => {
-  it("04-backend-design.md 第 13 节列了 27 个错误码，第 09 讲加了 WOULD_IMMEDIATELY_TRIGGER", () => {
-    expect(ERROR_CODES.length).toBe(28);
+  it("04-backend-design.md 第 13 节列了 32 个错误码（第 12 讲补上邮箱 / Google 的 5 个），第 09 讲加了 WOULD_IMMEDIATELY_TRIGGER", () => {
+    expect(ERROR_CODES.length).toBe(33);
   });
 
   it("每个错误码都有对应的 HTTP 状态码", () => {

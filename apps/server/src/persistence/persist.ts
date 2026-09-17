@@ -3,6 +3,7 @@ import {
   accountSymbolSettings,
   fills,
   fundingPayments,
+  identities,
   ledgerEntries,
   liquidations,
   orders,
@@ -10,7 +11,7 @@ import {
   type DbExecutor,
 } from "@binance-contract-trading-full-stack/db";
 import type { EngineEvent } from "@binance-contract-trading-full-stack/engine";
-import type { PositionMode } from "@binance-contract-trading-full-stack/shared";
+import type { AuthProvider, PositionMode } from "@binance-contract-trading-full-stack/shared";
 import { eq, sql } from "drizzle-orm";
 import { toDbId } from "./ids";
 import { toDbPosition, toDbPositionSide } from "./positions";
@@ -30,6 +31,19 @@ import { toDbPosition, toDbPositionSide } from "./positions";
 export interface PersistContext {
   /** 账户当前的持仓模式：仓位 / 资金费 / 强平记录的 positionSide 和数量符号要按它转换（缺口 #12） */
   positionModeOf(accountId: string): PositionMode;
+  /**
+   * 正在注册的新账户（第 12 讲，engine-host/register-account.ts）：INITIAL 流水落库时，
+   * 账户行、身份行、流水在**同一个事务**里写。身份撞了唯一索引（同一个身份并发首次登录）整个事务失败，
+   * 宿主回滚引擎，不会留下"有钱没身份"或"有身份没发钱"的半截账户。
+   */
+  pendingRegistrationOf?(accountId: string): PendingRegistration | undefined;
+}
+
+export interface PendingRegistration {
+  provider: AuthProvider;
+  providerId: string;
+  nickname: string;
+  positionMode: PositionMode;
 }
 
 export async function persistEvents(db: DbExecutor, events: readonly EngineEvent[], ctx: PersistContext): Promise<void> {
@@ -139,6 +153,23 @@ async function writeEvent(tx: DbExecutor, event: EngineEvent, ctx: PersistContex
       await tx.update(accounts).set({ positionMode: event.positionMode }).where(eq(accounts.id, event.accountId));
       return;
     case "balanceUpdate": {
+      const registration = event.reason === "INITIAL" ? ctx.pendingRegistrationOf?.(event.accountId) : undefined;
+      if (registration) {
+        // 先建账户行（余额 0，下面和其它流水一样更新成 balanceAfter），再挂身份，流水的外键才有着落
+        await tx.insert(accounts).values({
+          id: event.accountId,
+          positionMode: registration.positionMode,
+          nickname: registration.nickname,
+          createdAt: new Date(event.ts),
+          lastSeenAt: new Date(event.ts),
+        });
+        await tx.insert(identities).values({
+          accountId: event.accountId,
+          provider: registration.provider,
+          providerId: registration.providerId,
+          createdAt: new Date(event.ts),
+        });
+      }
       await tx.insert(ledgerEntries).values({
         accountId: event.accountId,
         type: event.reason,
@@ -157,7 +188,7 @@ async function writeEvent(tx: DbExecutor, event: EngineEvent, ctx: PersistContex
         })
         .where(eq(accounts.id, event.accountId))
         .returning({ id: accounts.id });
-      // 账户行由鉴权层先建好（第 12 讲），引擎只负责余额。没有这一行说明接线顺序错了，不能让流水悬空
+      // 账户行要么是上面刚建的，要么早就在库里。没有这一行说明接线错了（注册没走 register-account.ts），不能让流水悬空
       if (updated.length === 0) throw new Error(`balanceUpdate 找不到账户 ${event.accountId}`);
       return;
     }

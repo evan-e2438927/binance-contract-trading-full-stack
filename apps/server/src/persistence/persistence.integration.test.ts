@@ -1,5 +1,5 @@
 import "varlock/auto-load";
-import { accounts, createDb, fills, fundingPayments, ledgerEntries, liquidations, orders, positions, type DbExecutor } from "@binance-contract-trading-full-stack/db";
+import { accounts, createDb, fills, fundingPayments, identities, ledgerEntries, liquidations, orders, positions, type DbExecutor } from "@binance-contract-trading-full-stack/db";
 import { createEngine, type EngineEvent, type EngineInput, type EngineSnapshot, type Level } from "@binance-contract-trading-full-stack/engine";
 import { parse, type PositionMode } from "@binance-contract-trading-full-stack/shared";
 import { eq, inArray, sql } from "drizzle-orm";
@@ -42,12 +42,12 @@ const T0 = Date.parse("2026-09-17T00:00:00Z");
 type InputWithoutTs = EngineInput extends infer I ? (I extends EngineInput ? Omit<I, "ts"> & { ts?: number } : never) : never;
 const lv = (rows: [string, string][]): Level[] => rows.map(([p, q]) => ({ price: parse(p), qty: parse(q) }));
 
-/** 账户行由鉴权层建（第 12 讲），这里直接插一行 */
+/** 账户行由鉴权层建（第 12 讲），这里直接插一行账户 + 一行身份，和注册时建出来的形状一致 */
 async function createAccountRow(tx: DbExecutor): Promise<string> {
-  const [row] = await tx
-    .insert(accounts)
-    .values({ address: `0xtest${randomUUID().replace(/-/g, "")}`, chain: "evm" })
-    .returning({ id: accounts.id });
+  const [row] = await tx.insert(accounts).values({}).returning({ id: accounts.id });
+  await tx
+    .insert(identities)
+    .values({ accountId: row!.id, provider: "wallet_evm", providerId: `0xtest${randomUUID().replace(/-/g, "")}` });
   return row!.id;
 }
 

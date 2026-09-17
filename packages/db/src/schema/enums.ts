@@ -1,4 +1,5 @@
 import {
+  AUTH_PROVIDER,
   CHAIN,
   FILL_ROLE,
   LEDGER_TYPE,
@@ -16,7 +17,10 @@ import { pgEnum } from "drizzle-orm/pg-core";
 // 枚举值本身定义在 packages/shared/src/enums.ts，这里只是把同一份常量声明成 pg enum，
 // 保证「数据库里能存的值」和「TypeScript 里的联合类型」不会各自漂移。
 
-export const chainEnum = pgEnum("chain", CHAIN); // 账户登录用的链：evm / solana
+export const chainEnum = pgEnum("chain", CHAIN); // 钱包登录用的链：evm / solana（auth_nonces 用）
+
+// 登录身份来源：钱包（按链分两种）/ 邮箱 / Google。identities 表靠 (provider, providerId) 找到账户。
+export const authProviderEnum = pgEnum("auth_provider", AUTH_PROVIDER);
 
 // 账户级设置：ONE_WAY 同一币对只有一个净仓位，反向下单即平仓/反手；
 // HEDGE 多空各占一个独立仓位槽，可同时持有。切换前该币对必须无持仓无挂单。

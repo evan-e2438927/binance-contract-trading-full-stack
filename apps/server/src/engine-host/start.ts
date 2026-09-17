@@ -7,6 +7,7 @@ import { loadEngineConfig, loadEngineSnapshot } from "../persistence/load";
 import { persistEvents } from "../persistence/persist";
 import { createEngineHost, type EngineHost } from "./engine-host";
 import { createFundingScheduler } from "./funding-scheduler";
+import { createAccountRegistrar, type AccountRegistrar } from "./register-account";
 
 /**
  * 交易内核启动（04-backend-design.md 第 1 节启动顺序第 3～7 步）：
@@ -24,6 +25,8 @@ import { createFundingScheduler } from "./funding-scheduler";
 export interface TradingCore {
   host: EngineHost;
   feed: MarketFeed;
+  /** 开户（第 12 讲鉴权层调用）：账户行 + 身份行 + INITIAL 流水一个事务落库 */
+  accounts: AccountRegistrar;
   /** 分层表每日同步发现变化后调用：从数据库读这些币对的新表，喂进引擎并立刻扫风控 */
   reloadBrackets(symbols: readonly string[]): Promise<void>;
   stop(): Promise<void>;
@@ -59,9 +62,12 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
   };
 
   let feed: MarketFeed | null = null;
-  const host = createEngineHost({
+  // 注册器要往宿主 submit，宿主落库又要问注册器"这个账户是不是正在注册"——用闭包晚绑定 host
+  const registrar = createAccountRegistrar({ submit: (input) => host.submit(input), now });
+  const host: EngineHost = createEngineHost({
     engine,
-    persist: (events) => persistEvents(db, events, { positionModeOf }),
+    persist: (events) =>
+      persistEvents(db, events, { positionModeOf, pendingRegistrationOf: registrar.pendingRegistrationOf }),
     isSymbolReady: (symbol) => feed?.symbolReady(symbol) ?? false,
     logger,
     onCommitted(input, events) {
@@ -113,6 +119,7 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
   return {
     host,
     feed,
+    accounts: registrar,
     async reloadBrackets(symbols) {
       const known = symbols.filter((s) => config.symbols.some((spec) => spec.symbol === s));
       if (known.length === 0) return;

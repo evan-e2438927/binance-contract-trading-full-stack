@@ -9,6 +9,8 @@ export * from "./symbols";
 export * from "./account-symbol-settings";
 export * from "./accounts";
 export * from "./auth-nonces";
+export * from "./email-verification-codes";
+export * from "./identities";
 
 // 交易
 export * from "./fills";

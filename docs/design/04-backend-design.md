@@ -945,6 +945,8 @@ Base URL：`https://api.<域名>`
 
 **鉴权**：`Authorization: Bearer <jwt>`，载荷 `{ sub: accountId, addr, chain, iat, exp }`，有效期 7 天。
 
+> **已定（缺口 #35，第 12 讲）**：载荷只放 `{ sub: accountId, iat, exp }`（HS256）。拆出 `identities` 之后账户没有地址，邮箱 / Google 账户也没有链；身份信息查 `GET /auth/me`。实现在 `apps/server/src/auth/tokens.ts`。
+
 **分页**：游标分页，不用 offset。
 
 ```
@@ -1006,6 +1008,8 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
 }}
 ```
 
+> **已定（缺口 #36，第 12 讲）**：上面示例里的中文声明句不能用——EIP-4361 规定 statement 是 ASCII。实际文本用英文声明句（"不是交易、不花 gas"），domain / URI 取前端来源（`CORS_ORIGIN`）；Solana 按 SIWS 格式（对照 `@solana/wallet-standard-util` 源码）。实现在 `apps/server/src/auth/wallet.ts`。
+
 `GET /auth/google` 和 `/auth/google/callback` 是重定向流程，不是 JSON 接口，见下面的登录流程说明。
 
 **三种登录方式最终都收敛到同一步**：拿到一个 `(provider, providerId)`，去 `identities` 表查账户；查不到就新建账户 + 新建 identity + 发放 10,000 USDT（写一条 `INITIAL` 流水）；最后签发**同一套** JWT。差异只在"怎么证明你拥有这个 providerId"。
@@ -1020,6 +1024,8 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
 4. provider = wallet_evm / wallet_solana，providerId = 归一化后的地址 → 查/建账户
 5. 签发 JWT
 ```
+
+> **已定（缺口 #38，第 12 讲）**：顺序改为先用条件 `UPDATE ... WHERE used_at IS NULL AND expires_at > now RETURNING message` 原子领走 nonce，再用返回的原文验签——按上面的顺序，两个并发请求拿同一个签名会都通过。签名不对也算用掉。邮箱验证码同理：错误次数在 SQL 里 +1，校验通过后条件 UPDATE 领走。
 
 > ⚠️ **验签必须用第 1 步取出的原始 message**，不能用客户端重新传上来的文本——否则攻击者可以让你去验一段他自己构造的内容。
 
@@ -1047,6 +1053,8 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
    ★ 用 URL fragment（#）不用 query string：fragment 不会发到服务端、不进访问日志、不进 Referer 头
 7. 前端在 /login/callback 里从 location.hash 取 token 存下来，随后清掉 URL
 ```
+
+> **已定（缺口 #37，第 12 讲）**：第 4 步改为从 token 端点直接返回的 ID token 里取 sub，不再调 userinfo（OpenID Connect Core 3.1.3.7 允许服务端经 TLS 直接拿到的 ID token 用 TLS 校验代替签名校验）；scope 只要 `openid`。实现在 `apps/server/src/auth/google.ts`。开发环境没配 `RESEND_API_KEY` 时验证码打到服务端日志，生产环境没配则 `/auth/email/code` 返回 `SERVICE_UNAVAILABLE`。
 
 只用 `arctic`（纯 OAuth2 客户端库）拿 token、查 userinfo，**不引入管 session/cookie 的完整认证框架**——JWT 的签发、校验、WS 鉴权全部复用钱包登录已有的那一套。三种登录方式共用一条会话链路，不会出现"网页一套登录态、接口一套登录态"的分裂，`apps/native` 以后要接的时候也只用认一种 token 格式。
 

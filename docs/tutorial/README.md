@@ -46,8 +46,8 @@
 | 08 | 资金费与账户操作 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[08-funding-account-ops.md](08-funding-account-ops.md) |
 | 09 | 触发单与只减仓 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[09-trigger-orders.md](09-trigger-orders.md) |
 | 10 | 行情层：接币安 WebSocket | `apps/server/src/market` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[10-market-feed.md](10-market-feed.md) |
-| 11 | 仓储层与引擎宿主：落库、恢复、定时任务 | `apps/server` | ⬜ |
-| 12 | 鉴权：钱包 / 邮箱 / Google 三种登录 | `apps/server` `packages/db` | ⬜ |
+| 11 | 仓储层与引擎宿主：落库、恢复、定时任务 | `apps/server` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[11-engine-host.md](11-engine-host.md) |
+| 12 | 鉴权：钱包 / 邮箱 / Google 三种登录 | `apps/server` `packages/db` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[12-auth.md](12-auth.md) |
 | 13 | REST 接口 | `apps/server/src/api` | ⬜ |
 | 14 | WebSocket 网关 | `apps/server/src/ws` | ⬜ |
 | — | 前端 | `apps/web` | 由 AI 直接实现 |
@@ -143,6 +143,7 @@
 
 - **做什么**：先做一次真实的 schema 迁移（`accounts` 拆出 `identities`，新增 `email_verification_codes`，`shared` 补枚举和错误码）；再实现钱包验签、邮箱验证码、Google OAuth，三条路收敛到同一套 JWT
 - **验收**：三种方式都能登录并拿到 10,000 USDT；三种身份互相独立不合并
+- **实际完成**：迁移 0005（`accounts` 删 `address` / `chain`，删列前手写回填；新增 `auth_provider` 枚举、`identities`、`email_verification_codes`）已应用到本地库；`shared` 补 `AUTH_PROVIDER` 和 5 个错误码；开户改为身份先记内存、`registerAccount` 的 INITIAL 流水落库时账户 + 身份 + 流水一个事务（`engine-host/register-account.ts`，并发首次登录撞唯一索引 → 回滚 → 重查）；`http/respond.ts` 响应包络；`auth/`（JWT、SIWE / SIWS 验签、邮箱验证码 + Resend、Google OAuth + PKCE、脱敏昵称、7 个接口）；缺口 #9 定了，新记 #35～#38；真数据库验收 6 条 + 单元 15 条；真 server 邮箱登录 → `kill -9` → 重启恢复 → 对账通过
 
 ### 13 · REST 接口
 
@@ -172,7 +173,7 @@
 | 6 | **逐仓保证金算不算在钱包余额里**：`01` 第十二节说开逐仓后钱包是 9,975（算在里面），`04` 第 8 节强平结算"余额 > 0 退回 walletBalance"的写法又像不在里面。这决定开仓时要不要写流水 | ✅ 03：不算。开仓不产生 `walletBalance` 变动，只有手续费/已实现盈亏/资金费/强平才动它；逐仓保证金只是把钱从"可用"标成"锁定"，体现在 `availableBalance` 的减项里，不是一条流水。`adjustIsolatedMargin`（手动划转）留给 08 讲单独定。✅ 08 补定 `adjustIsolatedMargin`：同理不写流水，只改 `isolatedMargin`（在"全仓可用"和"锁给仓位"之间挪）；资金费发生在逐仓仓位上时钱包和 `isolatedMargin` 一起变 |
 | 7 | 强平成交要写 `fills`，但 `fills.order_id` 是非空外键，强平并没有用户下的订单 | ✅ 07：按币安，强平时系统生成一张 `type = LIQUIDATION` 的订单（`clientOrderId` 以 `autoclose-` 开头），成交引用它。`packages/shared` 的 `ORDER_TYPE` 已加 `LIQUIDATION`，**数据库 `order_type` 枚举要迁移（用户写）** |
 | 8 | 引擎内的 id 是确定性字符串（为了可重放），数据库里的 id 列是 uuid | ✅ 11：`persistence/ids.ts`——本来就是 uuid 的（宿主生成的订单 id、账户 id）原样用，其它按 UUID v5（固定命名空间）换算。同一个引擎 id 永远同一个 uuid：外键、流水 ref_id 各自换算也对得上，重复落库撞主键，不需要映射表 |
-| 9 | 代码是 12 张表，设计文档已经是 14 张表 | 12 |
+| 9 | 代码是 12 张表，设计文档已经是 14 张表 | ✅ 12：迁移 0005 新增 `auth_provider` 枚举、`identities`、`email_verification_codes`，`accounts` 删 `address` / `chain`（删列前 SQL 手写回填：`chain` → `wallet_<chain>`），已应用到本地库；`chain` 枚举保留给 `auth_nonces`。账户行由 `persist.ts` 在 INITIAL 流水的事务里建（和身份一起） |
 | 10 | 写库失败怎么回滚内存没说。若宿主每次 `apply` 前调 `snapshot()`，代价是 O(全体账户)，账户一多就被 GC 拖垮。方向已定为引擎内 undo 日志 + `commit()` / `rollback()`，见 `02-architecture.md` 第七节"回滚怎么做" | 02（已实现：`journal.ts` + `commit()` / `rollback()`，第 7 节） |
 | 11 | `packages/shared` 的 `format(value, precision)` 精度不足 8 位时是**截断**不是四舍五入，写强平价算例 B 的测试才发现：内部值 54780.87649402…，截断显示成 "54780.87"，和文档里手算四舍五入的 "54780.88" 对不上 | ✅ 03：改成四舍五入（`format` 先对整个值按目标精度四舍五入再拆分整数/小数部分，进位能正确传到整数位），补了对应测试 |
 | 12 | **单向持仓模式下仓位怎么存**：`04-backend-design.md` 第 3 节说"内部仍用 LONG/SHORT"，`packages/db` 的 `positions.ts` 注释说"单向模式恒为 BOTH"。`qty` 非负，存 BOTH 分不清多空 | ✅ 04（引擎侧）：订单上是 BOTH，仓位在引擎内部存 LONG/SHORT + 非负 qty，同币对最多一个。✅ 2026-09-17 用户定（数据库侧）：**按币安标准**（`GET /fapi/v3/positionRisk`：单向模式 `positionSide = BOTH`，`positionAmt` 多正空负，双向模式 SHORT 也为负）。第 11 讲迁移：`qty` 改名 `position_amt` 存带符号数量，部分索引条件改 `position_amt <> 0`，仓储层负责两种表示法互转。设计文档 03/04 已加注。REST `/account/positions` 输出是否也用 `positionAmt` 带符号，第 13 讲确认（建议一致）。✅ 11：迁移 0003 / 0004 已应用到本地库；`persistence/positions.ts` 互转 |
@@ -198,6 +199,10 @@
 | 32 | 设计文档第七节"纯挂单变化（下单成功、撤单）异步批量写"没做：第 11 讲**所有事件同步、一个事务**落库。实测会产生事件的输入很少（盘口、大部分行情成交、标记价推送都是 0 个事件，不碰库），同步换来"内存 == 数据库"始终成立、kill -9 什么都不丢 | 压测（06-testing-design 第 7 节）发现落库成为瓶颈时再做批量写 |
 | 33 | 资金费结算用的是结算时间之前最后一条标记价推送（最多早 1 秒）的费率和标记价，不是币安结算那一刻的精确值；结算前最后一条推送离结算时间超过 10 秒（行情断过）就跳过这次结算 | 币安 `GET /fapi/v1/fundingRate` 能查每次结算的精确费率和标记价，要更准可以结算后异步核对（未排期） |
 | 34 | 每日权益快照（`equity_snapshots`，大纲写在第 11 讲）没做：它只服务排行榜和收益曲线，和账目正确性无关 | 13：做排行榜接口时一起做 |
+| 35 | **JWT 载荷**：`04` 第 11 节写 `{ sub: accountId, addr, chain, iat, exp }`，是只有钱包登录时的形状；拆出 `identities` 后账户没有地址，邮箱 / Google 账户也没有链 | ✅ 12：载荷只放 `{ sub: accountId, iat, exp }`，身份信息查 `/auth/me`。第 14 讲 WS 鉴权用同一个 `verifyToken`。`04` 已加注 |
+| 36 | **SIWE statement 不能是中文**：`04` 第 11 节示例的待签名文本里声明句是"登录币安合约模拟交易平台"；EIP-4361 规定 statement 是 ASCII（viem 只检查换行，中文能生成，但严格解析的钱包 / 库会拒） | ✅ 12：用英文声明句，写明"不是交易、不花 gas"（`wallet.ts` `SIGN_IN_STATEMENT`）。Solana SIWS 用同一句。`04` 已加注 |
+| 37 | **Google 取 sub 的方式**：`04` 写"用 access_token 查 userinfo" | ✅ 12：从 token 端点直接返回的 ID token 里取 sub（OpenID Connect Core 3.1.3.7：服务端经 TLS 直接从 token 端点拿到的 ID token 可用 TLS 校验代替签名校验），少一次请求，sub 相同。`04` 已加注 |
+| 38 | **钱包 nonce 标记已用的时机**：`04` 写"取出 → 验签 → 标记已使用"，两个并发请求拿同一个签名会都通过 | ✅ 12：先用条件 `UPDATE … WHERE used_at IS NULL AND expires_at > now RETURNING message` 原子领走，再用返回的原文验签；签名不对也算用掉。邮箱验证码同理（错误计数 SQL 内 +1、条件 UPDATE 领走）。`04` 已加注 |
 
 ---
 

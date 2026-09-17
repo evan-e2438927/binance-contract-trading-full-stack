@@ -1,9 +1,20 @@
 /**
- * 账户登录用的链。'evm' 对应 MetaMask 等 EVM 钱包，'solana' 对应 Phantom 等。
- * 和地址一起构成 accounts 表的唯一键——同一个人用两条链登录会得到两个独立账户（有意的）。
+ * 钱包登录用的链。'evm' 对应 MetaMask 等 EVM 钱包，'solana' 对应 Phantom 等。
+ * 只用在 auth_nonces（签名挑战）上；账户归属看 identities 表的 AUTH_PROVIDER。
  */
 export const CHAIN = ["evm", "solana"] as const;
 export type Chain = (typeof CHAIN)[number];
+
+/**
+ * 登录身份的来源（identities 表的 provider 列）。三种登录方式最终都收敛成 (provider, providerId)：
+ * - wallet_evm    providerId = 小写地址
+ * - wallet_solana providerId = base58 地址原样
+ * - email         providerId = 小写邮箱
+ * - google        providerId = Google 的 sub（不用 email，email 可以换绑）
+ * 同一个人用不同 provider 登录会得到各自独立的账户（有意的，不做合并）。
+ */
+export const AUTH_PROVIDER = ["wallet_evm", "wallet_solana", "email", "google"] as const;
+export type AuthProvider = (typeof AUTH_PROVIDER)[number];
 
 /**
  * 持仓模式（账户级设置，第 6 讲的 accounts 表里能看到）。
