@@ -156,6 +156,16 @@ wss://fstream.binance.com/stream?streams=btcusdt@aggTrade/btcusdt@depth20@100ms/
 - 前端推 `{ t: 'marketStatus', status: 'degraded' }`，界面顶部出黄条
 - 恢复后**不补算**断线期间的成交
 
+> **已定（第 10 讲）**，实现在 `apps/server/src/market/`（文件和第 1 节规划的不同：`streams.ts` 流和地址、`parse.ts` 解析、`connection.ts` 单条连接 + 重连 + 看门狗、`market-feed.ts` 两条连接合成行情源和就绪状态、`exchange-info.ts` 查币对状态、`watch.ts` 验收脚本；盘口 / 标记价的"store"就是引擎自己的状态，不另建）：
+> 1. **两条连接**：`/public` 订 depth20，`/market` 订 aggTrade + markPrice@1s + kline_1m（缺口 #22）
+> 2. **重连**：退避 1s, 2s, 4s, 8s, 16s, 30s…；收到第一条数据才把退避清零（只连上不推数据不算恢复）
+> 3. **看门狗**：连着但 10 秒没有任何消息 → 主动关掉重连（拔网线、代理掉线时 TCP 可能很久不报 close）
+> 4. **pong**：Node 自带 WebSocket 自动回，不用处理
+> 5. **不用 REST 补快照**：depth20 和 markPrice 本身就是完整快照，重连后 100ms / 1s 内就推过来；就绪条件是"两条连接都连着 + 每个币对这次连上之后都收到过盘口和标记价"
+> 6. **状态** connecting / ready / degraded，加上按币对的 `symbolReady()`；行情事件不论状态都往外发，暂停撮合由宿主决定（缺口 #16，第 11 讲）
+> 7. **解析**：价格数量从字符串直接 `parse()`；格式不对（缺字段、科学计数法、超过 8 位小数、盘口没排序）抛错，这条连接的就绪条件作废直到下一轮快照；aggTrade 数量取 `nq`，缺了不退回 `q`
+> 8. 只订阅币安 `status = TRADING` 的币对（TONUSDT 已下架结算，缺口 #30）
+
 ---
 
 ## 3. 引擎：数据结构与状态机

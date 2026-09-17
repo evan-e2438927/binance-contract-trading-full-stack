@@ -154,6 +154,26 @@
 | `wss://fstream.binance.com/public/stream?streams=` | `<symbol>@depth20@100ms` |
 | `wss://fstream.binance.com/market/stream?streams=` | `<symbol>@aggTrade`、`<symbol>@markPrice@1s`、`<symbol>@kline_<interval>` |
 
+**连接规则**（本地 `usds-futures.txt` 的 websocket-market-streams/Connect，核对 2026-09-17）：
+
+| 规则 | 我们怎么处理（第 10 讲 `apps/server/src/market/connection.ts`） |
+| --- | --- |
+| 一条连接最多有效 24 小时，到点断开 | 当普通断线处理，1 秒后重连 |
+| 服务器每 3 分钟发 ping 帧，10 分钟内没收到 pong 就断开 | Node 自带 WebSocket（undici）自动回 pong |
+| 每秒最多收客户端 10 条消息，超了断开、反复超可能封 IP | 只在 URL 里订阅，不发 SUBSCRIBE 消息 |
+| 一条连接最多 1024 个流 | 20 个币对：/public 20 个、/market 60 个 |
+| 组合流推送包成 `{"stream","data"}`，流名里币对小写 | 同左 |
+
+**币对状态**：只有 exchangeInfo 里 `status = TRADING` 的币对有盘口和成交。2026-09-17 发现 **TONUSDT 已是 `SETTLING`**（下架结算中，`GET /fapi/v1/depth` 返回空盘口，`deliveryDate` 1782205200000 = 2026-06-23），但还在我们的开放名单 `OPEN_SYMBOLS` 里（缺口 #30）。
+
+**其它推送字段**（2026-09-17 实测，样例在 `apps/server/src/market/__fixtures__/binance-streams-2026-09-17.jsonl`）：
+
+| 流 | 我们用的字段 |
+| --- | --- |
+| `@depth20@100ms`（事件 `depthUpdate`） | `s`、`T` 撮合时间、`b` / `a` 各 20 档 `[价格, 数量]` 字符串，买盘降序、卖盘升序 |
+| `@markPrice@1s`（事件 `markPriceUpdate`） | `s`、`E` 事件时间、`p` 标记价、`r` 资金费率（可为负）、`T` 下次资金费结算时间；另有 `i` 指数价、`P` 预估结算价、`ap` 不用 |
+| `@kline_1m`（事件 `kline`） | `k.t` / `k.T` 开收盘时间、`k.o/h/l/c/v`、`k.x` 是否收盘 |
+
 **`@aggTrade` 实测推送**：
 
 ```json

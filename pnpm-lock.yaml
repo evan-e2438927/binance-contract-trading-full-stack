@@ -202,6 +202,12 @@ importers:
       '@binance-contract-trading-full-stack/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@binance-contract-trading-full-stack/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
+      '@binance-contract-trading-full-stack/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.7)

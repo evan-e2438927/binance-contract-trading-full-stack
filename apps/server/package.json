@@ -9,10 +9,13 @@
     "compile": "bun build --compile --no-compile-autoload-dotenv --minify --sourcemap --bytecode ./src/index.ts --outfile server",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.mjs",
-    "env:generate": "varlock codegen"
+    "env:generate": "varlock codegen",
+    "market:watch": "tsx src/market/watch.ts"
   },
   "dependencies": {
     "@binance-contract-trading-full-stack/db": "workspace:*",
+    "@binance-contract-trading-full-stack/engine": "workspace:*",
+    "@binance-contract-trading-full-stack/shared": "workspace:*",
     "@hono/node-server": "^2.1.1",
     "hono": "^4.13.7",
     "varlock": "catalog:",
