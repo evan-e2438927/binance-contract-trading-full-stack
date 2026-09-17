@@ -1,13 +1,13 @@
 # 会话交接说明
 
 > 给接手这个项目的 Claude Code（或任何人）。
-> 生成时间：2026-09-15 ｜ 最后更新：2026-09-17（第 08 讲完成）｜ 来源：Claude 桌面端 Cowork 会话
+> 生成时间：2026-09-15 ｜ 最后更新：2026-09-17（第 09 讲完成，引擎内核全部完成）｜ 来源：Claude 桌面端 Cowork 会话
 
 ---
 
 ## 一、目前走到哪了
 
-**数据库层已完成，引擎内核做到第 08 讲（资金费与账户操作，第十二节流水表已完整重放通过），下一讲 09：触发单与只减仓——引擎内核最后一讲。教程按模块一讲一讲写，总览和进度见 `docs/tutorial/README.md`。**
+**数据库层已完成，引擎内核（第 02–09 讲）全部完成。下一讲 10：行情层——从这一讲开始是服务端（`apps/server`），教程 README 写的分工是"动手前再确认"，开工前先问用户：AI 写代码还是用户自己写。教程按模块一讲一讲写，总览和进度见 `docs/tutorial/README.md`。**
 
 | 阶段 | 状态 |
 | --- | --- |
@@ -21,15 +21,15 @@
 | 第 05 讲 · 市价单与成交落账 | ✅ 2026-09-17 AI 实现 + 讲义：`execute-order.ts`（市价逐档吃单、限价穿透部分 Taker 成交、IOC / FOK / GTC 剩余处理、`applyFill` 落账）；缺口 #14 开仓亏损按币安实现、#18 只减仓成交时截断 + 残余撤销；已实现盈亏改 `mulFloor`；新记 #19；引擎 189 条、shared 34 条测试全绿；讲义 `docs/tutorial/05-market-order-fills.md`；币安规则汇总 `docs/design/07-binance-reference.md`；已 commit |
 | 第 06 讲 · 限价单与拟真排队 | ✅ 2026-09-17 AI 实现 + 讲义：`queue.ts`（估算 / 夹逼 / 消耗三个纯函数）、`resting-orders.ts`（`book` 夹逼、`trade` Maker 成交、撤单）；`trade` 输入加 `tradeId`、`qty` 取币安 `nq`（不含 RPI）；定了缺口 #20（排队估算两处修正设计伪代码）#21（排队位置变化不发事件）；新记 #22（币安行情流地址拆成 /public、/market，第 10 讲）#23（其它挂单冻结保证金不随仓位重算，第 07 讲）；引擎 223 条测试全绿；讲义 `docs/tutorial/06-limit-orders-queue.md`；已 commit |
 | 第 07 讲 · 风控与强平 | ✅ 2026-09-17 AI 实现 + 讲义：`risk.ts`（逐仓逐个判、全仓整户判；撤单 → 强平单逐档吃盘口、比破产价差的不吃、剩余按破产价平 → Taker 手续费 → 清算费，每项封顶到剩余资产）；用户定：强平成交"吃盘口 + 破产价兜底"、不做部分强平、强平收交易手续费、费用不够扣到 0 为止；清算费按币安币对费率（BTC 1.25%）× 成交价名义价值；`LIQUIDATION` 订单类型（缺口 #7）；不变式 ③ 收窄、新增 ⑨（#19）；其它挂单冻结保证金随仓位重算（#23）；发现算例 B 选层错误（#24）；引擎 243 条测试全绿；讲义 `docs/tutorial/07-risk-liquidation.md`；已 commit（`1dfb60b`） |
-| 第 08 讲 · 资金费与账户操作 | ✅ 2026-09-17 AI 实现 + 讲义：`funding.ts`（名义价值按标记价；逐仓从逐仓保证金付；结算后扫风控）、`account-ops.ts`（调杠杆 / 切保证金模式 / 切持仓模式 / 调逐仓保证金按币安规则和 FAQ 公式；账户重置撤单 + 标记价平仓 + RESET 流水，冷却交给宿主）；`ledger-replay.test.ts` 用真实输入重放 `01` 第十二节整张流水表通过；`01-domain-knowledge.md` 六处过时内容加注；缺口 #6 补定，新记 #26 #27；引擎 266 条测试全绿；讲义 `docs/tutorial/08-funding-account-ops.md`；**未 commit** |
-| 第 09 讲 · 触发单与只减仓 | ⬜ 只有大纲（见教程 README），是下一讲，也是引擎内核最后一讲 |
+| 第 08 讲 · 资金费与账户操作 | ✅ 2026-09-17 AI 实现 + 讲义：`funding.ts`（名义价值按标记价；逐仓从逐仓保证金付；结算后扫风控）、`account-ops.ts`（调杠杆 / 切保证金模式 / 切持仓模式 / 调逐仓保证金按币安规则和 FAQ 公式；账户重置撤单 + 标记价平仓 + RESET 流水，冷却交给宿主）；`ledger-replay.test.ts` 用真实输入重放 `01` 第十二节整张流水表通过；`01-domain-knowledge.md` 六处过时内容加注；缺口 #6 补定，新记 #26 #27；引擎 266 条测试全绿；讲义 `docs/tutorial/08-funding-account-ops.md`；已 commit（`e8b3259`） |
+| 第 09 讲 · 触发单与只减仓 | ✅ 2026-09-17 AI 实现 + 讲义：`triggers.ts`（入簿不冻结保证金；标记价推送查 MARK_PRICE 单、行情成交推送查 CONTRACT_PRICE 单；触发时转 MARKET / LIMIT 重走校验链，失败 REJECTED、GTX 会吃单 EXPIRED；closePosition 按当时全部仓位）；校验链第 14 步（触发价已穿过拒 `WOULD_IMMEDIATELY_TRIGGER`，条件单所有币对合计 200）；标记价推送先查触发再跑风控；缺口 #13 #15 定了，新记 #28 #29；引擎 284 条测试全绿；讲义 `docs/tutorial/09-trigger-orders.md`；**未 commit** |
 | 第 10–14 讲 · 服务端 | ⬜ 只有大纲 |
 | 前端 | 不出教程——`apps/web` 由 AI 直接实现 |
 | 表结构 12 → 14 张（`identities` / `email_verification_codes`） | ⬜ 放在第 12 讲鉴权里做迁移，不挡引擎 |
 
 **拿不定的地方以币安为标准**，见第六节"决策规则"。
 
-**写下一讲之前必看**：`docs/tutorial/README.md` 的"设计缺口清单"。第 6 条（逐仓保证金算不算在钱包余额里）已在第 03 讲定了：不算。写第 09 讲前：缺口 #13（止损 / 止盈限价单触发时会吃单的 GTX 转 EXPIRED）、#15（触发价下单时已被穿过要拒，币安 -2021 / -4142）；触发单未触发时不冻结保证金，触发那一刻再走校验链（`validate-order.ts` 第 9、10 步现在对触发单跳过）；`resting-orders.ts` 的 `restingOrders` 已经预留了 `triggered` 判断；`apply.ts` 的 `applyMarkPrice` 里触发单检查要放在风控扫描之前（5.2 节）。
+**写下一讲之前必看**：`docs/tutorial/README.md` 的"设计缺口清单"。第 6 条（逐仓保证金算不算在钱包余额里）已在第 03 讲定了：不算。写第 10 讲前：先和用户确认服务端分工；缺口 #22（币安 WebSocket 拆成 `/public`、`/market`，旧地址收不到 aggTrade）、#16（行情断线暂停交易由宿主负责）；aggTrade 的 `qty` 取 `nq`、`tradeId` 取 `a`（`EngineInput` 第 06 讲已按这个定义）；`07-binance-reference.md` 第 7 节有实测推送样例。
 
 > **本节踩过的一个坑，供参考**：上一位接手者一开始把"M0 地基"理解成"AI 直接写代码"，写了一份完整的实现计划（`docs/superpowers/plans/2026-09-15-m0-foundation.md`）。用户确认后发现本意是"数据库/后端两层用户自己动手，AI 写教程带路，前端才是 AI 直接写"，于是那份计划改成了仅供参考（教程内容是从它转写的，代码经过和设计文档核对，可以放心抄），真正要跟的是 `docs/tutorial/01-database.md`。**如果又看到类似"AI 要不要直接写数据库/后端代码"的模糊指令，先跟用户确认这一点，别想当然直接开始写实现。**
 
@@ -60,7 +60,7 @@ docs/design/
 
 ## 三、仓库现状
 
-分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 commit，最近一次是第 07 讲（风控与强平，`1dfb60b`）。
+分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 commit，最近一次是第 08 讲（资金费与账户操作，`e8b3259`）。
 
 技术栈：Better-T-Stack 脚手架 —— Next.js 16 + React 19 + Hono + Drizzle + Supabase Postgres + Turborepo + pnpm 11 catalog。Node v22.23.2。脚手架的 `api` 和 `auth` 都是 `none`，所以前后端走 Hono 接口 + fetch，鉴权要自己实现。
 
@@ -87,7 +87,7 @@ docs/design/
 
 ## 五、下一步
 
-**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，下一讲是**第 09 讲：触发单与只减仓**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
+**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，引擎内核已经完成，下一讲是**第 10 讲：行情层**（服务端，开工前确认分工），见 `docs/tutorial/README.md` 的进度表和各讲大纲。
 
 按 `数据库 → 后端 → 前端` 的顺序搭。前两层用户想自己一步步做，前端交给 AI。
 

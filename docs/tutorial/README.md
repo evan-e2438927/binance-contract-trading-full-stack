@@ -44,7 +44,7 @@
 | 06 | 限价单与拟真排队 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[06-limit-orders-queue.md](06-limit-orders-queue.md) |
 | 07 | 风控与强平 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[07-risk-liquidation.md](07-risk-liquidation.md) |
 | 08 | 资金费与账户操作 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[08-funding-account-ops.md](08-funding-account-ops.md) |
-| 09 | 触发单与只减仓 | `packages/engine` | ⬜ |
+| 09 | 触发单与只减仓 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[09-trigger-orders.md](09-trigger-orders.md) |
 | 10 | 行情层：接币安 WebSocket | `apps/server/src/market` | ⬜ |
 | 11 | 仓储层与引擎宿主：落库、恢复、定时任务 | `apps/server` | ⬜ |
 | 12 | 鉴权：钱包 / 邮箱 / Google 三种登录 | `apps/server` `packages/db` | ⬜ |
@@ -125,6 +125,7 @@
 
 - **做什么**：止损/止盈四个方向的触发判定；触发瞬间才校验保证金；`closePosition`；仓位平完后残余只减仓单自动撤销
 - **验收**：止损买 / 止损卖 / 止盈买 / 止盈卖**四条一条都不能少**
+- **实际完成**：`triggers.ts`（下单入簿不冻结保证金；标记价 / 最新价推送时按 workingType 检查；触发时转 MARKET / LIMIT 重走校验链，失败 REJECTED、GTX 会吃单 EXPIRED；closePosition 按当时全部仓位）；校验链第 14 步（触发价已穿过拒单、条件单合计 200）；标记价推送先查触发再跑风控；缺口 #13 #15 定了，新记 #28 #29；18 条测试。**引擎内核（02–09）全部完成**
 
 ### 10 · 行情层
 
@@ -173,9 +174,9 @@
 | 10 | 写库失败怎么回滚内存没说。若宿主每次 `apply` 前调 `snapshot()`，代价是 O(全体账户)，账户一多就被 GC 拖垮。方向已定为引擎内 undo 日志 + `commit()` / `rollback()`，见 `02-architecture.md` 第七节"回滚怎么做" | 02（已实现：`journal.ts` + `commit()` / `rollback()`，第 7 节） |
 | 11 | `packages/shared` 的 `format(value, precision)` 精度不足 8 位时是**截断**不是四舍五入，写强平价算例 B 的测试才发现：内部值 54780.87649402…，截断显示成 "54780.87"，和文档里手算四舍五入的 "54780.88" 对不上 | ✅ 03：改成四舍五入（`format` 先对整个值按目标精度四舍五入再拆分整数/小数部分，进位能正确传到整数位），补了对应测试 |
 | 12 | **单向持仓模式下仓位怎么存**：`04-backend-design.md` 第 3 节说"内部仍用 LONG/SHORT"，`packages/db` 的 `positions.ts` 注释说"单向模式恒为 BOTH"。`qty` 非负，存 BOTH 分不清多空 | ✅ 04（引擎侧）：订单上是 BOTH，仓位在引擎内部存 LONG/SHORT + 非负 qty，同币对最多一个。✅ 2026-09-17 用户定（数据库侧）：**按币安标准**（`GET /fapi/v3/positionRisk`：单向模式 `positionSide = BOTH`，`positionAmt` 多正空负，双向模式 SHORT 也为负）。第 11 讲迁移：`qty` 改名 `position_amt` 存带符号数量，部分索引条件改 `position_amt <> 0`，仓储层负责两种表示法互转。设计文档 03/04 已加注。REST `/account/positions` 输出是否也用 `positionAmt` 带符号，第 13 讲确认（建议一致） |
-| 13 | GTX 会吃单：`04` 第 6 节第 12 步说拒单（`POST_ONLY_REJECTED`），第 3 节状态机、5.4 节、`06` 场景表说 `EXPIRED` | ✅ 04：时机不同。普通 LIMIT+GTX 下单时就会吃单 → 拒单；止损/止盈限价单的 GTX 在触发时才会吃单 → 转 `EXPIRED`（09 讲）。`04` 第 3/5.4/6 节、`06` 场景表已加注 |
+| 13 | GTX 会吃单：`04` 第 6 节第 12 步说拒单（`POST_ONLY_REJECTED`），第 3 节状态机、5.4 节、`06` 场景表说 `EXPIRED` | ✅ 04：时机不同。普通 LIMIT+GTX 下单时就会吃单 → 拒单；止损/止盈限价单的 GTX 在触发时才会吃单 → 转 `EXPIRED`（09 讲）。`04` 第 3/5.4/6 节、`06` 场景表已加注。✅ 09 已实现：触发时 GTX 会吃单 → `EXPIRED`；其它触发时校验失败按币安条件单状态 → `REJECTED`（不是设计里的 `EXPIRED`） |
 | 14 | 所需保证金没算"开仓亏损"：市价买单成交价高于标记价，成交瞬间就有浮亏，币安会把它加进所需保证金；设计文档只写了"起始保证金 + 预留手续费" | ✅ 05：按币安 FAQ 公式实现（开仓成本 = 起始保证金 + 开仓亏损），市价单用真实逐档成交价，另外仍预留 Taker 手续费。见 `05-market-order-fills.md` 第 3 节、`docs/design/07-binance-reference.md` 第 5 节 |
-| 15 | 触发单的触发价在下单时就已经被穿过（例如标记价 50,000 时挂触发价 49,000 的止损买单），币安会拒，设计文档没提 | 09：**默认按币安标准拒单**（实现前核对币安返回的错误和判定用的价格类型） |
+| 15 | 触发单的触发价在下单时就已经被穿过（例如标记价 50,000 时挂触发价 49,000 的止损买单），币安会拒，设计文档没提 | ✅ 09：校验链第 14 步，按 workingType 取标记价或最新价判断，满足触发条件就拒 `WOULD_IMMEDIATELY_TRIGGER`（`packages/shared` 新增错误码，币安 -2021 / -4142） |
 | 16 | 校验链第 2 步"行情就绪"只能查有没有盘口/标记价，查不了新不新——引擎没有时钟。行情断线暂停交易要由宿主负责 | 10 / 11 |
 | 17 | **和币安标准核对第 04 讲后，和已定设计冲突 / 要改数据库的三处**（2026-09-17，依据：币安 New Order / New Algo Order 接口说明、U 本位合约错误码、`GET /fapi/v1/exchangeInfo` 实时数据）：① 挂单数上限口径（我们每账户 200，币安 `MAX_NUM_ORDERS` 每币对 200）② 触发单默认价格类型（设计 `MARK_PRICE` 且误称与币安一致，币安默认 `CONTRACT_PRICE`）③ `PRICE_FILTER` 上下限、`LOT_SIZE.maxQty`、`MARKET_LOT_SIZE`、按币对的 `PERCENT_PRICE` 需要 `symbols` 表存 | ✅ 2026-09-17 用户定：三处都按币安。①② 第 04 讲已实现；③ 引擎 `SymbolSpec` 已实现，**`symbols` 表加列和 `seed:symbols` 同步由用户写**（字段对照见 `04-order-validation.md` 第 7 节），`orders.working_type` 默认值同样待改 |
 | 18 | 只减仓数量要不要扣掉其它挂单：币安 `-2022` 只说"新的只减仓单和已有挂单冲突"，文档没写清 | ✅ 2026-09-17 用户定：下单时只和当前仓位比（规则一，现状）。"只平不反"由成交时保证——✅ 05 已实现：只减仓类订单成交时截断到剩余仓位；仓位平完后同方向残余只减仓挂单 `CANCELED` |
@@ -188,6 +189,8 @@
 | 25 | 第 07 讲要数据库跟进的两处：① `order_type` 枚举加 `LIQUIDATION`（`packages/shared` 已改，要生成迁移）② `symbols` 表加 `liquidation_fee`（币安 exchangeInfo 币对字段，`seed:symbols` 同步），引擎 `SymbolSpec.liquidationFeeRate` 读它；`FeeConfig` 里原来的全局 `liquidationFeeRate` 已删 | 用户写，第 11 讲接宿主之前完成 |
 | 26 | `ledger_entries` 的 `MARGIN_TRANSFER` 类型现在没有任何事件会产生：调逐仓保证金不改钱包余额（缺口 #6），不写流水。用户要看"调过几次保证金"的历史，只能从 `positionUpdate` 里看 | 08 定：暂不用。第 13 讲做 REST 时如果需要调整历史（币安有 `GET /fapi/v1/positionMargin/history`），再决定加表还是复用这个类型 |
 | 27 | 账户操作的错误码和币安不是一一对应：调逐仓保证金减太多，币安是 `-4051 ISOLATED_BALANCE_INSUFFICIENT`，我们沿用设计文档的 `MARGIN_WOULD_LIQUIDATE`（名字窄了：币安的上限还包括"不能低于起始保证金"）；调杠杆超范围、逐仓不能调低、设置没变都归到 `INVALID_PARAMS`。对照表见 `07-binance-reference.md` 第 9 节 | 13：REST 层返回错误时决定要不要细分，改 `packages/shared` 的 `ERROR_CODES` |
+| 28 | 触发单没实现的币安参数 / 规则：`priceProtect`（触发时标记价和最新价偏差不能超过币对 `triggerProtect`，币安默认 false）；止损 / 止盈限价单委托价相对触发价的上下限（-4183 / -4184，文档没写用哪个字段）；`TRAILING_STOP_MARKET`；`GTD` | 13：REST 下单接口定参数时决定要不要支持；支持前 zod 直接拒这些参数 |
+| 29 | 触发后沿用同一张订单（`triggered = true`），不像币安那样新开一张普通单（algoId → actualOrderId）。好处是 `orders` 表不用加映射；代价是对外接口的订单 id 语义和币安不同 | 13：REST / WS 输出订单时确认是否需要区分条件单和触发后的普通单 |
 
 ---
 

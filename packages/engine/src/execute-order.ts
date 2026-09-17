@@ -14,7 +14,7 @@ import { limitOpenCost, type Direction, type ValidatedOrder } from "./validate-o
  * - 限价单：先判断会不会立刻成交（穿透盘口）。穿透的部分当 Taker 成交，价格不超过委托价；
  *   IOC 剩余过期，FOK 不能全成就整单过期，GTC 剩余挂进挂单簿、排队位置是 0
  * - 不穿透的 GTC / GTX 限价单：估算排队位置后挂进挂单簿，之后由行情成交流推进（第 06 讲，queue.ts / resting-orders.ts）
- * - 触发单第 09 讲
+ * - 触发单：未触发时由 triggers.ts 入簿；触发那一刻转成 MARKET / LIMIT 请求再走这里，origin 带上原订单的身份
  *
  * 盘口快照本身不被修改：多个模拟用户可以吃同一档流动性（02-architecture.md 已知失真点 #2）。
  */
@@ -27,10 +27,21 @@ interface Take {
   qty: Fixed;
 }
 
-export function executeOrder(state: EngineState, input: PlaceOrderInput, validated: ValidatedOrder): EngineEvent[] {
+/**
+ * 触发单触发时（第 09 讲）用来保留原订单身份的字段：订单类型仍是 STOP / TAKE_PROFIT…、触发价、
+ * triggered = true、下单时间、closePosition。成交机制只看 req.type（已经转成 MARKET 或 LIMIT）。
+ */
+export type OrderOrigin = Pick<Order, "type" | "stopPrice" | "workingType" | "createdAt" | "closePosition">;
+
+export function executeOrder(
+  state: EngineState,
+  input: PlaceOrderInput,
+  validated: ValidatedOrder,
+  origin?: OrderOrigin,
+): EngineEvent[] {
   const { req } = input;
   if (req.type !== "MARKET" && req.type !== "LIMIT") {
-    throw new Error(`触发单（${req.type}）入簿和触发还没有实现，见第 09 讲`);
+    throw new Error(`executeOrder 只处理 MARKET / LIMIT，触发单（${req.type}）要先经过 triggers.ts`);
   }
 
   const book = state.books.get(req.symbol)!; // 第 2 步保证了存在
@@ -44,23 +55,23 @@ export function executeOrder(state: EngineState, input: PlaceOrderInput, validat
     symbol: req.symbol,
     side: req.side,
     positionSide: req.positionSide,
-    type: req.type,
+    type: origin?.type ?? req.type,
     timeInForce: validated.timeInForce,
     price: limitPrice,
-    stopPrice: null,
-    workingType: validated.workingType,
+    stopPrice: origin?.stopPrice ?? null,
+    workingType: origin?.workingType ?? validated.workingType,
     qty: validated.qty,
     executedQty: 0n,
     avgPrice: 0n,
     reduceOnly: validated.reduceOnly,
-    closePosition: validated.closePosition,
+    closePosition: origin?.closePosition ?? validated.closePosition,
     status: "NEW",
-    triggered: false,
+    triggered: origin !== undefined,
     queueAhead: 0n,
     queueEstimated: false,
     frozenMargin: 0n,
     rejectReason: null,
-    createdAt: input.ts,
+    createdAt: origin?.createdAt ?? input.ts,
     updatedAt: input.ts,
   };
 
@@ -87,7 +98,7 @@ export function executeOrder(state: EngineState, input: PlaceOrderInput, validat
   const takes = takeLevels(levels, order.qty, limitPrice, req.side);
   const takeable = takes.reduce((sum, take) => sum + take.qty, 0n);
 
-  if (order.type === "MARKET" && takeable < order.qty) {
+  if (req.type === "MARKET" && takeable < order.qty) {
     throw new Error(`市价单 ${order.id} 深度不够，校验链第 11 步应该已经拒掉了`);
   }
   if (order.timeInForce === "FOK" && takeable < order.qty) {
@@ -122,7 +133,7 @@ export function executeOrder(state: EngineState, input: PlaceOrderInput, validat
   const remaining = order.qty - order.executedQty;
   if (remaining === 0n) {
     order = { ...order, status: "FILLED" };
-  } else if (order.type === "MARKET" || order.timeInForce === "IOC" || nothingLeftToClose(state, order)) {
+  } else if (req.type === "MARKET" || order.timeInForce === "IOC" || nothingLeftToClose(state, order)) {
     // 市价单 / IOC 剩余部分过期；只减仓类订单已经没有仓位可减，剩余部分同样过期
     order = { ...order, status: "EXPIRED", rejectReason: `未成交的 ${remaining} 已过期` };
   } else {

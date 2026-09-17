@@ -28,15 +28,20 @@ interface SetupOptions {
   config?: EngineConfig;
   /** false = 不喂盘口和标记价（测第 2 步用） */
   market?: boolean;
+  /** 喂一笔这个价格的行情成交，让引擎有最新价。触发单（默认按最新价判断）第 14 步要用 */
+  lastPrice?: string;
 }
 
 /** 一个开好户、有盘口（两边各 7 BTC）、标记价 50,000 的引擎状态。默认单向模式、钱包 10,000、杠杆默认 20x。 */
-function setup({ wallet = "10000", mode = "ONE_WAY", config = testConfig(), market = true }: SetupOptions = {}) {
+function setup({ wallet = "10000", mode = "ONE_WAY", config = testConfig(), market = true, lastPrice }: SetupOptions = {}) {
   const state = createState(config);
   applyInput(state, { ...registerAccountInput("acc-1", wallet), positionMode: mode });
   if (market) {
     applyInput(state, bookInput());
     applyInput(state, markPriceInput("50000"));
+  }
+  if (lastPrice) {
+    applyInput(state, { t: "trade", symbol: "BTCUSDT", tradeId: 1, price: parse(lastPrice), qty: parse("0.1"), buyerIsMaker: false, ts: T0 });
   }
   return state;
 }
@@ -181,7 +186,7 @@ describe("③ INVALID_PARAMS", () => {
   });
 
   it("三种典型下单都能过第 3 步：限价开多、市价、止损市价全平", () => {
-    const state = setup();
+    const state = setup({ lastPrice: "50000" });
     putPosition(state, testPosition());
     expectAccepted(validate(state));
     expectAccepted(validate(state, { type: "MARKET", price: undefined, timeInForce: undefined, qty: parse("0.1") }));
@@ -336,7 +341,7 @@ describe("⑦ PERCENT_PRICE（标记价 50,000，BTCUSDT 上下限 ×1.05 / ×0.
   });
 
   it("止损限价单的委托价不在下单时检查（触发时才挂出去）", () => {
-    expectAccepted(validate(setup(), { type: "STOP", price: parse("40000"), stopPrice: parse("51000") }));
+    expectAccepted(validate(setup({ lastPrice: "50000" }), { type: "STOP", price: parse("40000"), stopPrice: parse("51000") }));
   });
 });
 
@@ -550,7 +555,7 @@ describe("⑩ INSUFFICIENT_MARGIN（默认 20x，Taker 费率 0.05%）", () => {
 
   it("未触发的触发单不占保证金，下单时不查余额", () => {
     const order = expectAccepted(
-      validate(setup(), {
+      validate(setup({ lastPrice: "50000" }), {
         type: "STOP_MARKET",
         price: undefined,
         timeInForce: undefined,
@@ -762,7 +767,7 @@ describe("校验通过后的结果", () => {
   });
 
   it("closePosition 止损单：数量为 0，平仓数量取当前全部仓位", () => {
-    const state = setup();
+    const state = setup({ lastPrice: "50000" });
     putPosition(state, testPosition({ qty: parse("0.7") }));
     const order = expectAccepted(
       validate(state, {

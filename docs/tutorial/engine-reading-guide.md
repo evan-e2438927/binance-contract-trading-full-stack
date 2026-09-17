@@ -29,8 +29,8 @@
 | 部分 | 状态 | 说明 |
 | --- | --- | --- |
 | 类型（输入/输出/领域对象） | ✅ 完整 | 12 种输入、9 种输出事件都定义好了 |
-| `apply` 能处理的输入 | ✅ 12 种 | `markPrice` 存标记价并对这个币对上有仓位的账户跑风控扫描（第 07 讲）；`book` 存盘口并夹逼挂单排队位置、`trade` 存最新价并让挂单按排队成交（第 06 讲）；`registerAccount` 开户发钱；`placeOrder` 校验 + 成交或挂单（第 04、05、06 讲），触发单抛错"见第 09 讲"；`cancelOrder` 撤单（第 06 讲）；`settleFunding` 资金费、`setLeverage` / `setMarginMode` / `setPositionMode` / `adjustIsolatedMargin` / `resetAccount` 账户操作（第 08 讲） |
-| 触发单 | ❌ 下单时抛错 | 止损 / 止盈四种类型，第 09 讲 |
+| `apply` 能处理的输入 | ✅ 12 种 | `markPrice` 存标记价并对这个币对上有仓位的账户跑风控扫描（第 07 讲）；`book` 存盘口并夹逼挂单排队位置、`trade` 存最新价并让挂单按排队成交（第 06 讲）；`registerAccount` 开户发钱；`placeOrder` 校验 + 成交、挂单或触发单入簿（第 04、05、06、09 讲）；`cancelOrder` 撤单（第 06 讲）；`settleFunding` 资金费、`setLeverage` / `setMarginMode` / `setPositionMode` / `adjustIsolatedMargin` / `resetAccount` 账户操作（第 08 讲） |
+| 触发单 | ✅ 完整 | `triggers.ts`：止损 / 止盈四种类型、closePosition，标记价 / 最新价推送时检查（第 09 讲） |
 | 回滚机制（undo 日志） | ✅ 完整 | `journal.ts` |
 | 计算公式 | ✅ 写好并测过 | `formulas.ts` / `position.ts` / `liquidation.ts`；第 04 讲的校验链用到了其中几个（可用余额、冻结保证金、分层查找），成交和强平还没用上 |
 | 下单校验链 | ✅ 完整 | `validate-order.ts`，13 步，只读状态（第 04 讲） |
@@ -40,7 +40,7 @@
 | 资金费与账户操作 | ✅ 完整 | `funding.ts`、`account-ops.ts`（第 08 讲）；`ledger-replay.test.ts` 重放了 `01` 第十二节整张流水表 |
 | 测试脚手架（自动对账） | ✅ 完整 | `testing/` |
 
-所以现在的引擎，**真正能"跑"的业务有四件：开户发 10,000 USDT、把不合格的下单拒掉、市价单和限价单成交落账、限价单挂着排队等行情成交（以及撤单）、爆仓强平、资金费、调杠杆等账户操作**。只剩触发单（第 09 讲），强平相关公式要等第 07 讲才会被 `apply` 串起来。
+所以现在的引擎，**真正能"跑"的业务有四件：开户发 10,000 USDT、把不合格的下单拒掉、市价单和限价单成交落账、限价单挂着排队等行情成交（以及撤单）、爆仓强平、资金费、调杠杆等账户操作**。引擎内核的业务全部齐了（第 02–09 讲），强平相关公式要等第 07 讲才会被 `apply` 串起来。
 
 ---
 
@@ -393,6 +393,21 @@ rollback:   A 放回 旧A；C 删掉        ← 只动 2 个键，和账户总�
 1. **账户操作被拒也走 `rejected` 事件**，和下单一样，不改任何状态；账户不存在才抛错（宿主接线错误）
 2. **调杠杆牵一发动全身**：设置、仓位的 `leverageNum`、挂单的 `frozenMargin` 必须一起改，否则下一笔成交 `applyFill` 会因为仓位和设置不一致抛错
 3. **`ledger-replay.test.ts` 是引擎内核的毕业考试**：全部用真实输入，不用快照手改状态
+
+### `triggers.ts` —— 触发单（第 09 讲新增）
+
+| 时机 | 函数 | 干什么 |
+| --- | --- | --- |
+| `placeOrder`（STOP / STOP_MARKET / TAKE_PROFIT / TAKE_PROFIT_MARKET） | `placeTriggerOrder` | 校验链第 14 步查过触发价没被穿过；入簿 `triggered = false`，不冻结保证金、不排队 |
+| `markPrice`（先于风控扫描） | `checkTriggers(…, "MARK_PRICE", 标记价)` | 按下单时间检查 MARK_PRICE 单 |
+| `trade`（挂单撮合之后） | `checkTriggers(…, "CONTRACT_PRICE", 成交价)` | 检查 CONTRACT_PRICE（默认）单 |
+| 满足条件 | `fireTrigger` | 移出挂单簿 → 转成 MARKET / LIMIT 请求 → 重走校验链 → `executeOrder`（带上原订单身份）；失败 `REJECTED`，GTX 会吃单 `EXPIRED` |
+
+读的时候抓住三件事：
+
+1. **方向**：止损买、止盈卖是价格**涨到**触发价；止损卖、止盈买是**跌到**。`validate-order.ts` 的 `triggerReached` 一个函数管下单时和触发时两处
+2. **触发前后是同一张订单**：`executeOrder` 的第 4 个参数 `origin` 保留类型、触发价、下单时间，成交机制只看转换后的 `req.type`
+3. **标记价推送先触发、再风控**：止损单是用户给自己设的防线，要抢在强平之前生效
 
 ## 6. 测试是怎么保护这些代码的
 

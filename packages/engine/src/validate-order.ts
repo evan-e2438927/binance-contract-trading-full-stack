@@ -20,7 +20,7 @@ import { positionKey, settingOf, type EngineState } from "./state";
 import type { Account, Level, PlaceOrderRequest, Position, SymbolSpec } from "./types";
 
 /**
- * 04-backend-design.md 第 6 节：下单校验链，13 步，**顺序不能换**。
+ * 04-backend-design.md 第 6 节：下单校验链，13 步 + 第 09 讲加的第 14 步（触发单），**顺序不能换**。
  *
  * 只读 EngineState，不改任何东西——校验通过之后怎么成交、怎么挂单是第 05/06 讲的事。
  * 任何一步失败立刻返回错误码 + 带具体数字的中文提示，后面的步骤不再执行。
@@ -317,6 +317,30 @@ export function validateOrder(
     }
   }
 
+  // ⑭ 触发单（第 09 讲）：
+  //    条件单总数上限——所有币对合计（币安 -4045 MAX_STOP_ORDER_EXCEEDED；上限 200 见 LimitConfig）
+  //    触发价下单时就已经被穿过 → 拒单（缺口 #15，币安 -2021 "Order would immediately trigger"）。
+  //    "现在的价格"按 workingType 取：MARK_PRICE 用标记价，CONTRACT_PRICE（默认）用最新成交价
+  if (isTrigger) {
+    const maxConditional = state.config.limits.maxConditionalOrdersNum;
+    const conditional = countConditionalOrders(state, accountId);
+    if (conditional >= maxConditional) {
+      return reject("TOO_MANY_ORDERS", `已有 ${conditional} 张未触发的条件单，达到所有币对合计上限 ${maxConditional} 张`);
+    }
+    const workingType = req.workingType ?? "CONTRACT_PRICE";
+    const current = workingType === "MARK_PRICE" ? markPrice : state.lastPrices.get(req.symbol);
+    if (current === undefined) {
+      return reject("MARKET_NOT_READY", `${req.symbol} 还没有最新成交价，暂时无法判断触发价`);
+    }
+    if (triggerReached(req.type, req.side, req.stopPrice!, current)) {
+      const priceName = workingType === "MARK_PRICE" ? "标记价" : "最新价";
+      return reject(
+        "WOULD_IMMEDIATELY_TRIGGER",
+        `触发价 ${show(req.stopPrice!)} 已经被穿过（当前${priceName} ${show(current)}），下单会立刻触发`,
+      );
+    }
+  }
+
   return {
     ok: true,
     order: {
@@ -597,6 +621,27 @@ export function maxNotionalFor(brackets: readonly { notionalCap: Fixed; maxLever
     if (bracket.maxLeverageNum >= leverageNum) cap = bracket.notionalCap;
   }
   return cap;
+}
+
+/**
+ * 条件单的触发条件（币安 New Algo Order 接口说明）：
+ *   STOP / STOP_MARKET            买：价格 ≥ 触发价    卖：价格 ≤ 触发价
+ *   TAKE_PROFIT / TAKE_PROFIT_MARKET  买：价格 ≤ 触发价    卖：价格 ≥ 触发价
+ * 止损买是"涨上去就认输买回"，止盈买是"跌下来就落袋买回"——方向搞反是这类代码最常见的 bug。
+ */
+export function triggerReached(type: OrderType, side: "BUY" | "SELL", stopPrice: Fixed, price: Fixed): boolean {
+  const isStop = type === "STOP" || type === "STOP_MARKET";
+  const risesTo = (side === "BUY") === isStop; // 止损买、止盈卖：价格涨到触发价
+  return risesTo ? price >= stopPrice : price <= stopPrice;
+}
+
+/** 账户所有币对上还没触发的条件单。 */
+function countConditionalOrders(state: EngineState, accountId: string): number {
+  let count = 0;
+  for (const order of state.orders.values()) {
+    if (order.accountId === accountId && TRIGGER_TYPES.includes(order.type) && !order.triggered) count++;
+  }
+  return count;
 }
 
 function countOpenOrders(state: EngineState, accountId: string, symbol: string): number {

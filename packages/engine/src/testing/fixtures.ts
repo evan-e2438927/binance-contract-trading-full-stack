@@ -84,6 +84,7 @@ export function testConfig(): EngineConfig {
     },
     limits: {
       marketDepthRatio: parse("0.5"),
+      maxConditionalOrdersNum: 200,
     },
   };
 }

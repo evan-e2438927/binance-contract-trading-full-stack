@@ -75,6 +75,12 @@ export interface FeeConfig {
  */
 export interface LimitConfig {
   marketDepthRatio: Fixed; // 市价单最多吃掉可见深度的比例（校验链第 11 步：50%）
+  /**
+   * 每个账户所有币对合计最多挂多少张未触发的条件单（校验链第 14 步）。币安的账户级规则：2025-12-29 更新日志
+   * "MAX_NUM_ALGO_ORDERS has been removed … The conditional order limits is 200 across all symbols"，
+   * exchangeInfo 里已经没有这个字段，只能放配置。
+   */
+  maxConditionalOrdersNum: number;
 }
 
 export interface EngineConfig {

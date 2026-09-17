@@ -20,6 +20,7 @@ export const ERROR_CODES = [
   "MARKET_ORDER_TOO_LARGE", // 第 11 步：市价单数量超过了对手盘可见深度的一半
   "POST_ONLY_REJECTED", // 第 12 步：GTX（只做 Maker）单如果下去会立刻吃单成交，直接拒
   "TOO_MANY_ORDERS", // 第 13 步：该账户当前挂单数已经到了 200 张的上限
+  "WOULD_IMMEDIATELY_TRIGGER", // 第 14 步：触发单的触发价在下单时就已经被穿过（币安 -2021，第 09 讲）
 
   // 仓位与账户
   "ORDER_NOT_FOUND", // 撤单时订单不存在，或已经是终态
@@ -56,6 +57,7 @@ export const ERROR_HTTP_STATUS: Record<ErrorCode, number> = {
   MARKET_ORDER_TOO_LARGE: 400,
   POST_ONLY_REJECTED: 400,
   TOO_MANY_ORDERS: 429,
+  WOULD_IMMEDIATELY_TRIGGER: 400,
   ORDER_NOT_FOUND: 404,
   POSITION_NOT_FOUND: 404,
   MARGIN_MODE_LOCKED: 409,

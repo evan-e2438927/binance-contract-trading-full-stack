@@ -99,8 +99,8 @@
 | `-2019` MARGIN_NOT_SUFFICIEN | 保证金不足 | `INSUFFICIENT_MARGIN` | 10 |
 | `-5022` GTX_ORDER_REJECT | 只做 Maker 的单会立刻成交，拒单 | `POST_ONLY_REJECTED` | 12 |
 | `-2025` MAX_OPEN_ORDER_EXCEEDED | 挂单数达到上限 | `TOO_MANY_ORDERS` | 13 |
-| `-2021` / `-4142` | 条件单会立刻触发 | （第 09 讲） | — |
-| `-4045` MAX_STOP_ORDER_EXCEEDED | 条件单数达到上限（具体数值文档没给） | 未实现 | — |
+| `-2021` / `-4142` | 条件单会立刻触发 | `WOULD_IMMEDIATELY_TRIGGER` | 14 |
+| `-4045` MAX_STOP_ORDER_EXCEEDED | 条件单数达到上限（所有币对合计 200） | `TOO_MANY_ORDERS` | 14 |
 
 > 更正记录：设计文档原来说"币安跨层时自动降杠杆，我们改成拒单"。核对错误码表后发现币安下单时同样拒单（`-2027`），设计文档各处已加更正。
 
@@ -230,10 +230,28 @@
 
 ---
 
-## 10. 还没核对、写到时要查的
+## 10. 触发单
+
+**出处**：New Algo Order（`POST /fapi/v1/algoOrder`）网页版接口说明、U 本位合约更新日志 2025-12-29、用户数据流 `ALGO_UPDATE` / `CONDITIONAL_ORDER_TRIGGER_REJECT`、错误码｜核对：2026-09-17
+
+| 规则 | 币安 | 我们（第 09 讲） |
+| --- | --- | --- |
+| 触发条件 | STOP / STOP_MARKET 买：latest price ≥ triggerPrice，卖：≤；TAKE_PROFIT / TAKE_PROFIT_MARKET 买：≤，卖：≥。latest price 是 MARK_PRICE 还是 CONTRACT_PRICE 由 `workingType` 定（默认 CONTRACT_PRICE） | 同左；标记价推送查 MARK_PRICE 单，行情成交推送查 CONTRACT_PRICE 单 |
+| 下单时已满足触发条件 | -2021 ORDER_WOULD_IMMEDIATELY_TRIGGER / -4142 | `WOULD_IMMEDIATELY_TRIGGER`（校验链第 14 步） |
+| 条件单数量 | 2025-12-29 起 `MAX_NUM_ALGO_ORDERS` 移除，"conditional order limits is 200 across all symbols"（-4045）；`MAX_NUM_ORDERS` 普通单和 algo 单一起算 | 未触发的条件单所有币对合计 ≤ 200（`LimitConfig.maxConditionalOrdersNum`）；每币对挂单数照旧普通单和触发单一起算 |
+| closePosition | 只配 STOP_MARKET / TAKE_PROFIT_MARKET；"If triggered, close all current long position (if SELL) or current short position (if BUY)" | 触发时数量取对应方向当时的全部仓位 |
+| STOP / TAKE_PROFIT 的 timeInForce | 可传，默认 GTC | 同左 |
+| 触发后 | 转发到撮合引擎新下一张单（algoStatus TRIGGERING → TRIGGERED，actualOrderId） | 沿用同一张订单，`triggered = true` |
+| 触发后被拒 | algoStatus `REJECTED`（"such as in scenarios of margin check failures"），推送 `CONDITIONAL_ORDER_TRIGGER_REJECT` | 校验链不通过 → `REJECTED`；GTX 会吃单 → `EXPIRED`（缺口 #13） |
+| priceProtect | STOP_MARKET / TAKE_PROFIT_MARKET 可选，默认 false；触发时标记价和最新价偏差不能超过币对 `triggerProtect` | **没实现**（等于永远 false，缺口 #28） |
+| 止损限价单委托价上下限 | -4183 / -4184 "Limit price can't be higher / lower than %s"（相对触发价的倍数） | **没实现**，具体倍数字段文档没写（缺口 #28） |
+
+---
+
+## 11. 还没核对、写到时要查的
 
 | 讲 | 要查的币安规则 |
 | --- | --- |
 | 07 | ✅ 已核对，见第 8 节。**还没查**：强平价展示公式的最新口径（FAQ "How to Calculate Liquidation Price of USDⓈ-M Futures Contracts"，第 13 讲 REST 仓位接口要展示强平价时再查）；可用余额 `availableBalance` 能不能为负（不影响引擎：强平线在维持保证金，缺口 #19 已按"下单不能把它变负"定） |
 | 08 | ✅ 已核对，见第 9 节 |
-| 09 | 条件单 `priceProtect` / `triggerProtect`；条件单数量上限（`-4045`）；止损限价单的委托价限制（`-4183` / `-4184`） |
+| 09 | ✅ 已核对，见第 10 节。**还没查**：`priceProtect` 触发时怎么判（`triggerProtect` 的含义）、止损限价单委托价上下限用的是哪个字段（缺口 #28，要做时再查） |

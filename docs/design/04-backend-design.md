@@ -736,6 +736,15 @@ STOP_MARKET / TAKE_PROFIT_MARKET   → 立即走第 5.3 节逐档吃单
 
 触发时按**当时的全部仓位数量**平仓，不用预设数量。这类单天然是 `reduceOnly`，不冻结保证金。
 
+> **已定（第 09 讲，按币安 New Algo Order 接口说明核对）**：
+> 1. **价格类型**：`MARK_PRICE` 单在标记价推送时检查，`CONTRACT_PRICE`（默认）单在行情成交推送时检查——上面伪代码只写了标记价
+> 2. **下单时**（校验链第 14 步）：触发价已经被穿过 → 拒单 `WOULD_IMMEDIATELY_TRIGGER`（缺口 #15，币安 -2021）；未触发的条件单所有币对合计最多 200 张（币安 2025-12-29 更新日志，-4045）
+> 3. **触发时**：转成 MARKET / LIMIT 请求**重新走整条校验链**。不通过时，GTX 会吃单 → `EXPIRED`（缺口 #13）；其它（保证金不足、深度不够、没仓位可减）→ **`REJECTED`**，不是上面写的 `EXPIRED`（币安条件单状态 REJECTED："denied by the matching engine, such as in scenarios of margin check failures"）
+> 4. **顺序**：标记价推送时先检查触发单、再跑风控——止损单就是为了抢在强平之前平仓
+> 5. 触发后沿用同一张订单（`triggered = true`、类型仍是 STOP…），不像币安那样新开一张普通单
+> 6. 没实现：`priceProtect`（币安默认 false）、止损限价单委托价相对触发价的上下限（-4183 / -4184）、`TRAILING_STOP_MARKET`
+> 实现 `packages/engine/src/triggers.ts`，讲义 `docs/tutorial/09-trigger-orders.md`。
+
 ---
 
 ## 8. 引擎：风控与强平
@@ -1284,6 +1293,7 @@ wss://api.<域名>/ws
 | `MARKET_ORDER_TOO_LARGE` | 400 | 市价单超出可见深度的一半 |
 | `POST_ONLY_REJECTED` | 400 | GTX 单会立刻成交 |
 | `TOO_MANY_ORDERS` | 429 | 挂单数超过 200 |
+| `WOULD_IMMEDIATELY_TRIGGER` | 400 | 触发单的触发价下单时已经被穿过（第 09 讲加，币安 -2021） |
 
 ### 仓位与账户
 
