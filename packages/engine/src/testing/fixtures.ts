@@ -156,6 +156,19 @@ export function bookInput(ts = T0): Extract<EngineInput, { t: "book" }> {
   };
 }
 
+/**
+ * 更深的盘口：前三档和 bookInput 一样，后面各加一档 10 BTC，两边可见深度 17 BTC（市价单最多 8.5 BTC）。
+ * 用来测 04-backend-design.md 5.3 节"市价买 5 BTC"——bookInput 只有 7 BTC 深度，5 BTC 会被第 11 步拒掉。
+ */
+export function deepBookInput(ts = T0): Extract<EngineInput, { t: "book" }> {
+  const book = bookInput(ts);
+  return {
+    ...book,
+    bids: [...book.bids, { price: parse("49998"), qty: parse("10") }],
+    asks: [...book.asks, { price: parse("50002"), qty: parse("10") }],
+  };
+}
+
 export function markPriceInput(markPrice = "50000", ts = T0): Extract<EngineInput, { t: "markPrice" }> {
   return {
     t: "markPrice",

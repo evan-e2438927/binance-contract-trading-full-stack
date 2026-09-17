@@ -35,7 +35,7 @@ describe("减仓：均价不变，已实现盈亏按方向算", () => {
     expect(result.realizedPnl).toBe(parse("2000"));
   });
 
-  it("已实现盈亏向下截断（保守），不四舍五入", () => {
+  it("已实现盈亏向下取整（保守），不四舍五入", () => {
     // diff = 0.00000009，closeQty = 0.5 → 真实值 0.000000045，四舍五入该进到 5，截断给 4
     const result = reducePosition(
       "LONG",
@@ -46,6 +46,19 @@ describe("减仓：均价不变，已实现盈亏按方向算", () => {
       parse("50000.00000009"),
     );
     expect(result.realizedPnl).toBe(4n); // 不是四舍五入后的 5n
+  });
+
+  it("亏损时向下取整是多算亏损（第 05 讲从朝零截断改成 mulFloor）", () => {
+    // diff = −0.00000009，closeQty = 0.5 → 真实值 −0.000000045，朝零截断给 −4，向下取整给 −5
+    const result = reducePosition(
+      "LONG",
+      parse("1"),
+      parse("50000.00000009"),
+      0n,
+      parse("0.5"),
+      parse("50000"),
+    );
+    expect(result.realizedPnl).toBe(-5n);
   });
 
   it("closeQty 超过 currentQty 直接抛错——反手要走 splitReverseFill", () => {

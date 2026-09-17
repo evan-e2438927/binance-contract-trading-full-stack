@@ -122,7 +122,7 @@ describe("尚未实现的输入", () => {
   });
 });
 
-describe("placeOrder（第 04 讲：只接了校验链，成交和挂单在第 05 讲）", () => {
+describe("placeOrder 接线（成交落账的完整测试在 execute-order.test.ts）", () => {
   function readyEngine() {
     const t = createTestEngine(testConfig());
     t.apply(registerAccountInput("acc-1"));
@@ -146,7 +146,7 @@ describe("placeOrder（第 04 讲：只接了校验链，成交和挂单在第 0
         clientOrderId: "c-1",
         orderId: "o-1",
         code: "INSUFFICIENT_MARGIN",
-        message: "可用余额 10000 USDT 不足，本单需要 10100 USDT（20x 起始保证金 + 预留手续费）",
+        message: "可用余额 10000 USDT 不足，本单需要 10100 USDT（20x 起始保证金 10000 + 开仓亏损 0 + 预留手续费 100）",
         ts: T0 + 1,
       },
     ]);
@@ -154,9 +154,9 @@ describe("placeOrder（第 04 讲：只接了校验链，成交和挂单在第 0
     expect(t.ledgerSum("acc-1")).toBe(parse("10000"));
   });
 
-  it("校验通过：成交还没实现，明确抛错并自动回滚", () => {
+  it("不穿透盘口的 GTC 限价单要排队，第 06 讲才实现：明确抛错并自动回滚", () => {
     const t = readyEngine();
-    expect(() => t.engine.apply(placeOrderInput(orderRequest()))).toThrow(/第 05 讲/);
+    expect(() => t.engine.apply(placeOrderInput(orderRequest({ price: parse("49000") })))).toThrow(/第 06 讲/);
     expect(() => t.engine.rollback()).toThrow(/调用多余/);
   });
 

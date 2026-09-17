@@ -56,3 +56,8 @@ coverage
 .cache
 tmp
 temp
+
+# 币安文档本地副本（pnpm run docs:binance 拉取，不进版本库）
+docs/vendor/binance/*.txt
+docs/vendor/binance/*.yaml
+docs/vendor/binance/rest-api/

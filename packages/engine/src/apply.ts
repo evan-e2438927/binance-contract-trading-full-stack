@@ -1,5 +1,6 @@
 import { putAccount } from "./journal";
 import { requireSymbol, type EngineState } from "./state";
+import { executeOrder } from "./execute-order";
 import { validateOrder } from "./validate-order";
 import type { EngineEvent, EngineInput } from "./types";
 
@@ -123,8 +124,8 @@ function placeOrder(state: EngineState, input: InputOf<"placeOrder">): EngineEve
     ];
   }
 
-  // 模块 05：市价单逐档成交、限价单判定角色后成交或挂单；模块 06：挂单排队；模块 09：触发单入簿
-  throw new Error("下单校验已通过，但成交与挂单还没有实现，见第 05 讲");
+  // 第 05 讲：市价单逐档成交、限价单穿透部分成交；第 06 讲：不穿透的挂单排队；第 09 讲：触发单入簿
+  return executeOrder(state, input, result.order);
 }
 
 function assertNever(value: never): never {

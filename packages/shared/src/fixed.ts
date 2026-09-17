@@ -42,6 +42,16 @@ export function div(a: Fixed, b: Fixed): Fixed {
 }
 
 
+/**
+ * 乘法，向下取整（朝负无穷），用于已实现盈亏——盈利少算一点、亏损多算一点，两个方向都保守。
+ * 和 mul 的区别只在负数：mul 是 bigint 除法，朝零截断，亏损时反而少算了亏损。
+ */
+export function mulFloor(a: Fixed, b: Fixed): Fixed {
+  const product = a * b;
+  const q = product / SCALE;
+  return product % SCALE < 0n ? q - 1n : q;
+}
+
 /** 乘法，向上取整（远离零），用于手续费——摩擦成本不被低估。假设操作数均非负。 */
 export function mulCeil(a: Fixed, b: Fixed): Fixed {
   const product = a * b;

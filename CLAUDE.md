@@ -20,6 +20,7 @@
 | 行情、引擎、公式、撮合、接口 | `docs/design/04-backend-design.md` |
 | 页面、状态、实时更新 | `docs/design/05-frontend-design.md` |
 | 测试、不变式、压测、演练 | `docs/design/06-testing-design.md` |
+| 拿不准时对照币安标准 | `docs/design/07-binance-reference.md`（规则见 `HANDOFF.md` 第六节） |
 
 `docs/books-tutorial.md` 和 `docs/db-notes.md` 是早前跑通全栈链路的练手记录，**和本项目业务无关**，不要照着它们建表。
 

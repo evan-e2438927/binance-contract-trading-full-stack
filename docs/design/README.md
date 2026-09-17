@@ -16,6 +16,7 @@ docs/design/
 ├── 04-backend-design.md       ├─ 后端子设计
 ├── 05-frontend-design.md      ├─ 前端子设计
 ├── 06-testing-design.md       └─ 测试子设计
+├── 07-binance-reference.md  币安标准参考（核对过的币安规则、出处、查阅方法）
 └── build-guide/             搭建教程（分段交付，跟着一步步做）
 ```
 
@@ -30,6 +31,7 @@ docs/design/
 | 04 | [后端子设计](./04-backend-design.md) | 行情接入、引擎数据结构与公式、拟真撮合、校验链、触发单、强平、资金费、REST + WS + 错误码 | 写服务端时 |
 | 05 | [前端子设计](./05-frontend-design.md) | 页面与组件树、状态管理、WS 客户端、图表与盘口性能、下单面板、钱包连接 | 写前端时 |
 | 06 | [测试子设计](./06-testing-design.md) | 测试分层、公式算例、场景重放、不变式、集成与 E2E、压测与故障演练 | 贯穿全程 |
+| 07 | [币安标准参考](./07-binance-reference.md) | 持仓表示、下单参数、交易规则 filters、错误码对照、开仓成本公式、和币安刻意不同的地方 | 设计没说清、拿不准时先查 |
 
 ---
 

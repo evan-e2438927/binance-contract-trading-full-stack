@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SCALE, div, format, mul, parse } from "./fixed";
-import { alignPrice, alignQty, divRound, mulCeil, mulRound } from "./fixed";
+import { alignPrice, alignQty, divRound, mulCeil, mulFloor, mulRound } from "./fixed";
 
 describe("fixed", () => {
   it.each([
@@ -61,6 +61,21 @@ describe("fixed", () => {
   });
 });
 
+
+describe("mulFloor（已实现盈亏向下取整）", () => {
+  it("正数：和截断一样，舍掉尾巴", () => {
+    expect(mulFloor(parse("0.00000009"), parse("0.5"))).toBe(4n); // 0.000000045 → 4
+  });
+
+  it("负数：朝负无穷，亏损多算一个最小单位——mul 朝零截断会少算", () => {
+    expect(mulFloor(parse("-0.00000009"), parse("0.5"))).toBe(-5n);
+    expect(mul(parse("-0.00000009"), parse("0.5"))).toBe(-4n);
+  });
+
+  it("整除时不受影响", () => {
+    expect(mulFloor(parse("-2"), parse("3"))).toBe(parse("-6"));
+  });
+});
 
 describe("mulCeil（手续费向上取整）", () => {
   it("有余数时向上进一", () => {

@@ -22,7 +22,8 @@
     "destroy": "turbo run destroy -F @binance-contract-trading-full-stack/infra --",
     "env:generate": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./apps/native/ && varlock codegen --path ./packages/db/",
     "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./apps/native/ && varlock codegen --path ./packages/db/",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "docs:binance": "node docs/vendor/binance/fetch.mjs"
   },
   "dependencies": {
     "zod": "catalog:"

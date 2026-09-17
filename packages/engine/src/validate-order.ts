@@ -5,6 +5,7 @@ import {
   format,
   mul,
   mulCeil,
+  parse,
   type ErrorCode,
   type Fixed,
   type MarginMode,
@@ -13,7 +14,7 @@ import {
   type TimeInForce,
   type WorkingType,
 } from "@binance-contract-trading-full-stack/shared";
-import { availableBalance, frozenMargin, initialMargin, notional, unrealizedPnl } from "./formulas";
+import { availableBalance, initialMargin, notional, unrealizedPnl } from "./formulas";
 import { findBracket } from "./liquidation";
 import { positionKey, settingOf, type EngineState } from "./state";
 import type { Account, Level, PlaceOrderRequest, Position, SymbolSpec } from "./types";
@@ -220,11 +221,20 @@ export function validateOrder(
 
   // ⑨ ⑩ 只对"会开仓"的部分做。未触发的触发单不占保证金，触发那一刻再走一遍（第 09 讲）
   if (openQty > 0n && !isTrigger) {
-    // 开仓部分的成本：市价单按盘口逐档估（先被平仓部分吃掉的档位跳过），限价单按委托价
+    // 开仓部分的成本（缺口 #14，按币安"开仓成本 = 起始保证金 + 开仓亏损"，外加我们预留的 Taker 手续费）：
+    // 市价单按盘口逐档算真实成交价（先被平仓部分吃掉的档位跳过），限价单按委托价
+    const costInput = {
+      openSide,
+      qty: openQty,
+      markPrice,
+      lastPrice: state.lastPrices.get(req.symbol),
+      leverageNum,
+      takerFeeRate: state.config.fees.takerFeeRate,
+    };
     const cost =
       req.type === "MARKET"
-        ? walkBook(oppositeLevels, closeQty, openQty, state.config.fees.takerFeeRate)
-        : { notional: notional(openQty, req.price!), fee: 0n };
+        ? marketOpenCost({ ...costInput, levels: oppositeLevels, skipQty: closeQty })
+        : limitOpenCost({ ...costInput, price: req.price! });
 
     // ⑨ 杠杆分层：成交后这个方向的总名义价值 = 现有仓位（按标记价）+ 同方向其它开仓挂单 + 本单
     const brackets = state.brackets.get(req.symbol)!;
@@ -250,14 +260,8 @@ export function validateOrder(
       );
     }
 
-    // ⑩ 可用余额 ≥ 起始保证金 + 预留 Taker 手续费
-    requiredMargin =
-      req.type === "MARKET"
-        ? divRound(cost.notional, BigInt(leverageNum) * SCALE) + cost.fee
-        : frozenMargin(
-            { reduceOnly: false, closePosition: false, qty: openQty, price: req.price!, leverageNum },
-            state.config.fees.takerFeeRate,
-          );
+    // ⑩ 可用余额 ≥ 起始保证金 + 开仓亏损 + 预留 Taker 手续费
+    requiredMargin = cost.total;
     const available = accountAvailable(state, account);
     if (typeof available === "string") {
       return reject("MARKET_NOT_READY", `缺少 ${available} 的标记价，暂时无法计算可用余额`);
@@ -265,7 +269,8 @@ export function validateOrder(
     if (available < requiredMargin) {
       return reject(
         "INSUFFICIENT_MARGIN",
-        `可用余额 ${show(available)} USDT 不足，本单需要 ${show(requiredMargin)} USDT（${leverageNum}x 起始保证金 + 预留手续费）`,
+        `可用余额 ${show(available)} USDT 不足，本单需要 ${show(requiredMargin)} USDT` +
+          `（${leverageNum}x 起始保证金 ${show(cost.initialMargin)} + 开仓亏损 ${show(cost.openLoss)} + 预留手续费 ${show(cost.feeReserve)}）`,
       );
     }
   }
@@ -400,26 +405,85 @@ function referencePrice(req: PlaceOrderRequest, book: { bids: Level[]; asks: Lev
 }
 
 /**
- * 市价单逐档估算：先跳过 skipQty（被平仓部分吃掉的档位），再吃 takeQty，
- * 返回吃到的名义价值之和、按 Taker 费率逐档向上取整的手续费之和。
+ * 开仓成本的明细。total 就是第 10 步和可用余额比较的数，也是限价挂单要冻结的保证金。
+ * notional 给第 9 步算杠杆分层用。
+ */
+export interface OpenCost {
+  notional: Fixed;
+  initialMargin: Fixed;
+  openLoss: Fixed;
+  feeReserve: Fixed;
+  total: Fixed;
+}
+
+interface OpenCostInput {
+  openSide: Direction;
+  qty: Fixed;
+  markPrice: Fixed;
+  /** 最新成交价，还没收到过成交推送时为 undefined。 */
+  lastPrice: Fixed | undefined;
+  leverageNum: number;
+  takerFeeRate: Fixed;
+}
+
+/** 币安限价空单"假设价格"里给最新价加的 0.15%。 */
+const SHORT_ASSUMING_PRICE_MARKUP = parse("1.0015");
+
+/**
+ * 限价单（以及限价挂单剩余部分）的开仓成本，按币安 FAQ "How to Calculate the Cost Required to Open a Position"：
  *
- * 和第 05 讲真正成交的算法走的是同一条路径，所以估出来的就是会成交的价格，不是标记价。
+ *   成本 = 起始保证金（按假设价格） + 开仓亏损
+ *   假设价格：多单 = 委托价；空单 = max(委托价, 标记价, 最新价 × 1.0015)
+ *   开仓亏损 = 数量 × |min(0, 方向 × (标记价 − 委托价))|，方向多单 = 1、空单 = −1
+ *
+ * 我们在币安之外再加一项：按 Taker 费率、按假设价格预留手续费（设计文档 4.3 节，成交时才不会余额不够）。
+ * 还没收到过成交推送时最新价未知，假设价格里就不带这一项——不知道就不编。
+ */
+export function limitOpenCost(input: OpenCostInput & { price: Fixed }): OpenCost {
+  let assumingPrice = input.price;
+  if (input.openSide === "SHORT") {
+    if (input.markPrice > assumingPrice) assumingPrice = input.markPrice;
+    if (input.lastPrice !== undefined) {
+      const lastMarked = mul(input.lastPrice, SHORT_ASSUMING_PRICE_MARKUP);
+      if (lastMarked > assumingPrice) assumingPrice = lastMarked;
+    }
+  }
+  const value = notional(input.qty, assumingPrice);
+  const initialMarginValue = initialMargin(input.qty, assumingPrice, input.leverageNum);
+  const openLoss = openLossOf(input.openSide, input.price, input.qty, input.markPrice);
+  const feeReserve = mulCeil(value, input.takerFeeRate);
+  return {
+    notional: notional(input.qty, input.price),
+    initialMargin: initialMarginValue,
+    openLoss,
+    feeReserve,
+    total: initialMarginValue + openLoss + feeReserve,
+  };
+}
+
+/**
+ * 市价单的开仓成本。币安下单时不知道会成交在哪，用"最新价 × 1.0015"当假设价格；
+ * 我们的撮合就在同一次 apply 里、用同一份盘口完成，**真实成交价已经知道**，所以逐档用真实价格算：
+ * 先跳过 skipQty（被平仓部分吃掉的档位），再吃 qty。
+ * 手续费逐档向上取整再求和，和第 05 讲逐笔收费一致，只多不少。
  * 深度不够的部分按最深一档的价格估——这种单一定会在第 11 步被拒，这里只要别算崩。
  */
-function walkBook(levels: readonly Level[], skipQty: Fixed, takeQty: Fixed, takerFeeRate: Fixed) {
-  let skip = skipQty;
-  let remaining = takeQty;
+export function marketOpenCost(input: OpenCostInput & { levels: readonly Level[]; skipQty: Fixed }): OpenCost {
+  let skip = input.skipQty;
+  let remaining = input.qty;
   let notionalSum = 0n;
   let feeSum = 0n;
+  let openLossSum = 0n;
 
   const take = (price: Fixed, qty: Fixed) => {
     const value = notional(qty, price);
     notionalSum += value;
-    feeSum += mulCeil(value, takerFeeRate);
+    feeSum += mulCeil(value, input.takerFeeRate);
+    openLossSum += openLossOf(input.openSide, price, qty, input.markPrice);
     remaining -= qty;
   };
 
-  for (const level of levels) {
+  for (const level of input.levels) {
     if (remaining === 0n) break;
     let available = level.qty;
     if (skip > 0n) {
@@ -429,9 +493,22 @@ function walkBook(levels: readonly Level[], skipQty: Fixed, takeQty: Fixed, take
     }
     if (available > 0n) take(level.price, remaining < available ? remaining : available);
   }
-  if (remaining > 0n) take(levels[levels.length - 1]!.price, remaining);
+  if (remaining > 0n) take(input.levels[input.levels.length - 1]!.price, remaining);
 
-  return { notional: notionalSum, fee: feeSum };
+  const initialMarginValue = divRound(notionalSum, BigInt(input.leverageNum) * SCALE);
+  return {
+    notional: notionalSum,
+    initialMargin: initialMarginValue,
+    openLoss: openLossSum,
+    feeReserve: feeSum,
+    total: initialMarginValue + openLossSum + feeSum,
+  };
+}
+
+/** 开仓亏损：多单成交价高于标记价、空单成交价低于标记价的那部分，向上取整（成本不低估）。 */
+function openLossOf(openSide: Direction, price: Fixed, qty: Fixed, markPrice: Fixed): Fixed {
+  const diff = openSide === "LONG" ? price - markPrice : markPrice - price;
+  return diff > 0n ? mulCeil(diff, qty) : 0n;
 }
 
 /** 某个方向上 qty > 0 的仓位。单向模式下 LONG 和 SHORT 最多只能有一个。 */

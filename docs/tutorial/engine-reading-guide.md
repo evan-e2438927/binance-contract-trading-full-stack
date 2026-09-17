@@ -3,7 +3,7 @@
 > 讲义 02、03 是"照着敲"的写法，代码块很长，读起来容易迷路。
 > 这份文档反过来：**不贴大段代码，只讲清楚每个文件干了什么、彼此怎么配合**。读完再去看代码或讲义，会顺很多。
 >
-> 对应代码：`packages/engine/src`，截至第 04 讲（12 个测试文件、169 条测试全绿）。
+> 对应代码：`packages/engine/src`，截至第 05 讲（13 个测试文件、189 条测试全绿）。
 
 ---
 
@@ -29,14 +29,15 @@
 | 部分 | 状态 | 说明 |
 | --- | --- | --- |
 | 类型（输入/输出/领域对象） | ✅ 完整 | 12 种输入、9 种输出事件都定义好了 |
-| `apply` 能处理的输入 | ⚠️ 4 种半 | `book` / `markPrice` / `trade` 只把行情存进内存；`registerAccount` 开户发钱；`placeOrder` 只接了**拒单**路径（第 04 讲），校验通过时仍抛错"见第 05 讲" |
+| `apply` 能处理的输入 | ⚠️ 5 种 | `book` / `markPrice` / `trade` 只把行情存进内存；`registerAccount` 开户发钱；`placeOrder` 校验 + 市价单 / 穿透盘口的限价单成交（第 04、05 讲）。不穿透的 GTC / GTX 限价单抛错"见第 06 讲"，触发单抛错"见第 09 讲" |
 | 其余 7 种输入（撤单、调杠杆、资金费……） | ❌ 直接抛错 | `apply.ts` 里的 `case` 列表，故意炸，提醒"还没实现" |
 | 回滚机制（undo 日志） | ✅ 完整 | `journal.ts` |
 | 计算公式 | ✅ 写好并测过 | `formulas.ts` / `position.ts` / `liquidation.ts`；第 04 讲的校验链用到了其中几个（可用余额、冻结保证金、分层查找），成交和强平还没用上 |
 | 下单校验链 | ✅ 完整 | `validate-order.ts`，13 步，只读状态（第 04 讲） |
+| 成交落账 | ✅ Taker 部分 | `execute-order.ts`：逐档成交、改仓位、已实现盈亏、手续费、余额（第 05 讲）；Maker 成交第 06 讲 |
 | 测试脚手架（自动对账） | ✅ 完整 | `testing/` |
 
-所以现在的引擎，**真正能"跑"的业务有两件：开户发 10,000 USDT，以及把不合格的下单拒掉**。合格的单还不能成交，大部分公式要等第 05 讲（成交落账）、第 07 讲（强平）时才会被 `apply` 串起来。
+所以现在的引擎，**真正能"跑"的业务有三件：开户发 10,000 USDT、把不合格的下单拒掉、市价单和穿透盘口的限价单成交落账**。挂单排队、强平、资金费还没有，强平相关公式要等第 07 讲才会被 `apply` 串起来。
 
 ---
 
@@ -102,6 +103,7 @@ packages/engine/src
 ├── position.ts         公式：加仓均价、减仓盈亏、反手拆分
 ├── liquidation.ts      公式：分层查找、维持保证金、保证金率、强平价
 ├── validate-order.ts   第 04 讲：下单校验链 13 步（只读状态，不改任何东西）
+├── execute-order.ts    第 05 讲：成交落账（executeOrder 下单即成交，applyFill 一笔落账）
 │
 ├── purity.test.ts      扫源码，禁止时钟/随机/IO
 └── testing/
@@ -119,6 +121,7 @@ create-engine ─► apply ─► journal ─► state ─► types
 formulas / position / liquidation ─► shared（只依赖定标库，不碰 state）
 
 apply ─► validate-order ─► formulas / liquidation / state（只读）
+apply ─► execute-order ─► position / formulas / journal（改状态）
 
 testing/harness ─► create-engine
 testing/invariants ─► formulas
@@ -245,7 +248,7 @@ rollback:   A 放回 旧A；C 删掉        ← 只动 2 个键，和账户总�
 - `markPrice` → 存标记价和资金费率
 - `trade` → 存最新成交价
 - `registerAccount` → 开户（见第 4 节）
-- `placeOrder` → 先查订单 id 是否重复，再调 `validateOrder`；被拒返回 `rejected` 事件，通过暂时抛错"见第 05 讲"
+- `placeOrder` → 先查订单 id 是否重复，再调 `validateOrder`；被拒返回 `rejected` 事件，通过交给 `executeOrder` 成交
 - 其余 7 种 → `throw "还没实现"`
 
 代码里 `// 模块 06：...` 这样的注释标出了以后要往哪里填逻辑。末尾的 `assertNever` 是 TypeScript 技巧：以后在 `types.ts` 里加了新输入类型却忘了在这里处理，编译就会报错。
@@ -311,7 +314,7 @@ rollback:   A 放回 旧A；C 删掉        ← 只动 2 个键，和账户总�
 | 结果 | 谁接着处理 |
 | --- | --- |
 | `{ ok: false, code, message }` | `apply.ts` 的 `placeOrder` 包成一条 `rejected` 事件返回 |
-| `{ ok: true, order }` | 目前抛错"见第 05 讲"；第 05 讲拿 `order` 里的 `closeQty` / `openQty` / `requiredMargin` 去成交 |
+| `{ ok: true, order }` | `executeOrder` 拿它去成交（第 05 讲） |
 
 读的时候抓住三件事：
 
@@ -320,6 +323,23 @@ rollback:   A 放回 旧A；C 删掉        ← 只动 2 个键，和账户总�
 3. **单向模式下仓位在引擎里存成 `LONG` / `SHORT`**，订单上才是 `BOTH`（设计缺口 #12）
 
 决定和理由的完整对照表在讲义 `04-order-validation.md` 第 5 节。
+
+### `execute-order.ts` —— 下了单之后发生什么（第 05 讲新增）
+
+两个主函数：
+
+| 函数 | 干什么 |
+| --- | --- |
+| `executeOrder` | 校验通过的订单下单那一刻能成交多少就成交多少：市价单逐档吃；限价单先判断会不会立刻成交，穿透的部分成交，IOC 剩余过期、FOK 不够就整单过期、GTC 剩余挂单（排队位置 0） |
+| `applyFill` | 一笔成交落账：先平仓（算已实现盈亏、释放逐仓保证金）→ 再开仓（加权均价）→ 收手续费 → 发 `balanceUpdate`。第 06 讲 Maker 成交也用它 |
+
+读的时候抓住三件事：
+
+1. **钱包余额只通过 `balanceUpdate` 改**：一笔成交最多两条，`REALIZED_PNL` 在前、`FEE` 在后
+2. **只减仓类订单成交时截断到剩余仓位**；仓位平完后，同方向残余的只减仓挂单自动撤销
+3. **盘口快照不被修改**：模拟用户之间共享流动性（已知失真点 #2）
+
+事件顺序：`orderUpdate` 在最前（数据库外键要先写订单），然后每笔成交的 `fill` → `positionUpdate` → `balanceUpdate`。
 
 ## 6. 测试是怎么保护这些代码的
 
@@ -352,7 +372,7 @@ rollback:   A 放回 旧A；C 删掉        ← 只动 2 个键，和账户总�
 | ⑦ | 排队位置 ≥ 0 | 队列扣过头 |
 | ⑧ | 内存里只有未完成订单 | 终态订单没清理 |
 
-到第 04 讲为止，`apply` 还没有任何路径会创建仓位和订单（校验链只读不写），所以 ②–⑧ 目前"必然成立"。它们是地基：从第 05 讲开始一有仓位和订单就自动生效。
+从第 05 讲开始 `apply` 会真的创建仓位、挂单、改余额，这 8 条开始真正起作用：`execute-order.test.ts` 的每一次 `apply` 都被它们检查过。注意 ③ 在价格不利变动时会误报，第 07 讲要重新定义（缺口 #19）。
 
 ### `testing/fixtures.ts` —— 固定的测试数据
 
@@ -396,7 +416,7 @@ rollback:   A 放回 旧A；C 删掉        ← 只动 2 个键，和账户总�
 - 盈利时（正数）：向 0 = 向下，少算一点盈利，确实保守 ✅
 - 亏损时（负数）：向 0 = 往上，**少算了一点亏损**，和"保守"的意图相反
 
-差距最多 0.00000001 USDT，眼下不影响任何算例。等第 05 讲真正落账时再决定：是改成真正的向下取整，还是把注释改成"向 0 截断"。
+差距最多 0.00000001 USDT。**第 05 讲已经改掉**：`packages/shared` 加了 `mulFloor`（朝负无穷），`reducePosition` 改用它，亏损时多算不少算。
 
 ---
 
@@ -407,4 +427,4 @@ rollback:   A 放回 旧A；C 删掉        ← 只动 2 个键，和账户总�
 3. 想改一个仓位的数量，为什么不能写 `state.positions.get(key)!.qty = x`？会在哪一层被拦住？
 4. 写库失败调 `rollback()`，盘口数据会被撤回吗？为什么？
 5. 开逐仓仓位时，钱包余额会变吗？
-6. 现在调 `engine.apply({ t: "placeOrder", ... })` 会发生什么？分"校验不通过"和"校验通过"两种情况回答。
+6. 现在调 `engine.apply({ t: "placeOrder", ... })` 会发生什么？分"校验不通过"、"市价单"、"不穿透盘口的 GTC 限价单"三种情况回答。

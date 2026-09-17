@@ -11,7 +11,7 @@
 - `testing/fixtures.ts` 多了盘口、标记价、下单请求、仓位几个测试数据
 - 85 条新测试（`validate-order.test.ts` 82 条 + `apply.test.ts` 3 条），引擎共 169 条全绿
 - 2026-09-17 按币安标准核对过一遍，交易规则改成从币安 `exchangeInfo` 按币对读取（第 7 节）
-- 设计缺口清单新增 #12～#16，其中 #12、#13 这一讲定了，#14～#16 记下来留给后面几讲
+- 设计缺口清单新增 #12～#16，其中 #12、#13 这一讲定了，#14～#16 记下来留给后面几讲（#14 开仓亏损已在第 05 讲实现）
 
 **先读**：`docs/design/04-backend-design.md` 第 6 节（13 步的表）、第 3 节（状态机）、5.3/5.4 节（市价逐档吃、限价角色判定），`01-domain-knowledge.md` 第五节（杠杆分层）。
 
@@ -100,8 +100,8 @@ function placeOrder(state: EngineState, input: InputOf<"placeOrder">): EngineEve
     ];
   }
 
-  // 模块 05：市价单逐档成交、限价单判定角色后成交或挂单；模块 06：挂单排队；模块 09：触发单入簿
-  throw new Error("下单校验已通过，但成交与挂单还没有实现，见第 05 讲");
+  // 第 05 讲：市价单逐档成交、限价单穿透部分成交；第 06 讲：不穿透的挂单排队；第 09 讲：触发单入簿
+  return executeOrder(state, input, result.order);
 }
 ```
 
@@ -264,11 +264,11 @@ sequenceDiagram
     H-->>V: 仓位 → 算出 closeQty / openQty
     V->>S: settingOf：杠杆、保证金模式（没有记录就是 20x 全仓）
     opt openQty > 0 且不是触发单
-        V->>H: walkBook（市价单：跳过平仓部分，逐档估）
+        V->>H: marketOpenCost / limitOpenCost（开仓成本，第 05 讲加了开仓亏损）
         V->>H: ⑨ activePosition(openSide) + pendingOpenNotional
         H->>S: positions / orders
         V->>F: findBracket / maxNotionalFor：杠杆允许吗？
-        V->>F: ⑩ frozenMargin（限价）或 divRound + 逐档手续费（市价）
+        V->>F: ⑩ 起始保证金 + 开仓亏损 + 预留手续费
         V->>H: accountAvailable
         H->>S: positions / orders / marks
         H->>F: unrealizedPnl / initialMargin / availableBalance
@@ -578,11 +578,20 @@ let requiredMargin = 0n;
 
 // ⑨ ⑩ 只对"会开仓"的部分做。未触发的触发单不占保证金，触发那一刻再走一遍（第 09 讲）
 if (openQty > 0n && !isTrigger) {
-  // 开仓部分的成本：市价单按盘口逐档估（先被平仓部分吃掉的档位跳过），限价单按委托价
+  // 开仓部分的成本（缺口 #14，按币安"开仓成本 = 起始保证金 + 开仓亏损"，外加我们预留的 Taker 手续费）：
+  // 市价单按盘口逐档算真实成交价（先被平仓部分吃掉的档位跳过），限价单按委托价
+  const costInput = {
+    openSide,
+    qty: openQty,
+    markPrice,
+    lastPrice: state.lastPrices.get(req.symbol),
+    leverageNum,
+    takerFeeRate: state.config.fees.takerFeeRate,
+  };
   const cost =
     req.type === "MARKET"
-      ? walkBook(oppositeLevels, closeQty, openQty, state.config.fees.takerFeeRate)
-      : { notional: notional(openQty, req.price!), fee: 0n };
+      ? marketOpenCost({ ...costInput, levels: oppositeLevels, skipQty: closeQty })
+      : limitOpenCost({ ...costInput, price: req.price! });
 
   // ⑨ 杠杆分层：成交后这个方向的总名义价值 = 现有仓位（按标记价）+ 同方向其它开仓挂单 + 本单
   const brackets = state.brackets.get(req.symbol)!;
@@ -608,14 +617,8 @@ if (openQty > 0n && !isTrigger) {
     );
   }
 
-  // ⑩ 可用余额 ≥ 起始保证金 + 预留 Taker 手续费
-  requiredMargin =
-    req.type === "MARKET"
-      ? divRound(cost.notional, BigInt(leverageNum) * SCALE) + cost.fee
-      : frozenMargin(
-          { reduceOnly: false, closePosition: false, qty: openQty, price: req.price!, leverageNum },
-          state.config.fees.takerFeeRate,
-        );
+  // ⑩ 可用余额 ≥ 起始保证金 + 开仓亏损 + 预留 Taker 手续费
+  requiredMargin = cost.total;
   const available = accountAvailable(state, account);
   if (typeof available === "string") {
     return reject("MARKET_NOT_READY", `缺少 ${available} 的标记价，暂时无法计算可用余额`);
@@ -623,7 +626,8 @@ if (openQty > 0n && !isTrigger) {
   if (available < requiredMargin) {
     return reject(
       "INSUFFICIENT_MARGIN",
-      `可用余额 ${show(available)} USDT 不足，本单需要 ${show(requiredMargin)} USDT（${leverageNum}x 起始保证金 + 预留手续费）`,
+      `可用余额 ${show(available)} USDT 不足，本单需要 ${show(requiredMargin)} USDT` +
+        `（${leverageNum}x 起始保证金 ${show(cost.initialMargin)} + 开仓亏损 ${show(cost.openLoss)} + 预留手续费 ${show(cost.feeReserve)}）`,
     );
   }
 }
@@ -719,33 +723,37 @@ export function maxNotionalFor(brackets: readonly { notionalCap: Fixed; maxLever
 
 **第 10 步：本单需要多少保证金**：
 
-- **限价单**：直接用第 03 讲的 `frozenMargin`——`openQty × 委托价 ÷ 杠杆 + 按 Taker 费率预留手续费`。这个数就是第 06 讲挂单时要冻结的保证金
-- **市价单**：**按盘口逐档估**，不用标记价
+> **第 05 讲更新**：这一步按币安加上了**开仓亏损**（缺口 #14），函数从 `walkBook` 改成 `marketOpenCost` / `limitOpenCost`，公式和理由见 `05-market-order-fills.md` 第 3 节。下面的代码和算例已经是更新后的版本。
+
+- **限价单**：`limitOpenCost`——起始保证金 + 开仓亏损 + 按 Taker 费率预留手续费。这个数也是挂单时要冻结的保证金
+- **市价单**：`marketOpenCost`，**按盘口逐档用真实成交价算**，不用标记价
 
 为什么市价单不能用标记价估：标记价 50,000，卖一 50,000、卖二 50,000.5、卖三 50,001。买 3 BTC 实际会吃到 50,000.5，按标记价估会**少算**保证金——第 05 讲真成交时余额可能就不够了，不变式 ③（可用余额非负）当场红。
 
 ```ts
 /**
- * 市价单逐档估算：先跳过 skipQty（被平仓部分吃掉的档位），再吃 takeQty，
- * 返回吃到的名义价值之和、按 Taker 费率逐档向上取整的手续费之和。
- *
- * 和第 05 讲真正成交的算法走的是同一条路径，所以估出来的就是会成交的价格，不是标记价。
+ * 市价单的开仓成本。币安下单时不知道会成交在哪，用"最新价 × 1.0015"当假设价格；
+ * 我们的撮合就在同一次 apply 里、用同一份盘口完成，**真实成交价已经知道**，所以逐档用真实价格算：
+ * 先跳过 skipQty（被平仓部分吃掉的档位），再吃 qty。
+ * 手续费逐档向上取整再求和，和第 05 讲逐笔收费一致，只多不少。
  * 深度不够的部分按最深一档的价格估——这种单一定会在第 11 步被拒，这里只要别算崩。
  */
-function walkBook(levels: readonly Level[], skipQty: Fixed, takeQty: Fixed, takerFeeRate: Fixed) {
-  let skip = skipQty;
-  let remaining = takeQty;
+export function marketOpenCost(input: OpenCostInput & { levels: readonly Level[]; skipQty: Fixed }): OpenCost {
+  let skip = input.skipQty;
+  let remaining = input.qty;
   let notionalSum = 0n;
   let feeSum = 0n;
+  let openLossSum = 0n;
 
   const take = (price: Fixed, qty: Fixed) => {
     const value = notional(qty, price);
     notionalSum += value;
-    feeSum += mulCeil(value, takerFeeRate);
+    feeSum += mulCeil(value, input.takerFeeRate);
+    openLossSum += openLossOf(input.openSide, price, qty, input.markPrice);
     remaining -= qty;
   };
 
-  for (const level of levels) {
+  for (const level of input.levels) {
     if (remaining === 0n) break;
     let available = level.qty;
     if (skip > 0n) {
@@ -755,9 +763,16 @@ function walkBook(levels: readonly Level[], skipQty: Fixed, takeQty: Fixed, take
     }
     if (available > 0n) take(level.price, remaining < available ? remaining : available);
   }
-  if (remaining > 0n) take(levels[levels.length - 1]!.price, remaining);
+  if (remaining > 0n) take(input.levels[input.levels.length - 1]!.price, remaining);
 
-  return { notional: notionalSum, fee: feeSum };
+  const initialMarginValue = divRound(notionalSum, BigInt(input.leverageNum) * SCALE);
+  return {
+    notional: notionalSum,
+    initialMargin: initialMarginValue,
+    openLoss: openLossSum,
+    feeReserve: feeSum,
+    total: initialMarginValue + openLossSum + feeSum,
+  };
 }
 ```
 
@@ -766,12 +781,13 @@ function walkBook(levels: readonly Level[], skipQty: Fixed, takeQty: Fixed, take
 ```
 名义价值   = 100,000 + 50,000.5              = 150,000.5
 起始保证金 = 150,000.5 ÷ 20（四舍五入到 8 位）  = 7,500.025
+开仓亏损   = (50,000.5 − 标记价 50,000) × 1     = 0.5
 手续费     = ceil(100,000 × 0.05%) + ceil(50,000.5 × 0.05%)
            = 50 + 25.00025                     = 75.00025
-合计                                           = 7,575.02525
+合计                                           = 7,575.52525
 ```
 
-钱包 7,575.02525 放行，7,575.02524 拒绝。手续费**逐档**向上取整再求和——因为第 05 讲是逐档产生成交、逐笔收手续费的，逐档取整的和 ≥ 合起来取整，估算只会多不会少。
+钱包 7,575.52525 放行，7,575.52524 拒绝。手续费**逐档**向上取整再求和——因为第 05 讲是逐档产生成交、逐笔收手续费的，逐档取整的和 ≥ 合起来取整，估算只会多不会少。
 
 **反手时的 `skipQty`**：单向模式持多 1 BTC，市价卖 2 BTC。第 05 讲成交时会先用买一的 1 BTC 平多，再用剩下的档位开空。所以估算开仓成本时，要**先跳过**被平仓吃掉的那 1 BTC，否则开仓部分会被估在更优的价格上。
 
@@ -912,7 +928,7 @@ if (rests) {
 
 **留给后面几讲的问题**（已记进 `README.md` 缺口清单）：
 
-- **#14 开仓亏损没算进所需保证金**（第 05 讲）。市价买单的成交价通常高于标记价，成交瞬间就有一笔按标记价算的浮亏。币安会把这笔"开仓亏损"加进所需保证金，设计文档只写了"起始保证金 + 预留手续费"。这一讲按设计文档实现；按"以币安为标准"的规则，第 05 讲会加上开仓亏损（实现前核对币安公式）
+- **#14 开仓亏损没算进所需保证金**（第 05 讲）。市价买单的成交价通常高于标记价，成交瞬间就有一笔按标记价算的浮亏。币安会把这笔"开仓亏损"加进所需保证金，设计文档只写了"起始保证金 + 预留手续费"。已在第 05 讲按币安公式实现
 - **#15 触发价在下单时就已经被穿过**（第 09 讲）。比如标记价 50,000 时挂一张 `STOP` 买单、触发价 49,000——下一次标记价更新就会立刻触发。币安会拒这种单（`-2021` "Order would immediately trigger"、`-4142`），第 09 讲按币安做
 - **#16 行情"就绪"只查有没有，不查新不新**（第 10/11 讲）。行情断线后暂停交易由宿主负责，引擎没有时钟，不知道盘口是多久以前的
 - **#17 按币安标准核对后的三处调整**（已定）：挂单数按币对计数、触发单默认按最新成交价、交易规则按币对从 `exchangeInfo` 读——数据库要加的列见第 7 节
@@ -1028,7 +1044,7 @@ positionSide: LONG（单向模式）   → POSITION_SIDE_MISMATCH
 - [ ] `pnpm --filter @binance-contract-trading-full-stack/engine run check-types` 通过
 - [ ] 14 个错误码（第 5 步有 `PRICE_FILTER`、`LOT_SIZE` 两个）每个至少一条测试，提示里带具体数字
 - [ ] "顺序"两条测试：9 在 10 之前（带对照组）；逐个修复暴露下一步
-- [ ] 市价买 3 BTC 所需保证金正好 7,575.02525（逐档估算、逐档向上取整手续费）
+- [ ] 市价买 3 BTC 所需保证金正好 7,575.52525（逐档估算、含开仓亏损 0.5、逐档向上取整手续费——第 05 讲更新后的数）
 - [ ] 125x 下 50,000 名义价值放行、50,050 拒单，提示"最大可开名义价值 50000 USDT"
 - [ ] 同一币对挂满 200 张单后，限价单被拒，市价单 / IOC / FOK 仍能下；别的币对不受影响
 - [ ] 被拒的 `placeOrder` 只产出一条 `rejected` 事件，账户类状态不变

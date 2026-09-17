@@ -303,6 +303,8 @@ frozenMargin(order) =
 
 手续费按 Taker 预留是刻意保守：限价单如果穿透盘口就是 Taker，按 Maker 预留会导致成交时余额不够。
 
+> **已定（缺口 #14，第 05 讲实现）**：按币安"开仓成本 = 起始保证金 + 开仓亏损"补上开仓亏损，冻结保证金 = 起始保证金（按币安假设价格）+ 开仓亏损 + 上面的 Taker 手续费预留。公式见 `07-binance-reference.md` 第 5 节，实现在 `validate-order.ts` 的 `limitOpenCost` / `marketOpenCost`。
+
 > **与币安的已知差异**：币安在单向模式下对同一币对的买卖挂单做净额冻结，取 `max(买方向总冻结, 卖方向总冻结)`，因为买卖单不可能同时全成。我们第一版**逐单独立冻结**，同时挂对敲单时占用比币安多。会让用户偶尔觉得"钱不够"，但**方向保守，不会超额开仓**。
 
 ### 4.4 仓位变更
@@ -647,7 +649,7 @@ BTCUSDT，在 **49,900** 挂买单 **0.5 BTC**，下单时该价位盘口显示 
 | 7 | 限价偏离保护：委托价与标记价偏离不超过 ±5% | `PERCENT_PRICE` |
 | 8 | `reduceOnly`：存在对应仓位，且数量不超过仓位剩余 | `REDUCE_ONLY_REJECTED` |
 | 9 | 杠杆分层：成交后名义价值所在层允许当前杠杆 | `LEVERAGE_TOO_HIGH` |
-| 10 | 可用余额 ≥ 所需起始保证金 + 预留 Taker 手续费 | `INSUFFICIENT_MARGIN` |
+| 10 | 可用余额 ≥ 所需起始保证金 + 预留 Taker 手续费（第 05 讲按币安加上开仓亏损，缺口 #14） | `INSUFFICIENT_MARGIN` |
 | 11 | 市价单数量 ≤ 对手方可见深度 × 50% | `MARKET_ORDER_TOO_LARGE` |
 | 12 | `GTX`：该单会立刻成交则拒 | `POST_ONLY_REJECTED` |
 | 13 | 账户挂单数 ≤ 200 | `TOO_MANY_ORDERS` |

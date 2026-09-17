@@ -5,6 +5,7 @@ import { putAccount, putOrder, putPosition, putSetting } from "./journal";
 import { createState, type EngineState } from "./state";
 import {
   BTCUSDT,
+  T0,
   BTCUSDT_BRACKETS,
   bookInput,
   markPriceInput,
@@ -459,7 +460,7 @@ describe("⑩ INSUFFICIENT_MARGIN（默认 20x，Taker 费率 0.05%）", () => {
     expectRejected(
       validate(setup(), { qty: parse("4") }),
       "INSUFFICIENT_MARGIN",
-      "可用余额 10000 USDT 不足，本单需要 10100 USDT（20x 起始保证金 + 预留手续费）",
+      "可用余额 10000 USDT 不足，本单需要 10100 USDT（20x 起始保证金 10000 + 开仓亏损 0 + 预留手续费 100）",
     );
   });
 
@@ -486,11 +487,46 @@ describe("⑩ INSUFFICIENT_MARGIN（默认 20x，Taker 费率 0.05%）", () => {
   });
 
   it("市价单按盘口逐档估算：买 3 BTC 吃 2 @ 50,000 + 1 @ 50,000.5", () => {
-    // 名义价值 150,000.5 → 起始保证金 7,500.025；手续费逐档向上取整 50 + 25.00025
+    // 名义价值 150,000.5 → 起始保证金 7,500.025；
+    // 开仓亏损（标记价 50,000）：第 2 档高出 0.5 × 1 BTC = 0.5；
+    // 手续费逐档向上取整 50 + 25.00025
     const market = { type: "MARKET", price: undefined, timeInForce: undefined, qty: parse("3") } as const;
-    const order = expectAccepted(validate(setup({ wallet: "7575.02525" }), market));
-    expect(order.requiredMargin).toBe(parse("7575.02525"));
-    expectRejected(validate(setup({ wallet: "7575.02524" }), market), "INSUFFICIENT_MARGIN");
+    const order = expectAccepted(validate(setup({ wallet: "7575.52525" }), market));
+    expect(order.requiredMargin).toBe(parse("7575.52525"));
+    expectRejected(
+      validate(setup({ wallet: "7575.52524" }), market),
+      "INSUFFICIENT_MARGIN",
+      "起始保证金 7500.025 + 开仓亏损 0.5 + 预留手续费 75.00025",
+    );
+  });
+
+  describe("开仓亏损（缺口 #14，按币安：成本 = 起始保证金 + 开仓亏损）", () => {
+    it("限价多单挂在标记价之上（会立刻成交）：高出标记价的部分算开仓亏损", () => {
+      // 买 1 BTC @ 52,000，标记价 50,000：起始保证金 2,600 + 开仓亏损 2,000 + 手续费 26
+      const order = expectAccepted(validate(setup(), { price: parse("52000") }));
+      expect(order.requiredMargin).toBe(parse("4626"));
+    });
+
+    it("限价多单挂在标记价之下：没有开仓亏损", () => {
+      const order = expectAccepted(validate(setup(), { price: parse("49000") }));
+      expect(order.requiredMargin).toBe(parse("2474.5")); // 2,450 + 0 + 24.5
+    });
+
+    it("限价空单：假设价格取 max(委托价, 标记价)，低于标记价的部分算开仓亏损", () => {
+      // 卖 1 BTC @ 49,000，标记价 50,000：起始保证金按 50,000 算 2,500 + 开仓亏损 1,000 + 手续费按 50,000 算 25
+      const state = setup({ mode: "HEDGE" });
+      const order = expectAccepted(validate(state, { side: "SELL", positionSide: "SHORT", price: parse("49000") }));
+      expect(order.requiredMargin).toBe(parse("3525"));
+    });
+
+    it("限价空单：收到过成交推送时，假设价格还要和 最新价 × 1.0015 比", () => {
+      const state = setup({ mode: "HEDGE" });
+      applyInput(state, { t: "trade", symbol: "BTCUSDT", price: parse("50100"), qty: parse("0.1"), buyerIsMaker: false, ts: T0 });
+      // 假设价格 = max(49,000, 50,000, 50,100 × 1.0015 = 50,175.15) = 50,175.15
+      // 起始保证金 2,508.7575 + 开仓亏损 1,000 + 手续费 25.087575
+      const order = expectAccepted(validate(state, { side: "SELL", positionSide: "SHORT", price: parse("49000") }));
+      expect(order.requiredMargin).toBe(parse("3533.845075"));
+    });
   });
 
   it("单向模式反手：只有开仓部分要保证金，而且按平仓吃剩下的档位估", () => {
@@ -500,8 +536,9 @@ describe("⑩ INSUFFICIENT_MARGIN（默认 20x，Taker 费率 0.05%）", () => {
       validate(state, { type: "MARKET", side: "SELL", price: undefined, timeInForce: undefined, qty: parse("2") }),
     );
     expect(order).toMatchObject({ closeSide: "LONG", openSide: "SHORT", closeQty: parse("1"), openQty: parse("1") });
-    // 买一 49,999.9 有 2 BTC：第 1 个平多，第 2 个开空 → 名义 49,999.9，保证金 2,499.995，手续费 24.99995
-    expect(order.requiredMargin).toBe(parse("2524.99495"));
+    // 买一 49,999.9 有 2 BTC：第 1 个平多，第 2 个开空 → 名义 49,999.9，保证金 2,499.995，
+    // 开仓亏损（空单成交价低于标记价 50,000）0.1，手续费 24.99995
+    expect(order.requiredMargin).toBe(parse("2525.09495"));
   });
 
   it("纯减仓单不需要保证金：可用余额是 0 也能平", () => {

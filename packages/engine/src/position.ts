@@ -1,4 +1,4 @@
-import { divRound, mul, type Fixed } from "@binance-contract-trading-full-stack/shared";
+import { divRound, mul, mulFloor, type Fixed } from "@binance-contract-trading-full-stack/shared";
 import type { PositionSide } from "@binance-contract-trading-full-stack/shared";
 
 /**
@@ -38,7 +38,7 @@ export function addToPosition(
 
 export interface ReduceResult {
   qty: Fixed;
-  /** 已实现盈亏，向下截断（保守，和手续费的"向上"相反方向）。 */
+  /** 已实现盈亏，向下取整（mulFloor，朝负无穷）：盈利少算、亏损多算，两个方向都保守。 */
   realizedPnl: Fixed;
   /** 逐仓仓位按平仓比例释放的保证金；全仓仓位传 0n 进来时结果恒为 0n。 */
   releasedMargin: Fixed;
@@ -60,7 +60,7 @@ export function reducePosition(
     throw new Error(`closeQty 必须在 (0, currentQty] 区间内，收到 ${closeQty}，currentQty=${currentQty}`);
   }
   const diff = positionSide === "SHORT" ? entryPrice - fillPrice : fillPrice - entryPrice;
-  const realizedPnl = mul(diff, closeQty);
+  const realizedPnl = mulFloor(diff, closeQty);
   // 逐仓保证金按平仓比例释放：closeQty 用完整仓位平掉时，released 正好等于 currentIsolatedMargin，
   // 不会因为除法截断在"全平"这个最常见的场景里漏掉几分钱。
   const releasedMargin =
