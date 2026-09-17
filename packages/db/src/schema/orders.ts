@@ -58,7 +58,7 @@ export const orders = pgTable(
     stopPrice: bigint("stop_price", { mode: "bigint" }), // 触发单的触发价，非触发单为 null
     workingType: workingTypeEnum("working_type")
       .notNull()
-      .default("MARK_PRICE"), // 触发单用什么价格判断触发
+      .default("CONTRACT_PRICE"), // 触发单用什么价格判断触发
     qty: bigint("qty", { mode: "bigint" }).notNull(), // 委托数量
     executedQty: bigint("executed_qty", { mode: "bigint" })
       .notNull()

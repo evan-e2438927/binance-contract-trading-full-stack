@@ -109,7 +109,7 @@ describe("逐仓强平（01-domain-knowledge.md 第六节算例 A：10x 逐仓�
     const order = only(events, "orderUpdate")[0]!.order;
     expect(order).toMatchObject({
       id: `liq:acc-1:BTCUSDT:LONG:${T0}`,
-      clientOrderId: `autoclose-${T0}`,
+      clientOrderId: `autoclose-${T0}-BTCUSDT-LONG`,
       type: "LIQUIDATION",
       side: "SELL",
       positionSide: "BOTH",
@@ -353,5 +353,19 @@ describe("LIQUIDATION 类型的订单用户不能下", () => {
     const { place } = setup();
     const events = place({ type: "LIQUIDATION", price: undefined, timeInForce: undefined, qty: parse("1") });
     expect(events[0]).toMatchObject({ t: "rejected", code: "INVALID_PARAMS" });
+  });
+});
+
+describe("分层表热加载（第 11 讲 setBrackets）", () => {
+  it("换成维持保证金率更高的表：原来安全的仓位立刻被扫到强平", () => {
+    const { t, place, mark } = setup();
+    place({ ...market, qty: parse("1") }); // 10x 逐仓多 1 @ 50,000
+    t.apply(book([["46000", "5"]], [["46000.5", "5"]]));
+    expect(mark("46000")).toEqual([]); // 0.4% 的表下：权益 1,000 > 维持保证金 184
+
+    // 币安调表：第 1 层维持保证金率改成 2.5%（权益 1,000 ≤ 46,000 × 2.5% = 1,150）
+    const harder = [{ bracketNum: 1, notionalFloor: 0n, notionalCap: parse("100000000"), maxLeverageNum: 20, mmr: parse("0.025"), cum: 0n }];
+    const events = t.apply({ t: "setBrackets", symbol: "BTCUSDT", brackets: harder, ts: T0 + 5 });
+    expect(only(events, "liquidation")).toHaveLength(1);
   });
 });

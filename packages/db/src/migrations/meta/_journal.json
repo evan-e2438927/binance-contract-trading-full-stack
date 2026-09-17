@@ -22,6 +22,20 @@
       "when": 1789565579853,
       "tag": "0002_faithful_black_widow",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789634022177,
+      "tag": "0003_binance_rules_position_amt",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789634032082,
+      "tag": "0004_drop_position_qty",
+      "breakpoints": true
     }
   ]
 }

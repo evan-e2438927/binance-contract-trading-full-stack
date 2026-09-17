@@ -4,7 +4,7 @@ import { fetchSymbolStatuses } from "./exchange-info";
 import { startMarketFeed } from "./market-feed";
 
 /**
- * 第 10 讲验收用：`pnpm --filter server market:watch`，终端每秒刷新一次 20 个币对的行情。
+ * 第 10 讲验收用：`pnpm --filter server market:watch`，终端每秒刷新一次开放币对的行情。
  * 不连数据库、不需要环境变量。拔掉网线（或关掉代理）等 10 秒，状态会变成 degraded，插回去自动恢复。
  * 启动时先查 exchangeInfo，只订阅 status = TRADING 的币对（下架结算中的币对盘口为空，订阅了永远 ready 不了）。
  */

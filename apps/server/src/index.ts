@@ -24,11 +24,16 @@ import {
   createBracketFetcher,
   syncLeverageBrackets,
 } from "@binance-contract-trading-full-stack/db";
+import { startTradingCore } from "./engine-host/start";
 import { startBracketSyncJob } from "./jobs/bracket-sync";
 import { booksRoute } from "./routers/books";
 import { getDb } from "./services";
 
 app.route("/books", booksRoute); // 👈 新增
+
+// 交易内核：从数据库恢复引擎状态、连币安行情、等就绪（30 秒没就绪就退出，04-backend-design.md 第 1 节）。
+// 先于 HTTP 服务启动：盘口和标记价没就位就不对外接受请求
+const trading = await startTradingCore({ db: getDb() });
 
 serve(
   {
@@ -47,11 +52,13 @@ const fetchBrackets = createBracketFetcher({
 });
 startBracketSyncJob({
   run: () => syncLeverageBrackets({ db: getDb(), fetchBrackets }),
-  onChanged: () => {
-    // TODO(第 11 讲 引擎宿主)：在这里把新分层表热加载进引擎。
-    // 在那之前，分层表变更要重启 server 才会进入引擎（02-architecture.md 已知失真点 #9）。
-    console.log(
-      "[bracket-sync] 分层表已更新；引擎热加载尚未接入，需重启 server 生效",
-    );
-  },
+  // 分层表有变化：热加载进引擎并立刻扫风控（第 11 讲，02-architecture.md 失真点 #9 不再需要重启）
+  onChanged: (report) => trading.reloadBrackets(report.changed.map((c) => c.symbol)),
 });
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    console.log(`[server] 收到 ${signal}，停止行情、等队列处理完再退出`);
+    trading.stop().finally(() => process.exit(0));
+  });
+}

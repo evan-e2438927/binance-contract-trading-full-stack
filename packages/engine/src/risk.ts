@@ -246,7 +246,9 @@ function liquidatePosition(
   const notionalSum = fills.reduce((sum, f) => sum + notional(f.qty, f.price), 0n);
   const order: Order = {
     id,
-    clientOrderId: `autoclose-${ts}`, // 币安强平单的 clientOrderId 以 "autoclose-" 开头
+    // 币安强平单的 clientOrderId 以 "autoclose-" 开头。带上币对和方向：全仓强平同一时刻会平掉好几个仓位，
+    // 数据库 orders 表 (account_id, client_order_id) 唯一（第 11 讲落库时发现）
+    clientOrderId: `autoclose-${ts}-${position.symbol}-${position.positionSide}`,
     accountId: position.accountId,
     symbol: position.symbol,
     side: isLong ? "SELL" : "BUY",

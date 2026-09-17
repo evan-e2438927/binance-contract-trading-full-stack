@@ -293,6 +293,13 @@ export type EngineInput =
       positionSide: PositionSide;
       delta: Fixed; // 正数划入，负数划出
       ts: number;
+    }
+  // —— 配置（来自分层表每日同步，第 11 讲） ——
+  | {
+      t: "setBrackets";
+      symbol: string;
+      brackets: LeverageBracket[]; // 这个币对的整张新分层表（官方同步校验过）
+      ts: number;
     };
 
 export type EngineInputType = EngineInput["t"];

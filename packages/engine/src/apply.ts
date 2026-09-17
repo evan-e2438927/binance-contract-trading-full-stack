@@ -44,6 +44,8 @@ export function applyInput(state: EngineState, input: EngineInput): EngineEvent[
       return adjustIsolatedMargin(state, input);
     case "resetAccount":
       return resetAccount(state, input);
+    case "setBrackets":
+      return setBrackets(state, input);
 
     default:
       return assertNever(input);
@@ -82,6 +84,25 @@ function applyTrade(state: EngineState, input: InputOf<"trade">): EngineEvent[] 
   // ③ 按最新成交价触发的触发单（放在挂单撮合之后：触发出来的单是在这笔行情成交之后才进盘口的）
   const events = [...matchTrade(state, input), ...checkTriggers(state, input.symbol, "CONTRACT_PRICE", input.price, input.ts)];
   return [...events, ...riskScan(state, filledAccounts(events), input.ts)];
+}
+
+/**
+ * 分层表热加载（第 11 讲）：宿主的每日同步发现币安调表后，把新表喂进来，立刻对这个币对上有仓位的账户跑风控。
+ * 维持保证金率变了，原来安全的仓位可能已经过线——等下一次标记价推送也会扫到，但没理由多等那一秒。
+ *
+ * 分层表和行情一样属于"配置类状态"，不进 undo 日志：宿主落库失败回滚时不会退回旧表。
+ * 这没有问题——币安的表已经变了，回滚掉的只是这次扫描产生的强平，下一次扫描会按新表重新判。
+ */
+function setBrackets(state: EngineState, input: InputOf<"setBrackets">): EngineEvent[] {
+  requireSymbol(state, input.symbol);
+  if (input.brackets.length === 0) {
+    throw new Error(`币对 ${input.symbol} 的新分层表为空，宿主不应该喂进来`);
+  }
+  state.brackets.set(
+    input.symbol,
+    [...input.brackets].sort((a, b) => (a.notionalCap < b.notionalCap ? -1 : a.notionalCap > b.notionalCap ? 1 : 0)),
+  );
+  return riskScan(state, accountsHolding(state, input.symbol), input.ts);
 }
 
 function registerAccount(state: EngineState, input: InputOf<"registerAccount">): EngineEvent[] {

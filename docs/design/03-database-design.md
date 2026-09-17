@@ -302,6 +302,8 @@ export const positions = pgTable('positions', {
 > - **引擎内部不变**：仍按 `04-backend-design.md` 第 3 节，用 `LONG` / `SHORT` + 非负 `qty`。两种表示法的互转只发生在第 11 讲的仓储层
 >
 > 详见 `docs/tutorial/README.md` 设计缺口清单。
+>
+> **已做（第 11 讲）**：迁移 `0003_binance_rules_position_amt` 加 `position_amt` 和新部分索引、`0004_drop_position_qty` 删掉 `qty`（分两步是因为 drizzle-kit 遇到"一列删一列加"会交互式问是不是改名）。同一次迁移里 `symbols` 加了 10 列币安交易规则（`min_price` / `max_price` / `max_qty` / `market_step_size` / `market_min_qty` / `market_max_qty` / `percent_price_up` / `percent_price_down` / `max_num_orders` / `liquidation_fee_rate`，可空只为了能加到已有行上，`seed:symbols` 全部填上）、`order_type` 枚举加 `LIQUIDATION`、`orders.working_type` 默认值改 `CONTRACT_PRICE`。
 
 ### `orders`
 

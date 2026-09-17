@@ -24,7 +24,7 @@ export const OPEN_SYMBOLS = [
   "ARBUSDT",
   "OPUSDT",
   "SUIUSDT",
-  "TONUSDT",
+  // TONUSDT 2026-09-17 移出：币安状态 SETTLING（下架结算，盘口为空），见 docs/tutorial/README.md 缺口 #30
   "FILUSDT",
 ] as const;
 

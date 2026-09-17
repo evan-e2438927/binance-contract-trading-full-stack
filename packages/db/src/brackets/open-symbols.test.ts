@@ -11,8 +11,8 @@ describe("openSymbolSetting", () => {
     expect(openSymbolSetting("PEPEUSDT")).toEqual({ enabled: false, sortOrder: 0 });
   });
 
-  it("名单 20 个且没有重复", () => {
-    expect(OPEN_SYMBOLS).toHaveLength(20);
-    expect(new Set(OPEN_SYMBOLS).size).toBe(20);
+  it("名单 19 个且没有重复（2026-09-17 移出已下架结算的 TONUSDT）", () => {
+    expect(OPEN_SYMBOLS).toHaveLength(19);
+    expect(new Set(OPEN_SYMBOLS).size).toBe(19);
   });
 });

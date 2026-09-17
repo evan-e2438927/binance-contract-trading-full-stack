@@ -25,12 +25,17 @@ export function createTestEngine(config: EngineConfig): TestEngine {
   // ③ 用：每个币对最后一次见到的标记价。EngineSnapshot 不含行情状态，所以这份记录
   // 只存在于测试脚手架里，旁路记录调用方喂给 apply() 的 markPrice 输入，不问引擎内部。
   const marks = new Map<string, Fixed>();
+  // ⑨ 用：当前生效的分层表。setBrackets 输入会换表，跟着旁路记录，否则 ⑨ 会拿旧表判断
+  const brackets = { ...config.brackets };
 
   return {
     engine,
     events,
     apply(input) {
       if (input.t === "markPrice") marks.set(input.symbol, input.markPrice);
+      if (input.t === "setBrackets") {
+        brackets[input.symbol] = [...input.brackets].sort((a, b) => (a.notionalCap < b.notionalCap ? -1 : a.notionalCap > b.notionalCap ? 1 : 0));
+      }
 
       // 回滚自检：apply → 记下结果 → rollback → 必须回到 apply 之前 → 再把结果装回去。
       // 这样每一个测试里的每一次 apply 都顺带验证了 undo 日志没有漏记。
@@ -58,7 +63,7 @@ export function createTestEngine(config: EngineConfig): TestEngine {
 
       checkInvariants(engine.snapshot(), out, ledgerSums, marks, {
         availableScope: availableScopeOf(input, out, before, marks),
-        brackets: config.brackets,
+        brackets,
       });
       return out;
     },

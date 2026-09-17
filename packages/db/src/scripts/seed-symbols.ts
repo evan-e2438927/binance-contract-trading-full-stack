@@ -21,6 +21,8 @@ interface BinanceExchangeInfoSymbol {
   status: string;
   pricePrecision: number;
   quantityPrecision: number;
+  /** 强平清算费率，如 "0.012500"（第 07 讲） */
+  liquidationFee: string;
   filters: BinanceFilter[];
 }
 
@@ -46,6 +48,17 @@ export function mapExchangeInfoSymbol(raw: BinanceExchangeInfoSymbol): NewSymbol
   const priceFilter = findFilter(raw.filters, "PRICE_FILTER");
   const lotSizeFilter = findFilter(raw.filters, "LOT_SIZE");
   const minNotionalFilter = findFilter(raw.filters, "MIN_NOTIONAL");
+  // 第 11 讲补的交易规则（缺口 #17）。2026-09-17 核对：币安全部 897 个 U 本位合约都带这几个 filter 和 liquidationFee
+  const marketLotSizeFilter = findFilter(raw.filters, "MARKET_LOT_SIZE");
+  const percentPriceFilter = findFilter(raw.filters, "PERCENT_PRICE");
+  const maxNumOrdersFilter = findFilter(raw.filters, "MAX_NUM_ORDERS");
+  if (typeof raw.liquidationFee !== "string") {
+    throw new Error(`symbol ${raw.symbol} 缺少 liquidationFee`);
+  }
+  const maxNumOrders = Number(requireField(maxNumOrdersFilter, "limit"));
+  if (!Number.isSafeInteger(maxNumOrders) || maxNumOrders <= 0) {
+    throw new Error(`symbol ${raw.symbol} 的 MAX_NUM_ORDERS.limit 不是正整数`);
+  }
 
   return {
     symbol: raw.symbol,
@@ -58,6 +71,16 @@ export function mapExchangeInfoSymbol(raw: BinanceExchangeInfoSymbol): NewSymbol
     stepSize: parse(requireField(lotSizeFilter, "stepSize")),
     minQty: parse(requireField(lotSizeFilter, "minQty")),
     minNotional: parse(requireField(minNotionalFilter, "notional")),
+    minPrice: parse(requireField(priceFilter, "minPrice")),
+    maxPrice: parse(requireField(priceFilter, "maxPrice")),
+    maxQty: parse(requireField(lotSizeFilter, "maxQty")),
+    marketStepSize: parse(requireField(marketLotSizeFilter, "stepSize")),
+    marketMinQty: parse(requireField(marketLotSizeFilter, "minQty")),
+    marketMaxQty: parse(requireField(marketLotSizeFilter, "maxQty")),
+    percentPriceUp: parse(requireField(percentPriceFilter, "multiplierUp")),
+    percentPriceDown: parse(requireField(percentPriceFilter, "multiplierDown")),
+    maxNumOrders,
+    liquidationFeeRate: parse(raw.liquidationFee),
   };
 }
 
@@ -72,6 +95,13 @@ async function main() {
   const unknown = OPEN_SYMBOLS.filter((s) => !listed.has(s));
   if (unknown.length > 0) {
     throw new Error(`open-symbols.ts 里这些币对在币安 exchangeInfo 里不存在：${unknown.join(", ")}，同步中止`);
+  }
+  // 开放名单里的币对必须能交易：下架结算中的币对盘口为空，行情源永远就绪不了（缺口 #30，TONUSDT 就是这样发现的）
+  const notTrading = body.symbols.filter((s) => (OPEN_SYMBOLS as readonly string[]).includes(s.symbol) && s.status !== "TRADING");
+  if (notTrading.length > 0) {
+    throw new Error(
+      `open-symbols.ts 里这些币对在币安已经不是 TRADING：${notTrading.map((s) => `${s.symbol}(${s.status})`).join(", ")}，先从名单里去掉，同步中止`,
+    );
   }
 
   const db = createDb({ DATABASE_URL: ENV.DATABASE_URL });
@@ -99,6 +129,16 @@ async function main() {
           stepSize: row.stepSize,
           minQty: row.minQty,
           minNotional: row.minNotional,
+          minPrice: row.minPrice,
+          maxPrice: row.maxPrice,
+          maxQty: row.maxQty,
+          marketStepSize: row.marketStepSize,
+          marketMinQty: row.marketMinQty,
+          marketMaxQty: row.marketMaxQty,
+          percentPriceUp: row.percentPriceUp,
+          percentPriceDown: row.percentPriceDown,
+          maxNumOrders: row.maxNumOrders,
+          liquidationFeeRate: row.liquidationFeeRate,
           enabled: row.enabled,
           sortOrder: row.sortOrder,
           updatedAt: new Date(),
