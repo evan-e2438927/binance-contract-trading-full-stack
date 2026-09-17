@@ -225,7 +225,7 @@ describe("平仓与反手（04-backend-design.md 4.4 节）", () => {
     // 开仓价 50,000.00000009，卖 0.5 @ 50,000：真实亏损 0.000000045，记 −0.00000005
     putPosition(state, testPosition({ entryPrice: parse("50000.00000009") }));
     const order = testOrder({ side: "SELL", qty: parse("0.5") });
-    const result = applyFill(state, order, parse("50000"), parse("0.5"), "TAKER", 1, T0)!;
+    const result = applyFill(state, order, parse("50000"), parse("0.5"), "TAKER", "o-1:1", T0)!;
     expect(result.fill.realizedPnl).toBe(-5n);
   });
 
@@ -310,10 +310,10 @@ describe("只减仓", () => {
     putPosition(state, testPosition()); // 多 1
 
     const order = testOrder({ side: "SELL", qty: parse("2"), reduceOnly: true });
-    const first = applyFill(state, order, parse("50000"), parse("2"), "MAKER", 1, T0)!;
+    const first = applyFill(state, order, parse("50000"), parse("2"), "MAKER", "o-1:1", T0)!;
     expect(first.fill.qty).toBe(parse("1"));
     expect(first.closedSides).toEqual(["LONG"]);
-    expect(applyFill(state, order, parse("50000"), parse("1"), "MAKER", 2, T0)).toBeNull();
+    expect(applyFill(state, order, parse("50000"), parse("1"), "MAKER", "o-1:2", T0)).toBeNull();
   });
 
   it("仓位平完后，残余的只减仓挂单自动撤销", () => {

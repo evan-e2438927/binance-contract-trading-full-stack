@@ -521,7 +521,7 @@ describe("⑩ INSUFFICIENT_MARGIN（默认 20x，Taker 费率 0.05%）", () => {
 
     it("限价空单：收到过成交推送时，假设价格还要和 最新价 × 1.0015 比", () => {
       const state = setup({ mode: "HEDGE" });
-      applyInput(state, { t: "trade", symbol: "BTCUSDT", price: parse("50100"), qty: parse("0.1"), buyerIsMaker: false, ts: T0 });
+      applyInput(state, { t: "trade", symbol: "BTCUSDT", tradeId: 1, price: parse("50100"), qty: parse("0.1"), buyerIsMaker: false, ts: T0 });
       // 假设价格 = max(49,000, 50,000, 50,100 × 1.0015 = 50,175.15) = 50,175.15
       // 起始保证金 2,508.7575 + 开仓亏损 1,000 + 手续费 25.087575
       const order = expectAccepted(validate(state, { side: "SELL", positionSide: "SHORT", price: parse("49000") }));

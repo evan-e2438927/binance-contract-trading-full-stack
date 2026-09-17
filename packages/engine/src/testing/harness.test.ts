@@ -58,7 +58,7 @@ describe("测试脚手架", () => {
     snap.accounts[0]!.walletBalance = parse("20000");
     te.engine.restore(snap);
 
-    const next = { t: "trade", symbol: "BTCUSDT", price: parse("50000"), qty: parse("1"), buyerIsMaker: true, ts: T0 } as const;
+    const next = { t: "trade", symbol: "BTCUSDT", tradeId: 1, price: parse("50000"), qty: parse("1"), buyerIsMaker: true, ts: T0 } as const;
     expect(() => te.apply(next)).toThrow(InvariantError);
     expect(() => te.apply(next)).toThrow(/不变式 ①/);
   });
@@ -72,7 +72,7 @@ describe("测试脚手架", () => {
     te.engine.restore(snap);
 
     expect(() =>
-      te.apply({ t: "trade", symbol: "BTCUSDT", price: parse("50000"), qty: parse("1"), buyerIsMaker: true, ts: T0 }),
+      te.apply({ t: "trade", symbol: "BTCUSDT", tradeId: 1, price: parse("50000"), qty: parse("1"), buyerIsMaker: true, ts: T0 }),
     ).toThrow(/不变式 ⑧/);
   });
 

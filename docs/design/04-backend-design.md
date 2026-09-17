@@ -110,6 +110,8 @@ packages/shared/src/
 wss://fstream.binance.com/stream?streams=btcusdt@aggTrade/btcusdt@depth20@100ms/btcusdt@markPrice@1s/...
 ```
 
+> **已过时（设计缺口 #22，第 10 讲改）**：币安把合约 WebSocket 拆成了 `/public`（depth、bookTicker）、`/market`（aggTrade、markPrice、kline……）、`/private` 三个入口，旧的 `/ws`、`/stream` 在 2026-04-23 之后只推 `/public` 那一类。连接 A 要拆成 `wss://fstream.binance.com/public/stream?streams=…@depth20@100ms` 和 `wss://fstream.binance.com/market/stream?streams=…@aggTrade/…@markPrice@1s` 两条。见 `07-binance-reference.md` 第 7 节。
+
 ### 关键字段
 
 **`@aggTrade`** —— 撮合的心跳
@@ -122,6 +124,8 @@ wss://fstream.binance.com/stream?streams=btcusdt@aggTrade/btcusdt@depth20@100ms/
 | `T` | 成交时间 |
 
 `m` 是拟真排队算法的核心：判断这笔成交消耗买方队列还是卖方队列，全靠它。
+
+> **已定（第 06 讲）**：推送里还有 `a`（归集成交 id）和 `nq`（只含普通订单的成交量，不含 RPI 订单）。RPI 挂单不出现在 depth 流里，所以**消耗排队位置用 `nq` 不用 `q`**，和盘口同口径；`a` 用来拼 Maker 成交的 id。见 `07-binance-reference.md` 第 7 节。
 
 **`@markPrice@1s`**
 
@@ -554,6 +558,8 @@ function estimateQueueAhead(order, book): Fixed {
 
 最后一种情况在订单上打 `queueEstimated = true`。一旦后续盘口更新让该价位进入可见 20 档，用真实值重新校准。
 
+> **已定（设计缺口 #20，第 06 讲）**：上面的伪代码把"可见范围内、但落在两档之间的空价位"也归进了最深档兜底。depth20 给的是前 20 个非空价位，范围内缺的价位就是 0 量——前方没人，`queueAhead = 0` 且不算估算。只有比可见最深一档还深，才用最深档兜底。实现见 `packages/engine/src/queue.ts`。
+
 **用成交流消耗队列**
 
 先弄清 `m` 字段：
@@ -611,6 +617,8 @@ function reconcileQueue(order, book) {
   if (order.queueAhead > lvl.qty) order.queueAhead = lvl.qty   // 前方量不可能超过总量
 }
 ```
+
+> **已定（设计缺口 #20，第 06 讲）**：上面的 `if (!lvl) { order.queueAhead = 0n }` 只在挂单价**仍在可见范围内**时成立。价格往反方向跑远、挂单掉出 20 档视野时也找不到这一档，那时归零等于把用户排到队首——所以掉出视野时**保持不动**。另外估算过的单进入可见范围时直接换成真实值（哪怕更大），不取 min。排队位置的变化不发事件（缺口 #21）。
 
 假设是：**撤单默认发生在我后面**（`queueAhead` 只被成交减少），但**总量夹逼**会在前方确实有人撤时纠正回来。
 

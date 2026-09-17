@@ -1,13 +1,13 @@
 # 会话交接说明
 
 > 给接手这个项目的 Claude Code（或任何人）。
-> 生成时间：2026-09-15 ｜ 最后更新：2026-09-17（第 04 讲完成）｜ 来源：Claude 桌面端 Cowork 会话
+> 生成时间：2026-09-15 ｜ 最后更新：2026-09-17（第 06 讲完成）｜ 来源：Claude 桌面端 Cowork 会话
 
 ---
 
 ## 一、目前走到哪了
 
-**数据库层已完成，引擎内核做到第 05 讲（市价单与成交落账），下一讲 06：限价单与拟真排队。教程按模块一讲一讲写，总览和进度见 `docs/tutorial/README.md`。**
+**数据库层已完成，引擎内核做到第 06 讲（限价单与拟真排队），下一讲 07：风控与强平。教程按模块一讲一讲写，总览和进度见 `docs/tutorial/README.md`。**
 
 | 阶段 | 状态 |
 | --- | --- |
@@ -18,15 +18,16 @@
 | 第 02 讲 · 引擎骨架、测试脚手架、回滚日志 | ✅ AI 写代码 + 讲义，用户对照阅读。`packages/engine` 骨架（7 个测试文件 32 条全绿），undo 日志 + `commit()`/`rollback()`；已 commit |
 | 第 03 讲 · 计算公式 | ✅ 2026-09-17 AI 实现 + 讲义：`formulas.ts`/`position.ts`/`liquidation.ts`，强平价三算例带反向验算；顺带定了设计缺口 #5（强平价不对齐 tickSize）#6（逐仓保证金不占 walletBalance）；`packages/shared` 补 `mulRound`，修了 `format()` 截断显示 bug（缺口 #11）；接上不变式 ③⑥；84 条测试全绿；讲义 `docs/tutorial/03-formulas.md`；已 commit |
 | 第 04 讲 · 下单校验链 | ✅ 2026-09-17 AI 实现 + 讲义：`validate-order.ts` 13 步，`apply` 接上 `placeOrder` 的拒单路径（通过时仍明确抛错，等 05 讲）；定了缺口 #12（引擎内部存 LONG/SHORT；数据库侧用户定为按币安标准：BOTH + 带符号数量，第 11 讲迁移）#13（GTX 拒单 vs 过期）；新记 #14～#16；169 条测试全绿；讲义 `docs/tutorial/04-order-validation.md`；已 commit |
-| 第 05 讲 · 市价单与成交落账 | ✅ 2026-09-17 AI 实现 + 讲义：`execute-order.ts`（市价逐档吃单、限价穿透部分 Taker 成交、IOC / FOK / GTC 剩余处理、`applyFill` 落账）；缺口 #14 开仓亏损按币安实现、#18 只减仓成交时截断 + 残余撤销；已实现盈亏改 `mulFloor`；新记 #19；引擎 189 条、shared 34 条测试全绿；讲义 `docs/tutorial/05-market-order-fills.md`；币安规则汇总 `docs/design/07-binance-reference.md`；**未 commit** |
-| 第 06–09 讲 · 引擎内核 | ⬜ 只有大纲（见教程 README），06 是下一讲：限价单与拟真排队 |
+| 第 05 讲 · 市价单与成交落账 | ✅ 2026-09-17 AI 实现 + 讲义：`execute-order.ts`（市价逐档吃单、限价穿透部分 Taker 成交、IOC / FOK / GTC 剩余处理、`applyFill` 落账）；缺口 #14 开仓亏损按币安实现、#18 只减仓成交时截断 + 残余撤销；已实现盈亏改 `mulFloor`；新记 #19；引擎 189 条、shared 34 条测试全绿；讲义 `docs/tutorial/05-market-order-fills.md`；币安规则汇总 `docs/design/07-binance-reference.md`；已 commit |
+| 第 06 讲 · 限价单与拟真排队 | ✅ 2026-09-17 AI 实现 + 讲义：`queue.ts`（估算 / 夹逼 / 消耗三个纯函数）、`resting-orders.ts`（`book` 夹逼、`trade` Maker 成交、撤单）；`trade` 输入加 `tradeId`、`qty` 取币安 `nq`（不含 RPI）；定了缺口 #20（排队估算两处修正设计伪代码）#21（排队位置变化不发事件）；新记 #22（币安行情流地址拆成 /public、/market，第 10 讲）#23（其它挂单冻结保证金不随仓位重算，第 07 讲）；引擎 223 条测试全绿；讲义 `docs/tutorial/06-limit-orders-queue.md`；**未 commit** |
+| 第 07–09 讲 · 引擎内核 | ⬜ 只有大纲（见教程 README），07 是下一讲：风控与强平 |
 | 第 10–14 讲 · 服务端 | ⬜ 只有大纲 |
 | 前端 | 不出教程——`apps/web` 由 AI 直接实现 |
 | 表结构 12 → 14 张（`identities` / `email_verification_codes`） | ⬜ 放在第 12 讲鉴权里做迁移，不挡引擎 |
 
 **拿不定的地方以币安为标准**，见第六节"决策规则"。
 
-**写下一讲之前必看**：`docs/tutorial/README.md` 的"设计缺口清单"。第 6 条（逐仓保证金算不算在钱包余额里）已在第 03 讲定了：不算。写第 06 讲前：Maker 成交复用 `execute-order.ts` 的 `applyFill`（已支持 `role: "MAKER"` 和只减仓截断）；挂单剩余部分冻结保证金用 `restingFrozenMargin` / `limitOpenCost`。写第 07 讲前必看缺口 #19（不变式 ③ 遇到价格不利变动会误报）。
+**写下一讲之前必看**：`docs/tutorial/README.md` 的"设计缺口清单"。第 6 条（逐仓保证金算不算在钱包余额里）已在第 03 讲定了：不算。写第 07 讲前必看缺口 #19（不变式 ③ 遇到价格不利变动会误报）和 #23（其它挂单的冻结保证金不随仓位变化重算），两条都和"可用余额能不能为负"有关，先核对币安再一起定；`trade` 输入之后的风控扫描接在 `apply.ts` 的 `applyTrade` 里 `matchTrade` 之后（5.2 节第 ④ 步）。
 
 > **本节踩过的一个坑，供参考**：上一位接手者一开始把"M0 地基"理解成"AI 直接写代码"，写了一份完整的实现计划（`docs/superpowers/plans/2026-09-15-m0-foundation.md`）。用户确认后发现本意是"数据库/后端两层用户自己动手，AI 写教程带路，前端才是 AI 直接写"，于是那份计划改成了仅供参考（教程内容是从它转写的，代码经过和设计文档核对，可以放心抄），真正要跟的是 `docs/tutorial/01-database.md`。**如果又看到类似"AI 要不要直接写数据库/后端代码"的模糊指令，先跟用户确认这一点，别想当然直接开始写实现。**
 
@@ -57,7 +58,7 @@ docs/design/
 
 ## 三、仓库现状
 
-分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 commit，最近一次是第 04 讲（下单校验链，含按币安标准核对后的调整和各设计文档的"已定"注释）。
+分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 commit，最近一次是第 05 讲（市价单与成交落账，`98886b8`）。
 
 技术栈：Better-T-Stack 脚手架 —— Next.js 16 + React 19 + Hono + Drizzle + Supabase Postgres + Turborepo + pnpm 11 catalog。Node v22.23.2。脚手架的 `api` 和 `auth` 都是 `none`，所以前后端走 Hono 接口 + fetch，鉴权要自己实现。
 
@@ -84,7 +85,7 @@ docs/design/
 
 ## 五、下一步
 
-**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，下一讲是**第 06 讲：限价单与拟真排队**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
+**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，下一讲是**第 07 讲：风控与强平**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
 
 按 `数据库 → 后端 → 前端` 的顺序搭。前两层用户想自己一步步做，前端交给 AI。
 

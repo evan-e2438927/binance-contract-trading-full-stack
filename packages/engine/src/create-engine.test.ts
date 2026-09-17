@@ -43,7 +43,7 @@ describe("createEngine：apply 之后必须 commit 或 rollback", () => {
   it("apply 抛出程序错误时已经自动回滚，不会卡在未结算状态", () => {
     const engine = createEngine(testConfig());
 
-    expect(() => engine.apply({ t: "cancelOrder", accountId: "acc-1", orderId: "o-1", ts: T0 })).toThrow(
+    expect(() => engine.apply({ t: "setLeverage", accountId: "acc-1", symbol: "BTCUSDT", leverageNum: 10, ts: T0 })).toThrow(
       /还没有实现输入/,
     );
 

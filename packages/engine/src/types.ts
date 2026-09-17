@@ -220,7 +220,16 @@ export interface PlaceOrderRequest {
 export type EngineInput =
   // —— 行情（来自行情层） ——
   | { t: "book"; symbol: string; bids: Level[]; asks: Level[]; ts: number }
-  | { t: "trade"; symbol: string; price: Fixed; qty: Fixed; buyerIsMaker: boolean; ts: number }
+  | {
+      // 一条币安 @aggTrade 推送。字段对照（2026-09-17 抓取真实推送核对）：
+      t: "trade";
+      symbol: string;
+      tradeId: number; // `a` 归集成交 id，币对内单调递增。Maker 成交的 id 用它拼（第 06 讲）
+      price: Fixed; // `p`
+      qty: Fixed; // ★ `nq`，不是 `q`：只含普通订单的成交量，不含 RPI 订单。盘口 depth 流不含 RPI 挂单，排队消耗要和盘口同口径
+      buyerIsMaker: boolean; // `m`
+      ts: number; // `T` 成交时间
+    }
   | {
       t: "markPrice";
       symbol: string;

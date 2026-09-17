@@ -1,6 +1,7 @@
 import { putAccount } from "./journal";
 import { requireSymbol, type EngineState } from "./state";
 import { executeOrder } from "./execute-order";
+import { cancelOrder, matchTrade, reconcileBook } from "./resting-orders";
 import { validateOrder } from "./validate-order";
 import type { EngineEvent, EngineInput } from "./types";
 
@@ -25,10 +26,11 @@ export function applyInput(state: EngineState, input: EngineInput): EngineEvent[
       return registerAccount(state, input);
     case "placeOrder":
       return placeOrder(state, input);
+    case "cancelOrder":
+      return cancelOrder(state, input);
 
     // 下面这些在后续模块里逐个实现。没实现就明确地炸，而不是悄悄返回 []——
     // 悄悄什么都不做，比报错更难发现。
-    case "cancelOrder":
     case "settleFunding":
     case "setLeverage":
     case "setMarginMode":
@@ -49,8 +51,8 @@ function applyBook(state: EngineState, input: InputOf<"book">): EngineEvent[] {
     asks: input.asks.map((l) => ({ ...l })),
     ts: input.ts,
   });
-  // 模块 06：盘口更新后要夹逼所有挂单的 queueAhead
-  return [];
+  // 5.2 节：① 覆盖盘口快照 ② 夹逼这个币对所有挂单的排队位置（估算过的顺带校准）
+  return reconcileBook(state, input);
 }
 
 function applyMarkPrice(state: EngineState, input: InputOf<"markPrice">): EngineEvent[] {
@@ -67,9 +69,9 @@ function applyMarkPrice(state: EngineState, input: InputOf<"markPrice">): Engine
 
 function applyTrade(state: EngineState, input: InputOf<"trade">): EngineEvent[] {
   requireSymbol(state, input.symbol);
+  // 5.2 节：① 更新最新价 ② 消耗挂单队列、轮到的按挂单价成交并落账；④ 风控扫描是第 07 讲
   state.lastPrices.set(input.symbol, input.price);
-  // 模块 06：用成交流消耗挂单的排队位置
-  return [];
+  return matchTrade(state, input);
 }
 
 function registerAccount(state: EngineState, input: InputOf<"registerAccount">): EngineEvent[] {
@@ -124,7 +126,7 @@ function placeOrder(state: EngineState, input: InputOf<"placeOrder">): EngineEve
     ];
   }
 
-  // 第 05 讲：市价单逐档成交、限价单穿透部分成交；第 06 讲：不穿透的挂单排队；第 09 讲：触发单入簿
+  // 第 05 讲：市价单逐档成交、限价单穿透部分成交；第 06 讲：不穿透的挂单估算排队位置后入簿；第 09 讲：触发单入簿
   return executeOrder(state, input, result.order);
 }
 

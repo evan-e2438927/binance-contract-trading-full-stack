@@ -97,6 +97,7 @@ describe("行情输入", () => {
     applyInput(state, {
       t: "trade",
       symbol: "BTCUSDT",
+      tradeId: 1,
       price: parse("50001.2"),
       qty: parse("0.3"),
       buyerIsMaker: false,
@@ -117,8 +118,8 @@ describe("尚未实现的输入", () => {
   it("明确抛错，而不是悄悄返回空数组", () => {
     const state = createState(testConfig());
     expect(() =>
-      applyInput(state, { t: "cancelOrder", accountId: "acc-1", orderId: "o-1", ts: T0 }),
-    ).toThrow(/还没有实现输入 "cancelOrder"/);
+      applyInput(state, { t: "setLeverage", accountId: "acc-1", symbol: "BTCUSDT", leverageNum: 10, ts: T0 }),
+    ).toThrow(/还没有实现输入 "setLeverage"/);
   });
 });
 
@@ -154,10 +155,11 @@ describe("placeOrder 接线（成交落账的完整测试在 execute-order.test.
     expect(t.ledgerSum("acc-1")).toBe(parse("10000"));
   });
 
-  it("不穿透盘口的 GTC 限价单要排队，第 06 讲才实现：明确抛错并自动回滚", () => {
+  it("不穿透盘口的 GTC 限价单挂进挂单簿（排队的完整测试在 resting-orders.test.ts）", () => {
     const t = readyEngine();
-    expect(() => t.engine.apply(placeOrderInput(orderRequest({ price: parse("49000") })))).toThrow(/第 06 讲/);
-    expect(() => t.engine.rollback()).toThrow(/调用多余/);
+    const events = t.apply(placeOrderInput(orderRequest({ price: parse("49000") })));
+    expect(events).toEqual([{ t: "orderUpdate", order: expect.objectContaining({ id: "o-1", status: "NEW" }) }]);
+    expect(t.engine.snapshot().orders).toHaveLength(1);
   });
 
   it("订单 id 重复是宿主的 bug，抛错", () => {

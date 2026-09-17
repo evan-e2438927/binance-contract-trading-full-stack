@@ -44,7 +44,7 @@ describe("undo 日志", () => {
     const state = stateWithAccount("10000");
     beginJournal(state);
 
-    applyInput(state, { t: "trade", symbol: "BTCUSDT", price: parse("50001.2"), qty: parse("0.3"), buyerIsMaker: false, ts: T0 });
+    applyInput(state, { t: "trade", symbol: "BTCUSDT", tradeId: 1, price: parse("50001.2"), qty: parse("0.3"), buyerIsMaker: false, ts: T0 });
     rollbackJournal(state);
 
     expect(state.lastPrices.get("BTCUSDT")).toBe(parse("50001.2"));

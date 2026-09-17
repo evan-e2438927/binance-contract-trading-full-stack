@@ -2,6 +2,7 @@ import { divRound, type Fixed, type FillRole, type PositionMode } from "@binance
 import { fee as feeOf, initialMargin, notional } from "./formulas";
 import { putAccount, putOrder, putPosition, removeOrder, removePosition } from "./journal";
 import { addToPosition, reducePosition, splitReverseFill } from "./position";
+import { estimateQueueAhead } from "./queue";
 import { positionKey, settingOf, type EngineState } from "./state";
 import type { EngineEvent, EngineInput, Fill, Level, Order, Position } from "./types";
 import { limitOpenCost, type Direction, type ValidatedOrder } from "./validate-order";
@@ -12,7 +13,8 @@ import { limitOpenCost, type Direction, type ValidatedOrder } from "./validate-o
  * - 市价单：逐档吃对手盘，第 11 步已保证深度够，一定全部成交
  * - 限价单：先判断会不会立刻成交（穿透盘口）。穿透的部分当 Taker 成交，价格不超过委托价；
  *   IOC 剩余过期，FOK 不能全成就整单过期，GTC 剩余挂进挂单簿、排队位置是 0
- * - 不穿透的 GTC / GTX 限价单要估算排队位置，第 06 讲；触发单第 09 讲
+ * - 不穿透的 GTC / GTX 限价单：估算排队位置后挂进挂单簿，之后由行情成交流推进（第 06 讲，queue.ts / resting-orders.ts）
+ * - 触发单第 09 讲
  *
  * 盘口快照本身不被修改：多个模拟用户可以吃同一档流动性（02-architecture.md 已知失真点 #2）。
  */
@@ -71,7 +73,14 @@ export function executeOrder(state: EngineState, input: PlaceOrderInput, validat
         order = { ...order, status: "EXPIRED", rejectReason: `${order.timeInForce} 单没有可以立即成交的对手盘` };
         return [{ t: "orderUpdate", order }];
       }
-      throw new Error("不穿透盘口的 GTC / GTX 限价单要估算排队位置后挂单，见第 06 讲");
+      // GTC / GTX 不穿透：是 Maker，估算排队位置后挂进挂单簿，冻结整张单的开仓成本（5.4 节 else 分支）
+      order = {
+        ...order,
+        ...estimateQueueAhead(order.side, limitPrice, book),
+        frozenMargin: restingFrozenMargin(state, order, order.qty),
+      };
+      putOrder(state, order);
+      return [{ t: "orderUpdate", order }];
     }
   }
 
@@ -97,7 +106,7 @@ export function executeOrder(state: EngineState, input: PlaceOrderInput, validat
   let notionalSum = 0n;
   let fillCount = 0;
   for (const take of takes) {
-    const result = applyFill(state, order, take.price, take.qty, "TAKER", fillCount + 1, input.ts);
+    const result = applyFill(state, order, take.price, take.qty, "TAKER", `${order.id}:${fillCount + 1}`, input.ts);
     if (!result) break; // 只减仓单没有仓位可减了（缺口 #18 的成交时截断）
     fillCount++;
     fillEvents.push(...result.events);
@@ -152,7 +161,7 @@ function takeLevels(levels: readonly Level[], qty: Fixed, limitPrice: Fixed | nu
 
 // ─────────────────────────────────────────────────────────────
 // 一笔成交落账：仓位 → 已实现盈亏 → 手续费 → 余额
-// 第 06 讲的 Maker 成交也走这里
+// 第 06 讲的 Maker 成交（resting-orders.ts）也走这里
 // ─────────────────────────────────────────────────────────────
 
 export interface FillResult {
@@ -163,7 +172,8 @@ export interface FillResult {
 }
 
 /**
- * 一笔成交落账。返回 null 表示这是只减仓类订单、但已经没有仓位可减（缺口 #18：成交时截断）。
+ * 一笔成交落账。fillId 由调用方拼：下单时吃单是 `订单id:序号`，挂单被行情成交是 `订单id:t归集成交id`。
+ * 返回 null 表示这是只减仓类订单、但已经没有仓位可减（缺口 #18：成交时截断）。
  *
  * 顺序（04-backend-design.md 4.4 节）：
  * 1. 先平：单向模式的反向仓位、双向模式的平仓方向，最多平到仓位数量，算已实现盈亏、按比例释放逐仓保证金
@@ -177,7 +187,7 @@ export function applyFill(
   price: Fixed,
   requestedQty: Fixed,
   role: FillRole,
-  seqNum: number,
+  fillId: string,
   ts: number,
 ): FillResult | null {
   const account = state.accounts.get(order.accountId);
@@ -263,7 +273,7 @@ export function applyFill(
 
   // ③ 手续费 + ④ 余额
   const fill: Fill = {
-    id: `${order.id}:${seqNum}`,
+    id: fillId,
     orderId: order.id,
     accountId: order.accountId,
     symbol: order.symbol,
@@ -349,7 +359,7 @@ export function orderSides(positionMode: PositionMode, order: Pick<Order, "side"
 }
 
 /** 只减仓类订单，且对应方向已经没有仓位了。 */
-function nothingLeftToClose(state: EngineState, order: Readonly<Order>): boolean {
+export function nothingLeftToClose(state: EngineState, order: Readonly<Order>): boolean {
   const sides = orderSides(state.accounts.get(order.accountId)!.positionMode, order);
   if (!sides.closingOnly) return false;
   const target = state.positions.get(positionKey(order.accountId, order.symbol, sides.closeSide));
@@ -360,7 +370,7 @@ function nothingLeftToClose(state: EngineState, order: Readonly<Order>): boolean
  * 挂进挂单簿的剩余部分要冻结的保证金：只算其中"会开仓"的部分，和下单时第 10 步同一个公式（limitOpenCost）。
  * 单向模式下，剩余数量里还能平掉的反向仓位部分不冻结；只减仓类订单不冻结（不变式 ⑥）。
  */
-function restingFrozenMargin(state: EngineState, order: Readonly<Order>, remaining: Fixed): Fixed {
+export function restingFrozenMargin(state: EngineState, order: Readonly<Order>, remaining: Fixed): Fixed {
   const account = state.accounts.get(order.accountId)!;
   const sides = orderSides(account.positionMode, order);
   if (sides.closingOnly) return 0n;
@@ -388,7 +398,7 @@ function restingFrozenMargin(state: EngineState, order: Readonly<Order>, remaini
  * 仓位平完之后，同一方向上残余的只减仓类挂单已经没有仓位可减，撤掉（01-domain-knowledge.md："仓位平完后
  * 残余的只减仓单自动撤销"；04-backend-design.md 第 3 节状态机：只减仓单失效 → CANCELED）。
  */
-function cancelResidualClosingOrders(
+export function cancelResidualClosingOrders(
   state: EngineState,
   current: Readonly<Order>,
   closedSides: ReadonlySet<Direction>,
