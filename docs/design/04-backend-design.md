@@ -819,6 +819,14 @@ function settleFunding(symbol) {
 2. **结算后立刻跑风控扫描**——一笔资金费足以把高杠杆仓位推过强平线，真实交易里经常发生
 3. 定时器要处理进程重启：启动时从 markPrice 流拿 `T` 重新排期，不依赖任何持久化的定时器状态
 
+> **已定（第 08 讲，按币安核对）**：引擎输入 `settleFunding` 带上结算那一刻的费率和标记价，定时器留在宿主（第 11 讲）。
+> - 公式和上面一致（币安 FAQ "Introduction to Binance Futures Funding Rates"：名义价值 = 标记价 × 数量）
+> - **逐仓仓位的资金费从逐仓保证金里付**：钱包余额和 `isolatedMargin` 一起变（币安用户数据流：资金费发生在逐仓仓位上时推送那个仓位的 isolated wallet）；全仓只动钱包
+> - 每条资金费一条 `FUNDING` 流水 + 一条 `fundingPaid` 事件；金额为 0 不记
+> - 结算后对付了钱的账户跑 `riskScan`
+> - 间隔按币对设置（默认 8 小时），费率有上下限，都以币安推送为准
+> 实现 `packages/engine/src/funding.ts`，讲义 `docs/tutorial/08-funding-account-ops.md`。
+
 > 注意：`setTimeout` 在宿主层（`funding-scheduler.ts`），不在引擎里。引擎只接收 `{ t: 'settleFunding' }` 输入事件。
 
 ---
@@ -1169,6 +1177,10 @@ GET /leaderboard?period=daily|weekly|all&limit=100
 ```
 
 第 2 步为什么不直接清零而要走平仓：这样**资金流水始终自洽**——任意时刻的钱包余额都等于所有流水之和。这个不变式是排查账目问题的唯一抓手，不能为了省事破坏它。
+
+> **已定（第 08 讲）**：引擎的 `resetAccount` 做第 1～4 步（撤单 `CANCELED`、按标记价平仓不收手续费、`REALIZED_PNL` 流水、`RESET` 流水差额补到目标金额，哪怕差额为 0 也写）；第 5 步和 24 小时冷却（`RESET_COOLING_DOWN`）由宿主查 `accounts.last_reset_at`，引擎不看钟。持仓模式和杠杆设置保留。
+>
+> **调杠杆 / 切保证金模式 / 切持仓模式 / 调逐仓保证金**（`POST /positions/leverage`、`/positions/margin-mode`、`/account/position-mode`、`/positions/isolated-margin`）的规则按币安核对，见 `07-binance-reference.md` 第 9 节，实现 `packages/engine/src/account-ops.ts`。要点：调杠杆时仓位和挂单冻结保证金一起跟着变；逐仓有仓位不能调低杠杆；调逐仓保证金按币安"最多可加 / 可减"公式限额，**不写流水**（逐仓保证金本来就在钱包余额里，缺口 #6）。
 
 ---
 

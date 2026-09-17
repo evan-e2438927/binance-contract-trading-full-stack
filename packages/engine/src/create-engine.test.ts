@@ -44,7 +44,7 @@ describe("createEngine：apply 之后必须 commit 或 rollback", () => {
     const engine = createEngine(testConfig());
 
     expect(() => engine.apply({ t: "setLeverage", accountId: "acc-1", symbol: "BTCUSDT", leverageNum: 10, ts: T0 })).toThrow(
-      /还没有实现输入/,
+      /不在引擎里/,
     );
 
     expect(() => engine.rollback()).toThrow(/调用多余/);

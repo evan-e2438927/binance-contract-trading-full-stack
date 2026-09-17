@@ -198,10 +198,42 @@
 
 ---
 
-## 9. 还没核对、写到时要查的
+## 9. 资金费与账户操作
+
+**出处**：FAQ "Introduction to Binance Futures Funding Rates"（2026-03-06 更新）、"How to Adjust Margin Balance in Cross/Isolated Margin Mode?"（2026-01-02 更新）；U 本位合约错误码、用户数据流（`ACCOUNT_UPDATE` 资金费说明）；REST 接口 Change Initial Leverage / Change Margin Type / Change Position Mode / Modify Isolated Position Margin；`GET /fapi/v1/fundingInfo` 实时数据｜核对：2026-09-17
+
+**资金费**
+
+| 规则 | 币安 | 我们（第 08 讲） |
+| --- | --- | --- |
+| 金额 | 名义价值 × 费率，名义价值 = 标记价 × 数量；币安不收费 | 同左，`fundingFee()` 朝零截断 |
+| 间隔 | 默认 8 小时（UTC 00/08/16），可按币对调整；有 15 秒误差 | 宿主按推送的下次结算时间排期；2026-09-17 开放币对中 19 个查到是 8 小时 |
+| 费率上下限 | `fundingInfo`：BTCUSDT / ETHUSDT ±0.3%，其它 ±0.375% ～ ±2% | 费率由币安推送，不自己算、不自己封顶 |
+| 逐仓仓位 | 资金费发生在逐仓仓位上时，`ACCOUNT_UPDATE` 带上那个仓位（isolated wallet 变化） | 钱包余额和逐仓保证金一起变 |
+| 结算后 | 保证金不够会被强平 | 立刻 `riskScan` |
+
+**账户操作**
+
+| 操作 | 币安规则 | 我们的错误码 |
+| --- | --- | --- |
+| 调杠杆 | 1 ～ 币对最大杠杆（-4028） | `INVALID_PARAMS` |
+| | 逐仓有持仓时不能调低（-4161） | `INVALID_PARAMS` |
+| | 持仓超过新杠杆允许的最大名义价值（-2027） | `LEVERAGE_TOO_HIGH` |
+| | 全仓余额不够（-4050） | `INSUFFICIENT_MARGIN` |
+| 切保证金模式 | 已经是这个模式（-4046）；这个币对有挂单（-4047）/ 持仓（-4048） | `INVALID_PARAMS` / `MARGIN_MODE_LOCKED` |
+| 切持仓模式 | 对所有币对生效；已经是（-4059）；任何挂单（-4067）/ 持仓（-4068） | `INVALID_PARAMS` / `POSITION_MODE_LOCKED` |
+| 调逐仓保证金 | 只能调逐仓（"Only for isolated symbol"）；双向模式必须传 LONG / SHORT | `INVALID_PARAMS` / `POSITION_SIDE_MISMATCH` |
+| | 最多可加 = max(0, min(crossWalletBalance − Σ 逐仓挂单起始保证金 − Σ 全仓仓位维持保证金, 可用余额)) | 超过：`INSUFFICIENT_MARGIN` |
+| | 最多可减 = max(0, min(逐仓保证金 − 仓位维持保证金, 逐仓保证金 + 数量 × (标记价 − 开仓价) − 标记价 × 数量 × IMR)) | 超过：`MARGIN_WOULD_LIQUIDATE`（币安 -4051 ISOLATED_BALANCE_INSUFFICIENT） |
+
+**没核对到、我们自己定的**：调杠杆时是否把挂单冻结保证金一起算进"余额够不够"（我们算，方向保守）；调低杠杆时持仓 + 开仓挂单一起比最大名义价值（和下单第 9 步同口径）；设置和当前一样时拒单而不是静默成功（按币安 -4046 / -4059 的做法，调杠杆币安没有对应错误码，我们同样拒）；调逐仓保证金不写流水（缺口 #6：逐仓保证金在钱包余额里）。
+
+---
+
+## 10. 还没核对、写到时要查的
 
 | 讲 | 要查的币安规则 |
 | --- | --- |
 | 07 | ✅ 已核对，见第 8 节。**还没查**：强平价展示公式的最新口径（FAQ "How to Calculate Liquidation Price of USDⓈ-M Futures Contracts"，第 13 讲 REST 仓位接口要展示强平价时再查）；可用余额 `availableBalance` 能不能为负（不影响引擎：强平线在维持保证金，缺口 #19 已按"下单不能把它变负"定） |
-| 08 | 资金费结算时间和公式；调杠杆、切保证金模式、切持仓模式的限制（`-4047` / `-4048` / `-4067` / `-4068` / `-4161`） |
+| 08 | ✅ 已核对，见第 9 节 |
 | 09 | 条件单 `priceProtect` / `triggerProtect`；条件单数量上限（`-4045`）；止损限价单的委托价限制（`-4183` / `-4184`） |

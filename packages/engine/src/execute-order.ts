@@ -371,7 +371,13 @@ export function nothingLeftToClose(state: EngineState, order: Readonly<Order>): 
  * 挂进挂单簿的剩余部分要冻结的保证金：只算其中"会开仓"的部分，和下单时第 10 步同一个公式（limitOpenCost）。
  * 单向模式下，剩余数量里还能平掉的反向仓位部分不冻结；只减仓类订单不冻结（不变式 ⑥）。
  */
-export function restingFrozenMargin(state: EngineState, order: Readonly<Order>, remaining: Fixed): Fixed {
+export function restingFrozenMargin(
+  state: EngineState,
+  order: Readonly<Order>,
+  remaining: Fixed,
+  /** 第 08 讲调杠杆前试算用：按这个杠杆算，不传就按当前设置。 */
+  leverageNum = settingOf(state, order.accountId, order.symbol).leverageNum,
+): Fixed {
   const account = state.accounts.get(order.accountId)!;
   const sides = orderSides(account.positionMode, order);
   if (sides.closingOnly) return 0n;
@@ -383,14 +389,13 @@ export function restingFrozenMargin(state: EngineState, order: Readonly<Order>, 
   }
   if (openPart === 0n) return 0n;
 
-  const setting = settingOf(state, order.accountId, order.symbol);
   return limitOpenCost({
     openSide: sides.openSide,
     qty: openPart,
     price: order.price!,
     markPrice: state.marks.get(order.symbol)!.markPrice,
     lastPrice: state.lastPrices.get(order.symbol),
-    leverageNum: setting.leverageNum,
+    leverageNum,
     takerFeeRate: state.config.fees.takerFeeRate,
   }).total;
 }

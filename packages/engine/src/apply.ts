@@ -3,6 +3,8 @@ import { requireSymbol, type EngineState } from "./state";
 import { executeOrder } from "./execute-order";
 import { cancelOrder, matchTrade, reconcileBook } from "./resting-orders";
 import { accountsHolding, riskScan } from "./risk";
+import { adjustIsolatedMargin, resetAccount, setLeverage, setMarginMode, setPositionMode } from "./account-ops";
+import { settleFunding } from "./funding";
 import { validateOrder } from "./validate-order";
 import type { EngineEvent, EngineInput } from "./types";
 
@@ -29,16 +31,18 @@ export function applyInput(state: EngineState, input: EngineInput): EngineEvent[
       return placeOrder(state, input);
     case "cancelOrder":
       return cancelOrder(state, input);
-
-    // 下面这些在后续模块里逐个实现。没实现就明确地炸，而不是悄悄返回 []——
-    // 悄悄什么都不做，比报错更难发现。
     case "settleFunding":
+      return settleFunding(state, input);
     case "setLeverage":
+      return setLeverage(state, input);
     case "setMarginMode":
+      return setMarginMode(state, input);
     case "setPositionMode":
+      return setPositionMode(state, input);
     case "adjustIsolatedMargin":
+      return adjustIsolatedMargin(state, input);
     case "resetAccount":
-      throw new Error(`引擎还没有实现输入 "${input.t}"，按 docs/tutorial/README.md 的模块顺序补齐`);
+      return resetAccount(state, input);
 
     default:
       return assertNever(input);

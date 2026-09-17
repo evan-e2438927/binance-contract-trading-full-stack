@@ -69,7 +69,7 @@ export function createTestEngine(config: EngineConfig): TestEngine {
 }
 
 /**
- * 不变式 ③ 的检查范围（设计缺口 #19）：只有"下单成功、而且下单之前可用余额非负"时，检查下单账户。
+ * 不变式 ③ 的检查范围（设计缺口 #19）：只有"会占用保证金的操作成功、而且操作之前可用余额非负"时，检查这个账户。
  * 标记价不利变动让可用余额变负是正常的（强平线在维持保证金，不在可用余额）；
  * 下单之前就已经是负的，平仓单成交后仍可能是负的，也不算下单的错。
  */
@@ -79,7 +79,9 @@ function availableScopeOf(
   before: EngineSnapshot,
   marks: ReadonlyMap<string, Fixed>,
 ): ReadonlySet<string> {
-  if (input.t !== "placeOrder" || out.some((e) => e.t === "rejected")) return new Set();
+  // 会占用保证金的操作：下单、调杠杆（调低时占用变多）、调逐仓保证金（追加时从可用余额里拿）
+  const occupies = input.t === "placeOrder" || input.t === "setLeverage" || input.t === "adjustIsolatedMargin";
+  if (!occupies || out.some((e) => e.t === "rejected")) return new Set();
   const account = before.accounts.find((a) => a.id === input.accountId);
   if (!account) return new Set();
   let crossUnrealizedPnlSum = 0n;

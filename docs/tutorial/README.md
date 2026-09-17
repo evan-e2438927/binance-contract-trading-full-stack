@@ -43,7 +43,7 @@
 | 05 | 市价单与成交落账 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[05-market-order-fills.md](05-market-order-fills.md) |
 | 06 | 限价单与拟真排队 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[06-limit-orders-queue.md](06-limit-orders-queue.md) |
 | 07 | 风控与强平 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[07-risk-liquidation.md](07-risk-liquidation.md) |
-| 08 | 资金费与账户操作 | `packages/engine` | ⬜ |
+| 08 | 资金费与账户操作 | `packages/engine` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[08-funding-account-ops.md](08-funding-account-ops.md) |
 | 09 | 触发单与只减仓 | `packages/engine` | ⬜ |
 | 10 | 行情层：接币安 WebSocket | `apps/server/src/market` | ⬜ |
 | 11 | 仓储层与引擎宿主：落库、恢复、定时任务 | `apps/server` | ⬜ |
@@ -119,6 +119,7 @@
 
 - **做什么**：资金费结算（结算后立刻跑风控）；调杠杆、切保证金模式、切持仓模式、调逐仓保证金、账户重置
 - **验收**：资金费 4 条场景；**把 `01-domain-knowledge.md` 第十二节整张流水表完整重放一遍，净收益 +1,959.5**——这是引擎内核的毕业考试
+- **实际完成**：`funding.ts`（资金费结算，逐仓从逐仓保证金付，结算后扫风控）、`account-ops.ts`（调杠杆、切保证金模式、切持仓模式、调逐仓保证金、账户重置，规则按币安核对）；`ledger-replay.test.ts` 用真实输入把第十二节整张表重放通过（11,959.5）；`01-domain-knowledge.md` 过时的六处加了注；缺口 #6 补定（调逐仓保证金不写流水），新记 #26 #27；23 条测试
 
 ### 09 · 触发单与只减仓
 
@@ -165,7 +166,7 @@
 | 3 | `rejected` 事件只带 `clientOrderId`，撤单被拒时根本没有这个字段 | 02（改成通用形状） |
 | 4 | `liquidation` / `fundingPaid` 事件的字段和对应数据库表对不上 | 02（改成和表一一对应的记录） |
 | 5 | 强平价要不要对齐 `tickSize`：4.6 节伪代码里对齐了，但算例（45,180.72）保留两位小数，并不是 0.1 的整数倍 | ✅ 03：不对齐（`04-backend-design.md` 4.6 节已加注）。强平价是风控阈值，不是要挂盘口的委托价，只在最终一步 `divRound` 到 8 位 |
-| 6 | **逐仓保证金算不算在钱包余额里**：`01` 第十二节说开逐仓后钱包是 9,975（算在里面），`04` 第 8 节强平结算"余额 > 0 退回 walletBalance"的写法又像不在里面。这决定开仓时要不要写流水 | ✅ 03：不算。开仓不产生 `walletBalance` 变动，只有手续费/已实现盈亏/资金费/强平才动它；逐仓保证金只是把钱从"可用"标成"锁定"，体现在 `availableBalance` 的减项里，不是一条流水。`adjustIsolatedMargin`（手动划转）留给 08 讲单独定 |
+| 6 | **逐仓保证金算不算在钱包余额里**：`01` 第十二节说开逐仓后钱包是 9,975（算在里面），`04` 第 8 节强平结算"余额 > 0 退回 walletBalance"的写法又像不在里面。这决定开仓时要不要写流水 | ✅ 03：不算。开仓不产生 `walletBalance` 变动，只有手续费/已实现盈亏/资金费/强平才动它；逐仓保证金只是把钱从"可用"标成"锁定"，体现在 `availableBalance` 的减项里，不是一条流水。`adjustIsolatedMargin`（手动划转）留给 08 讲单独定。✅ 08 补定 `adjustIsolatedMargin`：同理不写流水，只改 `isolatedMargin`（在"全仓可用"和"锁给仓位"之间挪）；资金费发生在逐仓仓位上时钱包和 `isolatedMargin` 一起变 |
 | 7 | 强平成交要写 `fills`，但 `fills.order_id` 是非空外键，强平并没有用户下的订单 | ✅ 07：按币安，强平时系统生成一张 `type = LIQUIDATION` 的订单（`clientOrderId` 以 `autoclose-` 开头），成交引用它。`packages/shared` 的 `ORDER_TYPE` 已加 `LIQUIDATION`，**数据库 `order_type` 枚举要迁移（用户写）** |
 | 8 | 引擎内的 id 是确定性字符串（为了可重放），数据库里的 id 列是 uuid | 11 |
 | 9 | 代码是 12 张表，设计文档已经是 14 张表 | 12 |
@@ -185,6 +186,8 @@
 | 23 | 挂单的冻结保证金只在下单、自己部分成交时算，**仓位变了不会重算别的挂单**：单向模式持多 1、挂普通限价卖 2（只冻结开空 1 的成本），之后市价平掉多头，这张挂单全成交会开空 2，冻结却只有 1 份，可用余额被高估 | ✅ 07：成交改变仓位后，同账户同币对的其它挂单按新仓位重算冻结保证金，变了就发 `orderUpdate`（`refreshFrozenMargins`）。只在仓位变化时重算，标记价变化不重算。重算后可用余额可能变负，挂单不撤——强平只看维持保证金 |
 | 24 | `01-domain-knowledge.md` 算例 B（逐仓空头强平价 54,780.88）固定用了第 1 层 0.4%，但 54,780.88 的名义价值已经超过第 1 层上限 50,000，应该用第 2 层 | ✅ 07：真实强平价 54,776.12。第 03 讲的公式测试保留（它演示公式，分层是传进去的），风控扫描按名义价值查层。`01` 第六节已加注 |
 | 25 | 第 07 讲要数据库跟进的两处：① `order_type` 枚举加 `LIQUIDATION`（`packages/shared` 已改，要生成迁移）② `symbols` 表加 `liquidation_fee`（币安 exchangeInfo 币对字段，`seed:symbols` 同步），引擎 `SymbolSpec.liquidationFeeRate` 读它；`FeeConfig` 里原来的全局 `liquidationFeeRate` 已删 | 用户写，第 11 讲接宿主之前完成 |
+| 26 | `ledger_entries` 的 `MARGIN_TRANSFER` 类型现在没有任何事件会产生：调逐仓保证金不改钱包余额（缺口 #6），不写流水。用户要看"调过几次保证金"的历史，只能从 `positionUpdate` 里看 | 08 定：暂不用。第 13 讲做 REST 时如果需要调整历史（币安有 `GET /fapi/v1/positionMargin/history`），再决定加表还是复用这个类型 |
+| 27 | 账户操作的错误码和币安不是一一对应：调逐仓保证金减太多，币安是 `-4051 ISOLATED_BALANCE_INSUFFICIENT`，我们沿用设计文档的 `MARGIN_WOULD_LIQUIDATE`（名字窄了：币安的上限还包括"不能低于起始保证金"）；调杠杆超范围、逐仓不能调低、设置没变都归到 `INVALID_PARAMS`。对照表见 `07-binance-reference.md` 第 9 节 | 13：REST 层返回错误时决定要不要细分，改 `packages/shared` 的 `ERROR_CODES` |
 
 ---
 

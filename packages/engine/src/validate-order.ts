@@ -534,7 +534,7 @@ function activePosition(
  * 不算进来的话，用户拆成 10 张小单就能绕过杠杆分层——每张都不跨层，全成交后早就跨了。
  * 不算：只减仓 / 全部平仓单（不会加仓）、还没触发的触发单（触发时再校验）。
  */
-function pendingOpenNotional(state: EngineState, account: Account, symbol: string, direction: Direction): Fixed {
+export function pendingOpenNotional(state: EngineState, account: Account, symbol: string, direction: Direction): Fixed {
   let sum = 0n;
   for (const order of state.orders.values()) {
     if (order.accountId !== account.id || order.symbol !== symbol) continue;
@@ -556,7 +556,7 @@ function pendingOpenNotional(state: EngineState, account: Account, symbol: strin
  * 性能备注：这里遍历全部仓位和订单，和账户总数成正比。账户多了之后第 11 讲宿主
  * 应该给引擎加"按账户索引"，现在先保证算对。
  */
-function accountAvailable(state: EngineState, account: Account): Fixed | string {
+export function accountAvailable(state: EngineState, account: Account): Fixed | string {
   let crossUnrealizedPnlSum = 0n;
   let crossInitialMarginSum = 0n;
   let isolatedMarginSum = 0n;

@@ -114,12 +114,12 @@ describe("行情输入", () => {
   });
 });
 
-describe("尚未实现的输入", () => {
-  it("明确抛错，而不是悄悄返回空数组", () => {
+describe("宿主接线错误", () => {
+  it("给不存在的账户调杠杆：明确抛错，而不是悄悄返回空数组", () => {
     const state = createState(testConfig());
     expect(() =>
       applyInput(state, { t: "setLeverage", accountId: "acc-1", symbol: "BTCUSDT", leverageNum: 10, ts: T0 }),
-    ).toThrow(/还没有实现输入 "setLeverage"/);
+    ).toThrow(/不在引擎里/);
   });
 });
 
