@@ -17,7 +17,7 @@ function filledOrder(): Order {
     timeInForce: "GTC",
     price: parse("50000"),
     stopPrice: null,
-    workingType: "MARK_PRICE",
+    workingType: "CONTRACT_PRICE",
     qty: parse("1"),
     executedQty: parse("1"),
     avgPrice: parse("50000"),

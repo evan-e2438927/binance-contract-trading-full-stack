@@ -17,15 +17,33 @@ import type {
 // 配置：宿主启动时从数据库读出来，一次性喂给引擎
 // ─────────────────────────────────────────────────────────────
 
-/** 币对规格，对应 symbols 表里引擎用得到的那几列。 */
+/**
+ * 币对规格，对应 symbols 表里引擎用得到的那几列。
+ * 交易规则全部来自币安 `GET /fapi/v1/exchangeInfo` 该币对的 `filters`，字段名后面注明出处。
+ */
 export interface SymbolSpec {
   symbol: string;
   status: string; // 币安状态，'TRADING' 才允许下单（校验链第 1 步）
   enabled: boolean; // 我们是否对用户开放
+  // PRICE_FILTER（校验链第 5 步）
   tickSize: Fixed; // 价格最小变动单位
+  minPrice: Fixed; // 委托价 / 触发价下限
+  maxPrice: Fixed; // 委托价 / 触发价上限
+  // LOT_SIZE（校验链第 5 步，限价类订单）
   stepSize: Fixed; // 数量最小变动单位
   minQty: Fixed; // 最小下单数量
-  minNotional: Fixed; // 最小下单名义价值
+  maxQty: Fixed; // 最大下单数量
+  // MARKET_LOT_SIZE（校验链第 5 步，市价单用这一组，不用 LOT_SIZE）
+  marketStepSize: Fixed;
+  marketMinQty: Fixed;
+  marketMaxQty: Fixed; // BTCUSDT 限价单最多 1000，市价单最多 120
+  // MIN_NOTIONAL（校验链第 6 步）
+  minNotional: Fixed; // 最小下单名义价值，只减仓单不受限
+  // PERCENT_PRICE（校验链第 7 步）：委托价必须落在 [标记价 × down, 标记价 × up]
+  percentPriceUp: Fixed; // multiplierUp，BTCUSDT 1.05 → parse("1.05")
+  percentPriceDown: Fixed; // multiplierDown，BTCUSDT 0.95 → parse("0.95")
+  // MAX_NUM_ORDERS（校验链第 13 步）
+  maxNumOrdersNum: number; // 每个账户在这个币对上最多挂多少单，BTCUSDT 200
 }
 
 /**
@@ -49,10 +67,11 @@ export interface FeeConfig {
   liquidationFeeRate: Fixed; // 强平清算费率（设计文档第 8 节：0.5%）
 }
 
-/** 下单校验链里那几个"拍板的数字"，集中放这里而不是散落在代码里。 */
+/**
+ * 下单校验链里我们自己拍板的数字（币安没有对应规则的）。
+ * 币安有的规则（价格上下限、挂单数上限……）按币对放在 SymbolSpec 里，不放这里。
+ */
 export interface LimitConfig {
-  maxOpenOrdersNum: number; // 每个账户最多挂单数（校验链第 13 步：200）
-  percentPriceLimit: Fixed; // 委托价偏离标记价上限（校验链第 7 步：±5%）
   marketDepthRatio: Fixed; // 市价单最多吃掉可见深度的比例（校验链第 11 步：50%）
 }
 

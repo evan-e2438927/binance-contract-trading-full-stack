@@ -206,6 +206,8 @@ interface Order {
 
 **`qty` 恒为非负**：方向完全由 `positionSide` 决定。负数在 bigint 运算里到处要判符号，容易在某个分支漏掉。单向模式对外暴露 `BOTH`，内部仍用 `LONG` / `SHORT` 表示方向。
 
+> **已定（设计缺口 #12）**：引擎内部就按这一段做（第 04 讲已实现：单向模式的仓位在引擎里存 `LONG` / `SHORT`，同一币对最多一个）。**数据库**按币安标准存：单向模式 `BOTH` 一行、数量带符号（多正空负），见 `03-database-design.md` 的 `positions` 一节。两者互转在第 11 讲仓储层。详见 `docs/tutorial/README.md` 设计缺口清单。
+
 ### 订单状态机
 
 ```
@@ -231,6 +233,8 @@ interface Order {
                                                             │ EXPIRED  │ 终态
                                                             └──────────┘
 ```
+
+> **已定（设计缺口 #13）**：图里"GTX 会吃单 → EXPIRED"只适用于**止损限价 / 止盈限价单触发那一刻**才发现会吃单的情况（订单已经存在过）。普通 `LIMIT` + `GTX` 在**下单那一刻**就会吃单的，由第 6 节校验链第 12 步直接拒单（`POST_ONLY_REJECTED`，走 REJECTED，订单从没存在过）。详见 `docs/tutorial/README.md` 设计缺口清单。
 
 **触发单**（STOP / TAKE_PROFIT 系列）：
 
@@ -393,6 +397,8 @@ function liquidationPrice(acc, target: Position, ctx): Fixed {
 }
 ```
 
+> **已定（设计缺口 #5）**：强平价**不对齐 `tickSize`**，上面最后一行的 `alignPrice` 作废。强平价是风控阈值，不是要挂上盘口的委托价；下面算例 A 的 45,180.72 本身也不是 0.1 的整数倍。实现只在最后一步 `divRound` 四舍五入到 8 位（第 03 讲 `liquidation.ts`）。详见 `docs/tutorial/README.md` 设计缺口清单。
+
 **三个算例**（单测直接用，验算过程见 `01-domain-knowledge.md` 第六节）：
 
 | 算例 | 条件 | 强平价 | 反算保证金率 |
@@ -506,7 +512,7 @@ function placeLimit(order, book) {
 
   if (crosses) {
     // ── 会立刻成交，是 Taker ──
-    if (order.timeInForce === 'GTX') return expire(order, 'POST_ONLY_REJECTED')
+    if (order.timeInForce === 'GTX') return expire(order, 'POST_ONLY_REJECTED')  // 已定（缺口 #13）：普通限价单走不到这里，第 6 节第 12 步已经拒单；这一行只对触发后挂出的 GTX 单生效
 
     const fills = takeUpTo(order.side, order.qty, order.price, book)  // 不超过委托价
     if (order.timeInForce === 'FOK' && sumQty(fills) < order.qty) return expire(order)
@@ -646,6 +652,19 @@ BTCUSDT，在 **49,900** 挂买单 **0.5 BTC**，下单时该价位盘口显示 
 | 12 | `GTX`：该单会立刻成交则拒 | `POST_ONLY_REJECTED` |
 | 13 | 账户挂单数 ≤ 200 | `TOO_MANY_ORDERS` |
 
+> **已定（第 04 讲实现时补充的规则）**：表格没写清的几处，实现和理由见 `docs/tutorial/04-order-validation.md` 第 5 节。
+>
+> - **第 5 条**（按币安）：价格在 `[minPrice, maxPrice]` 内且 `(价格 − minPrice)` 对齐 `tickSize`，触发价同样查；数量在 `[minQty, maxQty]` 内且对齐 `stepSize`，市价单改用 `MARKET_LOT_SIZE`（BTCUSDT 市价单最多 120）。最小数量从第 6 条挪到这里，报 `LOT_SIZE`（币安 `-4004`）。规则全部按币对从 `exchangeInfo` 读，数据库待加列见 `03-database-design.md` 的 `symbols` 一节
+> - **第 6 条**（和币安 `-4164` 一致）：只查最小名义价值。减仓类订单（`reduceOnly`、`closePosition`、双向模式下的 `SELL + LONG` / `BUY + SHORT`）不查——价格跌下去之后，剩下的小仓位必须能平掉
+> - **第 3 条**（按币安）：双向持仓模式下不能传 `reduceOnly`（币安接口说明 "Cannot be sent in Hedge Mode"，传 `false` 也算传了）；`closePosition` 不能用在开仓方向（`BUY + LONG` / `SELL + SHORT`）；多传不需要的参数一律拒（币安 `-1106`）
+> - **第 7 条**（按币安）：以**标记价**为基准。限价单查委托价（币安 `-4016` / `-4024`），**市价单查对手方最优价**（币安 `-4131`）；止损限价 / 止盈限价的委托价在触发时才查（第 09 讲）。上下限按币对配置（`PERCENT_PRICE.multiplierUp` / `multiplierDown`，BTCUSDT 1.05 / 0.95），表格里的"±5%"只是 BTCUSDT 的值
+> - **第 8 条**：双向模式下 `SELL + LONG` / `BUY + SHORT` 本身就是减仓，数量不能超过仓位（"双向模式禁止反手"，币安 `-2022`）
+> - **第 9 条**："成交后名义价值" = 同方向现有仓位（按标记价）+ **同方向其它会开仓的挂单**（未成交部分 × 委托价）+ 本单开仓部分。不算挂单的话，拆成多张小单就能绕过分层。超出分层表最后一层上限也报 `LEVERAGE_TOO_HIGH`
+> - **第 9、10 条**：只对"开仓部分"检查；未触发的触发单跳过（触发时再校验）。市价单所需保证金按盘口逐档估算、手续费逐档向上取整，不按标记价估
+> - **第 10 条**：其它币对的全仓仓位缺标记价、算不出可用余额时，报 `MARKET_NOT_READY`，不拿 0 顶替
+> - **第 12 条**：见第 3 节状态机下方缺口 #13 的说明
+> - **第 13 条**（按币安 `MAX_NUM_ORDERS`，用户 2026-09-17 定）：**每个币对**分别计数，普通挂单和触发单一起算，BTCUSDT 上限 200。只有会留在挂单簿里的订单受限（GTC / GTX 限价单、触发单）；市价、IOC、FOK 不受限——挂满了也要能市价平仓（这一点是我们的判断，币安文档没写）
+
 **为什么第 9 条必须在第 10 条之前**：杠杆决定需要多少保证金。先查余额再查杠杆，会出现"余额够但杠杆不允许"时给出误导性的错误提示。
 
 **第 7 条是我们自己加的保护**：模拟盘里用户容易挂一个 1 USDT 的 BTC 买单试探系统，这种单永远不会成交却一直占着挂单位。±5% 和币安的价格保护逻辑同源。
@@ -661,7 +680,10 @@ function checkLeverage(symbol, afterNotional, leverageNum) {
 }
 ```
 
-币安会自动降杠杆，**我们直接拒单并给出明确提示**。理由：自动降杠杆会悄悄改变用户的强平价，模拟盘里这种背着用户动手的行为比拒单更糟。
+币安会自动降杠杆，**我们直接拒单并给出明确提示**。
+
+> **更正（2026-09-17 核对币安文档）**：币安下单时同样直接拒单，错误码 `-2027 MAX_LEVERAGE_RATIO`（"Exceeded the maximum allowable position at current leverage."），并不会自动降杠杆。我们和币安一样拒单，区别只是提示里多给了"当前杠杆下最大可开多少"。
+理由：自动降杠杆会悄悄改变用户的强平价，模拟盘里这种背着用户动手的行为比拒单更糟。
 
 ---
 
@@ -671,6 +693,8 @@ function checkLeverage(symbol, afterNotional, leverageNum) {
 
 ```ts
 // 默认用标记价触发（workingType = MARK_PRICE，与币安默认一致）
+// ⚠️ 已定（2026-09-17，缺口 #17）：币安条件单接口的 workingType 默认是 CONTRACT_PRICE，上面"与币安默认一致"不对。
+//    按币安标准改为默认 CONTRACT_PRICE（第 04 讲已实现）；用户仍可显式选 MARK_PRICE
 function shouldTrigger(order, markPrice): boolean {
   switch (order.type) {
     case 'STOP':
@@ -830,6 +854,8 @@ class EngineHost {
 ```
 1. 读 accounts → 余额
 2. 读 positions（qty > 0）→ 仓位
+   ⚠️ 已定（缺口 #12）：数据库按币安标准存带符号数量，条件是 position_amt <> 0，
+      读出来后转成引擎的 LONG / SHORT + 非负 qty
 3. 读 orders（status IN ('NEW','PARTIALLY_FILLED')）→ 挂单
 4. queueAhead 的处理：
    ⚠️ 不能直接用库里的旧值——停机期间盘口早变了
@@ -1055,10 +1081,10 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
   "side": "BUY", "positionSide": "LONG", "type": "LIMIT",
   "timeInForce": "GTC", "price": "49900.0", "qty": "0.5", "reduceOnly": false }
 
-// 市价平多
+// 市价平多（双向持仓模式：SELL + LONG 本身就是平多。按币安标准不能再传 reduceOnly，见第 6 节第 3 条的已定说明）
 { "clientOrderId": "c-...-002", "symbol": "BTCUSDT",
   "side": "SELL", "positionSide": "LONG", "type": "MARKET",
-  "qty": "0.5", "reduceOnly": true }
+  "qty": "0.5" }
 
 // 止损市价全平
 { "clientOrderId": "c-...-003", "symbol": "BTCUSDT",

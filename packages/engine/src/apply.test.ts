@@ -2,7 +2,17 @@ import { parse } from "@binance-contract-trading-full-stack/shared";
 import { describe, expect, it } from "vitest";
 import { applyInput } from "./apply";
 import { createState } from "./state";
-import { T0, registerAccountInput, testConfig } from "./testing/fixtures";
+import {
+  T0,
+  bookInput,
+  markPriceInput,
+  orderRequest,
+  placeOrderInput,
+  registerAccountInput,
+  testConfig,
+  testOrder,
+} from "./testing/fixtures";
+import { createTestEngine } from "./testing/harness";
 
 describe("registerAccount", () => {
   it("开户产出一条 INITIAL 的 balanceUpdate，并把账户放进内存", () => {
@@ -109,5 +119,50 @@ describe("尚未实现的输入", () => {
     expect(() =>
       applyInput(state, { t: "cancelOrder", accountId: "acc-1", orderId: "o-1", ts: T0 }),
     ).toThrow(/还没有实现输入 "cancelOrder"/);
+  });
+});
+
+describe("placeOrder（第 04 讲：只接了校验链，成交和挂单在第 05 讲）", () => {
+  function readyEngine() {
+    const t = createTestEngine(testConfig());
+    t.apply(registerAccountInput("acc-1"));
+    t.apply(bookInput());
+    t.apply(markPriceInput());
+    return t;
+  }
+
+  it("校验不通过：只产出一条 rejected 事件，不改任何账户类状态", () => {
+    const t = readyEngine();
+    const before = t.engine.snapshot();
+
+    // 走测试脚手架：顺带跑了回滚自检和全部不变式
+    const events = t.apply(placeOrderInput(orderRequest({ qty: parse("4") }), "acc-1", "o-1", T0 + 1));
+
+    expect(events).toEqual([
+      {
+        t: "rejected",
+        accountId: "acc-1",
+        input: "placeOrder",
+        clientOrderId: "c-1",
+        orderId: "o-1",
+        code: "INSUFFICIENT_MARGIN",
+        message: "可用余额 10000 USDT 不足，本单需要 10100 USDT（20x 起始保证金 + 预留手续费）",
+        ts: T0 + 1,
+      },
+    ]);
+    expect(t.engine.snapshot()).toEqual(before);
+    expect(t.ledgerSum("acc-1")).toBe(parse("10000"));
+  });
+
+  it("校验通过：成交还没实现，明确抛错并自动回滚", () => {
+    const t = readyEngine();
+    expect(() => t.engine.apply(placeOrderInput(orderRequest()))).toThrow(/第 05 讲/);
+    expect(() => t.engine.rollback()).toThrow(/调用多余/);
+  });
+
+  it("订单 id 重复是宿主的 bug，抛错", () => {
+    const t = readyEngine();
+    t.engine.restore({ ...t.engine.snapshot(), orders: [testOrder({ id: "o-1" })] });
+    expect(() => t.engine.apply(placeOrderInput(orderRequest()))).toThrow(/重复的 id/);
   });
 });

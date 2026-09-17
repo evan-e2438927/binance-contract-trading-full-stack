@@ -1,28 +1,31 @@
 # 会话交接说明
 
 > 给接手这个项目的 Claude Code（或任何人）。
-> 生成时间：2026-09-15 ｜ 来源：Claude 桌面端 Cowork 会话
+> 生成时间：2026-09-15 ｜ 最后更新：2026-09-17（第 04 讲完成）｜ 来源：Claude 桌面端 Cowork 会话
 
 ---
 
 ## 一、目前走到哪了
 
-**数据库层已完成，引擎内核开始搭建。教程按模块一讲一讲写，总览和进度见 `docs/tutorial/README.md`。**
+**数据库层已完成，引擎内核做到第 04 讲（下单校验链），下一讲 05：市价单与成交落账。教程按模块一讲一讲写，总览和进度见 `docs/tutorial/README.md`。**
 
 | 阶段 | 状态 |
 | --- | --- |
 | 需求探讨与技术决策 | ✅ 完成 |
 | 设计文档 | ✅ 完成，7 份在 `docs/design/`（已含邮箱 / Google 登录，14 张表版本） |
 | 第 01 讲 · 数据库层 | ✅ 用户已完成：`packages/shared` + 12 张表 + 种子/对账脚本；分层表由 `fetch:brackets` 从币安拉取，20 个币对已导入 |
-| 第 01b 讲 · 分层表官方同步 | ✅ 2026-09-16 AI 实现 + 讲义：官方签名接口（只读 Key）+ 三道校验 + `leverage_bracket_changes` 快照表（迁移 0002）+ server 每日 UTC 00:05 同步；旧的 JSON / `fetch:brackets` / `seed:brackets` 已删除；未 commit |
+| 第 01b 讲 · 分层表官方同步 | ✅ 2026-09-16 AI 实现 + 讲义：官方签名接口（只读 Key）+ 三道校验 + `leverage_bracket_changes` 快照表（迁移 0002）+ server 每日 UTC 00:05 同步；旧的 JSON / `fetch:brackets` / `seed:brackets` 已删除；已 commit |
 | 第 02 讲 · 引擎骨架、测试脚手架、回滚日志 | ✅ AI 写代码 + 讲义，用户对照阅读。`packages/engine` 骨架（7 个测试文件 32 条全绿），undo 日志 + `commit()`/`rollback()`；已 commit |
 | 第 03 讲 · 计算公式 | ✅ 2026-09-17 AI 实现 + 讲义：`formulas.ts`/`position.ts`/`liquidation.ts`，强平价三算例带反向验算；顺带定了设计缺口 #5（强平价不对齐 tickSize）#6（逐仓保证金不占 walletBalance）；`packages/shared` 补 `mulRound`，修了 `format()` 截断显示 bug（缺口 #11）；接上不变式 ③⑥；84 条测试全绿；讲义 `docs/tutorial/03-formulas.md`；已 commit |
-| 第 04–09 讲 · 引擎内核 | ⬜ 只有大纲（见教程 README），04 是下一讲：下单校验链（13 步） |
+| 第 04 讲 · 下单校验链 | ✅ 2026-09-17 AI 实现 + 讲义：`validate-order.ts` 13 步，`apply` 接上 `placeOrder` 的拒单路径（通过时仍明确抛错，等 05 讲）；定了缺口 #12（引擎内部存 LONG/SHORT；数据库侧用户定为按币安标准：BOTH + 带符号数量，第 11 讲迁移）#13（GTX 拒单 vs 过期）；新记 #14～#16；169 条测试全绿；讲义 `docs/tutorial/04-order-validation.md`；已 commit |
+| 第 05–09 讲 · 引擎内核 | ⬜ 只有大纲（见教程 README），05 是下一讲：市价单与成交落账 |
 | 第 10–14 讲 · 服务端 | ⬜ 只有大纲 |
 | 前端 | 不出教程——`apps/web` 由 AI 直接实现 |
 | 表结构 12 → 14 张（`identities` / `email_verification_codes`） | ⬜ 放在第 12 讲鉴权里做迁移，不挡引擎 |
 
-**写下一讲之前必看**：`docs/tutorial/README.md` 的"设计缺口清单"。其中第 6 条（逐仓保证金算不算在钱包余额里）设计文档前后矛盾，**第 05 讲开工前必须跟用户定下来**，它决定开仓时要不要写流水。
+**拿不定的地方以币安为标准**，见第六节"决策规则"。
+
+**写下一讲之前必看**：`docs/tutorial/README.md` 的"设计缺口清单"。第 6 条（逐仓保证金算不算在钱包余额里）已在第 03 讲定了：不算。写第 05 讲前要看的是第 12 条（单向模式仓位在引擎里存 LONG/SHORT，第 05 讲成交落账要按这个存）和第 14 条（所需保证金要不要算开仓亏损，成交落账时验证）。
 
 > **本节踩过的一个坑，供参考**：上一位接手者一开始把"M0 地基"理解成"AI 直接写代码"，写了一份完整的实现计划（`docs/superpowers/plans/2026-09-15-m0-foundation.md`）。用户确认后发现本意是"数据库/后端两层用户自己动手，AI 写教程带路，前端才是 AI 直接写"，于是那份计划改成了仅供参考（教程内容是从它转写的，代码经过和设计文档核对，可以放心抄），真正要跟的是 `docs/tutorial/01-database.md`。**如果又看到类似"AI 要不要直接写数据库/后端代码"的模糊指令，先跟用户确认这一点，别想当然直接开始写实现。**
 
@@ -47,30 +50,13 @@ docs/design/
 **⚠️ 两个陷阱**
 
 1. `docs/books-tutorial.md` 和 `docs/db-notes.md` 是早前跑通全栈链路的**练手记录**，和本项目业务无关。别照着它们建表。
-2. 工作区有一堆未提交的改动（见第三节），都属于那条 books 练手链路，不是本项目的代码。
+2. 仓库里还留着 books 练手链路的代码（`apps/server/src/routers/`、`apps/web/src/app/books/`、`packages/db/src/schema/books.ts` 等，已在 `ecf1016` 单独 commit），不是本项目的业务代码。
 
 ---
 
 ## 三、仓库现状
 
-分支 `main`，只有一个 commit（`initial commit`）。工作区未提交的改动：
-
-```
- M apps/server/package.json          books 练手：加 drizzle-orm 依赖
- M apps/server/src/index.ts          books 练手：挂载 /books 路由
- M apps/web/src/components/header.tsx books 练手：加导航入口
- M package.json / turbo.json / pnpm-workspace.yaml   books 练手：catalog 加 drizzle-orm
- M packages/db/src/index.ts          books 练手：透出 schema
- M packages/db/src/schema/index.ts   books 练手：导出 books
-?? apps/server/src/routers/          books 练手：路由
-?? apps/web/src/app/books/           books 练手：页面
-?? apps/web/src/lib/                 books 练手：api 封装
-?? packages/db/src/schema/books.ts   books 练手：表定义
-?? packages/db/src/migrations/       books 练手：迁移
-?? docs/                             本项目的设计文档（保留）
-```
-
-**建议先处理这件事**：把 books 练手那部分单独 commit 掉（或删掉），再开始本项目的代码。现在混在一起，后面 diff 会很难看。
+分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 commit，最近一次是第 04 讲（下单校验链，含按币安标准核对后的调整和各设计文档的"已定"注释）。
 
 技术栈：Better-T-Stack 脚手架 —— Next.js 16 + React 19 + Hono + Drizzle + Supabase Postgres + Turborepo + pnpm 11 catalog。Node v22.23.2。脚手架的 `api` 和 `auth` 都是 `none`，所以前后端走 Hono 接口 + fetch，鉴权要自己实现。
 
@@ -97,7 +83,7 @@ docs/design/
 
 ## 五、下一步
 
-**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，下一讲是**第 04 讲：下单校验链（13 步）**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
+**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，下一讲是**第 05 讲：市价单与成交落账**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
 
 按 `数据库 → 后端 → 前端` 的顺序搭。前两层用户想自己一步步做，前端交给 AI。
 
@@ -124,10 +110,24 @@ docs/design/
 
 - 市价单吃穿 20 档深度 → 拒单，不按"最后一档 + 滑点惩罚"硬成交
 - 行情断线 → 暂停撮合，恢复后不补算
-- 跨层杠杆超限 → 拒单，不学币安自动降杠杆（那会悄悄改用户的强平价）
+- 跨层杠杆超限 → 拒单（2026-09-17 核对：币安也是拒单，错误码 -2027，设计文档里"币安自动降杠杆"的说法有误，已加更正）
 - 账户重置 → 走正常平仓流程再设回 10,000，不直接改余额（为了保住"余额 == 流水之和"）
 
 `02-architecture.md` 第九节列了 10 条已知失真点。**做任何改动前对一下那张表**，如果改动会让某条变得更不诚实，就不该做。
+
+### 决策规则：以币安为标准（用户 2026-09-17 定）
+
+设计文档没说清、前后矛盾、或者拿不准怎么做的地方：
+
+1. **以币安官方做法为标准**，自己定下来直接实现，不用停下来等拍板。
+   查法：`developers.binance.com` 是动态页面，WebFetch / curl 抓不到正文，用内置浏览器打开后读页面文字。
+2. **实现不了的，问用户。** "实现不了"包括：
+   - 模拟盘条件做不到（没有真实流动性、只有 20 档深度、看不到真实排队等，对应 `02-architecture.md` 第九节的失真点）
+   - 按币安做会违反 `CLAUDE.md` 硬约束或"宁可说做不到，不要编数字"
+   - 和已经刻意偏离币安的决定冲突：市价单吃穿深度拒单、行情断线暂停撮合等——**这些不自己改回币安做法，先问**
+3. 定下来之后：记进 `docs/tutorial/README.md` 的设计缺口清单，在设计文档原文处加"已定"注释，写明依据的币安文档。
+
+已按这条规则定的：缺口 #12（数据库仓位按币安 positionRisk 表示法）、#14（所需保证金加开仓亏损，05 讲）、#15（触发价已被穿过的触发单拒单，09 讲）；第 04 讲校验链已对照币安核对并调整，#17（挂单数按币对计数、触发单默认 CONTRACT_PRICE、交易规则按币对读 exchangeInfo）用户已定按币安，改动清单见 `docs/tutorial/04-order-validation.md` 第 7 节。
 
 ---
 
@@ -139,3 +139,4 @@ docs/design/
 | Supabase 项目 | 复用 books 练手那个还是新建，未定 |
 | 前端 UI 设计稿 | 用户说交给 Figma 做，尚未产出 |
 | 域名与 TLS | 未开始（浏览器 WSS 要求 https 来源） |
+| 数据库跟进第 04 讲（**用户来写**） | `symbols` 表按币安 `exchangeInfo` 加 9 列并更新 `seed:symbols`；`orders.working_type` 默认值改 `CONTRACT_PRICE`；`positions` 按缺口 #12 改名 `position_amt` + 改部分索引。字段清单见 `docs/tutorial/04-order-validation.md` 第 7 节。第 11 讲接宿主之前完成 |

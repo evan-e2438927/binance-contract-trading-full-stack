@@ -1,5 +1,14 @@
 import { parse } from "@binance-contract-trading-full-stack/shared";
-import type { EngineConfig, EngineInput, LeverageBracket, Order, SymbolSpec } from "../types";
+import type {
+  EngineConfig,
+  EngineInput,
+  LeverageBracket,
+  Level,
+  Order,
+  PlaceOrderRequest,
+  Position,
+  SymbolSpec,
+} from "../types";
 
 /**
  * 测试专用的冻结配置。
@@ -9,14 +18,27 @@ import type { EngineConfig, EngineInput, LeverageBracket, Order, SymbolSpec } fr
  * 测试如果跟着真实数据走，币安一调表就全红，而且红得毫无意义。
  * 这里用的是 01-domain-knowledge.md 里那张示例表——所有文档算例都基于它。
  */
+/**
+ * 交易规则取自币安 `GET /fapi/v1/exchangeInfo` 2026-09-17 的 BTCUSDT，
+ * 只有 minNotional 例外：币安现在是 50，这里保留文档算例里的 5，让 0.001 BTC 这种小单的测试不用改。
+ */
 export const BTCUSDT: SymbolSpec = {
   symbol: "BTCUSDT",
   status: "TRADING",
   enabled: true,
   tickSize: parse("0.1"),
+  minPrice: parse("556.8"),
+  maxPrice: parse("4529764"),
   stepSize: parse("0.001"),
   minQty: parse("0.001"),
+  maxQty: parse("1000"),
+  marketStepSize: parse("0.001"),
+  marketMinQty: parse("0.001"),
+  marketMaxQty: parse("120"),
   minNotional: parse("5"),
+  percentPriceUp: parse("1.05"),
+  percentPriceDown: parse("0.95"),
+  maxNumOrdersNum: 200,
 };
 
 function bracket(
@@ -61,8 +83,6 @@ export function testConfig(): EngineConfig {
       liquidationFeeRate: parse("0.005"),
     },
     limits: {
-      maxOpenOrdersNum: 200,
-      percentPriceLimit: parse("0.05"),
       marketDepthRatio: parse("0.5"),
     },
   };
@@ -92,7 +112,7 @@ export function testOrder(overrides: Partial<Order> = {}): Order {
     timeInForce: "GTC",
     price: parse("50000"),
     stopPrice: null,
-    workingType: "MARK_PRICE",
+    workingType: "CONTRACT_PRICE",
     qty: parse("1"),
     executedQty: 0n,
     avgPrice: 0n,
@@ -105,6 +125,84 @@ export function testOrder(overrides: Partial<Order> = {}): Order {
     frozenMargin: 0n,
     rejectReason: null,
     createdAt: T0,
+    updatedAt: T0,
+    ...overrides,
+  };
+}
+
+function levels(rows: [string, string][]): Level[] {
+  return rows.map(([price, qty]) => ({ price: parse(price), qty: parse(qty) }));
+}
+
+/**
+ * BTCUSDT 的一份盘口。卖方前三档就是 04-backend-design.md 5.3 节"市价买 5 BTC"算例用的那三档，
+ * 两边各 7 BTC 可见深度——按 50% 算，市价单最多 3.5 BTC（校验链第 11 步）。
+ */
+export function bookInput(ts = T0): Extract<EngineInput, { t: "book" }> {
+  return {
+    t: "book",
+    symbol: "BTCUSDT",
+    bids: levels([
+      ["49999.9", "2"],
+      ["49999.5", "2"],
+      ["49999", "3"],
+    ]),
+    asks: levels([
+      ["50000", "2"],
+      ["50000.5", "2"],
+      ["50001", "3"],
+    ]),
+    ts,
+  };
+}
+
+export function markPriceInput(markPrice = "50000", ts = T0): Extract<EngineInput, { t: "markPrice" }> {
+  return {
+    t: "markPrice",
+    symbol: "BTCUSDT",
+    markPrice: parse(markPrice),
+    fundingRate: parse("0.0001"),
+    nextFundingTs: ts + 8 * 3600 * 1000,
+    ts,
+  };
+}
+
+/** 单向模式下限价买 1 BTC @ 50,000。需要别的字段就用 overrides 覆盖（设成 undefined 等于没传）。 */
+export function orderRequest(overrides: Partial<PlaceOrderRequest> = {}): PlaceOrderRequest {
+  return {
+    clientOrderId: "c-1",
+    symbol: "BTCUSDT",
+    side: "BUY",
+    positionSide: "BOTH",
+    type: "LIMIT",
+    timeInForce: "GTC",
+    price: parse("50000"),
+    qty: parse("1"),
+    ...overrides,
+  };
+}
+
+export function placeOrderInput(
+  req: PlaceOrderRequest,
+  accountId = "acc-1",
+  orderId = "o-1",
+  ts = T0,
+): Extract<EngineInput, { t: "placeOrder" }> {
+  return { t: "placeOrder", accountId, orderId, req, ts };
+}
+
+/** 全仓多头 1 BTC @ 50,000、20x。单向模式也存成 LONG / SHORT（见 validate-order.ts 顶部注释）。 */
+export function testPosition(overrides: Partial<Position> = {}): Position {
+  return {
+    accountId: "acc-1",
+    symbol: "BTCUSDT",
+    positionSide: "LONG",
+    marginMode: "CROSS",
+    leverageNum: 20,
+    qty: parse("1"),
+    entryPrice: parse("50000"),
+    isolatedMargin: 0n,
+    openedAt: T0,
     updatedAt: T0,
     ...overrides,
   };

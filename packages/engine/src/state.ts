@@ -1,5 +1,6 @@
 import type {
   Fixed,
+  MarginMode,
   PositionSide,
 } from "@binance-contract-trading-full-stack/shared";
 import type {
@@ -67,6 +68,26 @@ export function positionKey(
   positionSide: PositionSide,
 ): string {
   return `${accountId}|${symbol}|${positionSide}`;
+}
+
+/** 账户在某币对上没有设置记录时的默认值，和 account_symbol_settings 表的列默认值一致。 */
+export const DEFAULT_LEVERAGE_NUM = 20;
+export const DEFAULT_MARGIN_MODE: MarginMode = "CROSS";
+
+/** 读取杠杆与保证金模式。"没有记录"是正常情况（用户从没调过），返回默认值，不写入状态。 */
+export function settingOf(
+  state: EngineState,
+  accountId: string,
+  symbol: string,
+): Readonly<AccountSymbolSetting> {
+  return (
+    state.settings.get(settingKey(accountId, symbol)) ?? {
+      accountId,
+      symbol,
+      leverageNum: DEFAULT_LEVERAGE_NUM,
+      marginMode: DEFAULT_MARGIN_MODE,
+    }
+  );
 }
 
 export function createState(config: EngineConfig): EngineState {

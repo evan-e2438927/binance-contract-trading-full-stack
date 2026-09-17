@@ -83,8 +83,8 @@ apps/
   server/   Hono + @hono/node-server（常驻 Node 进程）        → VPS（需能直连币安）
   native/   Expo（第一版不动）
 packages/
-  shared/   ★待建：类型、枚举、错误码、定标换算（零依赖）
-  engine/   ★待建：撮合/风控/清算纯逻辑内核（只依赖 shared）
+  shared/   类型、枚举、错误码、定标换算（零依赖）
+  engine/   撮合/风控/清算纯逻辑内核（只依赖 shared；进度见 docs/tutorial/README.md）
   db/       Drizzle schema + migrations                       → Supabase Postgres
   ui/       共享 shadcn 组件
   config/   共享 tsconfig / lint

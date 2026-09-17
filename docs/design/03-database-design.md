@@ -110,6 +110,8 @@ export const symbols = pgTable('symbols', {
 
 `enabled` 和 `sortOrder` 是我们自己的字段。同步脚本把币安全部币对写进来，但只有 `enabled = true` 的 20 个真正对外开放。**加币对只改一行数据，不用发版。**
 
+> **待加列（2026-09-17，按币安标准，用户来写）**：下单校验链要按币对查币安 `exchangeInfo` 的全部交易规则，需要新增 `min_price` / `max_price`（`PRICE_FILTER`）、`max_qty`（`LOT_SIZE`）、`market_min_qty` / `market_max_qty` / `market_step_size`（`MARKET_LOT_SIZE`）、`percent_price_up` / `percent_price_down`（`PERCENT_PRICE`）、`max_num_orders`（`MAX_NUM_ORDERS`，integer）。字段对照表和 BTCUSDT 当前值见 `docs/tutorial/04-order-validation.md` 第 7 节；引擎的 `SymbolSpec` 已经按这些字段实现。
+
 ### `leverage_brackets`
 
 ```ts
@@ -292,6 +294,15 @@ export const positions = pgTable('positions', {
 2. **`qty` 恒为非负**，方向完全由 `positionSide` 决定。负数在 bigint 运算里到处要判符号，容易在某个分支漏掉。
 3. `pos_symbol_open_idx` 是**部分索引**，只索引 `qty > 0` 的行。资金费结算和强平扫描都要按币对捞活跃仓位，这个索引直接决定那两个高频操作的性能。
 
+> **已定（设计缺口 #12，2026-09-17，按币安标准）**：上面第 2 点和部分索引的写法作废，**数据库**里的仓位按币安 `GET /fapi/v3/positionRisk` 的表示法存——
+>
+> - 单向持仓模式：`positionSide = 'BOTH'`，一个币对一行；双向持仓模式：`LONG` / `SHORT` 各一行（唯一键不变）
+> - 数量**带符号**：多头为正、空头为负（币安原文 "positive for long, negative for short"），双向模式的 `SHORT` 行也是负数
+> - 第 11 讲迁移时一并做：`qty` 改名 `position_amt`（名字不改的话，"qty 以前恒为非负"的旧印象会在查询里埋坑）；`pos_symbol_open_idx` 的条件从 `qty > 0` 改成 `position_amt <> 0`，否则空头仓位会从资金费结算和强平扫描里消失
+> - **引擎内部不变**：仍按 `04-backend-design.md` 第 3 节，用 `LONG` / `SHORT` + 非负 `qty`。两种表示法的互转只发生在第 11 讲的仓储层
+>
+> 详见 `docs/tutorial/README.md` 设计缺口清单。
+
 ### `orders`
 
 ```ts
@@ -306,7 +317,7 @@ export const orders = pgTable('orders', {
   timeInForce:    timeInForceEnum('time_in_force').notNull().default('GTC'),
   price:          bigint('price',      { mode: 'bigint' }),   // 市价单为 null
   stopPrice:      bigint('stop_price', { mode: 'bigint' }),   // 触发单的触发价
-  workingType:    workingTypeEnum('working_type').notNull().default('MARK_PRICE'),
+  workingType:    workingTypeEnum('working_type').notNull().default('MARK_PRICE'),  // ⚠️ 已定改为 CONTRACT_PRICE（币安默认），见 `docs/tutorial/04-order-validation.md` 第 7 节
   qty:            bigint('qty',          { mode: 'bigint' }).notNull(),
   executedQty:    bigint('executed_qty', { mode: 'bigint' }).notNull().default(0n),
   avgPrice:       bigint('avg_price',    { mode: 'bigint' }).notNull().default(0n),

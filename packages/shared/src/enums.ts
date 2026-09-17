@@ -98,8 +98,9 @@ export type FillRole = (typeof FILL_ROLE)[number];
 
 /**
  * 触发单用哪种价格判断"到没到触发点"。
- * - MARK_PRICE     标记价（默认，和币安一致）：能防止有人用小单插针把别人的止损打出来。
+ * - MARK_PRICE     标记价：能防止有人用小单插针把别人的止损打出来。
  * - CONTRACT_PRICE 合约最新成交价：更贴近"眼见为实"，但更容易被插针。
+ * 默认值是 CONTRACT_PRICE，和币安条件单接口一致（2026-09-17 定，见 docs/tutorial/04-order-validation.md 第 7 节）。
  */
 export const WORKING_TYPE = ["MARK_PRICE", "CONTRACT_PRICE"] as const;
 export type WorkingType = (typeof WORKING_TYPE)[number];

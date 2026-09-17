@@ -1,5 +1,6 @@
 import { putAccount } from "./journal";
 import { requireSymbol, type EngineState } from "./state";
+import { validateOrder } from "./validate-order";
 import type { EngineEvent, EngineInput } from "./types";
 
 type InputOf<T extends EngineInput["t"]> = Extract<EngineInput, { t: T }>;
@@ -21,10 +22,11 @@ export function applyInput(state: EngineState, input: EngineInput): EngineEvent[
       return applyTrade(state, input);
     case "registerAccount":
       return registerAccount(state, input);
+    case "placeOrder":
+      return placeOrder(state, input);
 
     // 下面这些在后续模块里逐个实现。没实现就明确地炸，而不是悄悄返回 []——
     // 悄悄什么都不做，比报错更难发现。
-    case "placeOrder":
     case "cancelOrder":
     case "settleFunding":
     case "setLeverage":
@@ -96,6 +98,33 @@ function registerAccount(state: EngineState, input: InputOf<"registerAccount">):
       ts: input.ts,
     },
   ];
+}
+
+function placeOrder(state: EngineState, input: InputOf<"placeOrder">): EngineEvent[] {
+  // 订单 id 由宿主生成（设计缺口 #2），重复说明宿主的 id 生成器有 bug
+  if (state.orders.has(input.orderId)) {
+    throw new Error(`订单 id ${input.orderId} 已经存在，宿主生成了重复的 id`);
+  }
+
+  const result = validateOrder(state, input.accountId, input.req);
+  if (!result.ok) {
+    // 被拒的单不进内存、不进挂单簿，只产出一条 rejected 事件（04-backend-design.md 第 3 节状态机）
+    return [
+      {
+        t: "rejected",
+        accountId: input.accountId,
+        input: "placeOrder",
+        clientOrderId: input.req.clientOrderId,
+        orderId: input.orderId,
+        code: result.code,
+        message: result.message,
+        ts: input.ts,
+      },
+    ];
+  }
+
+  // 模块 05：市价单逐档成交、限价单判定角色后成交或挂单；模块 06：挂单排队；模块 09：触发单入簿
+  throw new Error("下单校验已通过，但成交与挂单还没有实现，见第 05 讲");
 }
 
 function assertNever(value: never): never {
