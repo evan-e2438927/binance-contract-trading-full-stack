@@ -1,9 +1,11 @@
+import { leverageBrackets } from "@binance-contract-trading-full-stack/db";
 import { AppError, MARGIN_MODE, POSITION_SIDE } from "@binance-contract-trading-full-stack/shared";
+import { eq } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AuthEnv } from "../auth/routes";
-import { decimalInput } from "../http/decimal";
+import { decimalInput, toDecimal } from "../http/decimal";
 import { ok, parseBody } from "../http/respond";
 import { requireKnownSymbol, requireTradableSymbol, submitOrThrow, type ApiDeps } from "./context";
 import { orderFromEngine, positionJson } from "./serialize";
@@ -43,7 +45,11 @@ export function createPositionRoutes(deps: ApiDeps, middleware: { auth: Middlewa
     const body = await parseBody(c, leverageSchema);
     requireKnownSymbol(deps.symbols, body.symbol);
     await submitOrThrow(host, { t: "setLeverage", accountId: c.var.accountId, symbol: body.symbol, leverageNum: body.leverage, ts: deps.now() });
-    return ok(c, { symbol: body.symbol, leverage: body.leverage });
+    // 缺口 #44：和币安 Change Initial Leverage 的 maxNotionalValue 同义——允许这个杠杆的档位里上限最高的那一档
+    // （和引擎 validate-order.ts 的 maxNotionalFor 同一个算法；分层表以数据库为准，热加载后库里就是最新的）
+    const brackets = await deps.db.select().from(leverageBrackets).where(eq(leverageBrackets.symbol, body.symbol));
+    const maxNotional = brackets.filter((b) => b.maxLeverage >= body.leverage).reduce((max, b) => (b.notionalCap > max ? b.notionalCap : max), 0n);
+    return ok(c, { symbol: body.symbol, leverage: body.leverage, maxNotional: toDecimal(maxNotional) });
   });
 
   routes.post("/margin-mode", async (c) => {

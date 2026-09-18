@@ -8,7 +8,7 @@ const NEXT = Date.parse("2026-09-17T16:00:00Z");
 const silent = { log: () => {}, error: () => {} };
 
 function mark(ts: number, nextFundingTs: number, rate = "0.0001", price = "50000"): MarkPriceEvent {
-  return { t: "markPrice", symbol: "BTCUSDT", markPrice: parse(price), fundingRate: parse(rate), nextFundingTs, ts };
+  return { t: "markPrice", symbol: "BTCUSDT", markPrice: parse(price), indexPrice: parse(price), fundingRate: parse(rate), nextFundingTs, ts };
 }
 
 function setup() {

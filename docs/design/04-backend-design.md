@@ -1085,6 +1085,15 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
 { "ok": true, "data": { "status": "normal", "feedConnected": true, "matchingEnabled": true, "lastTradeTs": 1789344000000 } }
 ```
 
+> **已定（第 13b 讲）**：实际形状和上面示例有出入：
+> - `/market/ticker`：`lastPrice` `lastTradeTime`（行情层最新成交）、`markPrice` `indexPrice` `fundingRate` `nextFundingTime` `markTime`（标记价推送）、`ready`，24 小时统计放在 `stats24h` 里（币安 REST，3 秒缓存；拿不到时为 `null`，实时部分照常返回）
+> - `/market/depth?limit=5|10|20`：引擎撮合实际用的那份盘口，`[价格, 数量]` 字符串对
+> - `/market/klines`：interval 按币安 15 种（没有 1s），limit 1～1500 默认 500，可带 startTime / endTime；代理币安并缓存（最新 5 秒、整段已收盘 10 分钟）
+> - `/market/funding-history`：limit 1～1000 默认 100，缓存 60 秒
+> - `/market/status`：`{ status: connecting | ready | degraded, symbols: [{ symbol, ready, lastTradeTime, markTime }] }`
+> - `/market/symbols` 带整张分层表（`brackets`）和 `maxLeverage`；只列开放的币对
+> - 只有开放且在交易的币对能查，代理币安的接口不做任意币对的免费转发。币安被限流时暂停请求、返回 `SERVICE_UNAVAILABLE`
+
 ### 账户（需鉴权）
 
 | 方法 | 路径 | 说明 |
@@ -1142,7 +1151,7 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
 | POST | `/orders` | 下单 |
 | DELETE | `/orders/:id` | 撤单 |
 | DELETE | `/orders?symbol=` | 按币对全撤 |
-| POST | `/positions/leverage` | 调整杠杆 |
+| POST | `/positions/leverage` | 调整杠杆（返回 `maxNotional`：当前杠杆下最大可开名义价值，第 13b 讲） |
 | POST | `/positions/margin-mode` | 切换全仓/逐仓 |
 | POST | `/positions/isolated-margin` | 逐仓加减保证金 |
 | POST | `/positions/close` | 一键平仓 |
@@ -1209,6 +1218,15 @@ GET /leaderboard?period=daily|weekly|all&limit=100
 
 无需鉴权；带 token 时额外返回 `myRank`。
 
+> **已定（缺口 #48，第 13b 讲，用户 2026-09-17 定）**：响应是 `{ period, asOf, since, items: [{ rank, nickname, roi, equity, winRate, tradeCount }], myRank }`。数据截至最近一次每日快照（`asOf`）。
+> - **all**：ROI = (权益 − 10,000) ÷ 10,000，从上次重置算起
+> - **daily / weekly**：(本期快照权益 − 期初快照权益) ÷ 期初快照权益，期初 = asOf 往前 1 / 7 天；两天都要有快照；**期内重置过的账户不上榜**
+> - **至少有过一笔成交才上榜**；名次用 RANK()（收益率相同名次相同）
+> - 胜率 = 统计期内已实现盈亏 > 0 的平仓成交 ÷ 平仓成交（没有平仓成交时为 `null`，平仓按 realized_pnl ≠ 0 或强平认，缺口 #45）；成交次数 = 统计期内成交笔数。统计期：日榜 / 周榜是期初到 asOf，总榜是上次重置到 asOf
+> - 带了 token 就必须有效（无效返回 401，不静默当成没登录）；没资格上榜的 `myRank` 为 `null`
+> - 每日快照由 server 定时任务在 UTC 00:00 写（`jobs/equity-snapshot.ts`）：**错过 00:00 超过 60 秒就跳过当天、不补拍**；缺标记价或仓位所在币对行情未就绪的账户当天不写
+> - 权益曲线 `GET /account/equity-curve?days=30`：`{ snapshots: [{ date, equity, walletBalance, cumulativePnl, roi }], current: { equity, time } }`，没拍到快照的日子就是缺的，不插值
+
 ### 账户重置
 
 ```
@@ -1251,6 +1269,18 @@ wss://api.<域名>/ws
 ```jsonc
 { "ch": "depth:BTCUSDT", "ts": 1789344000000, "d": { "bids": [...], "asks": [...] } }
 ```
+
+> **已定（第 14 讲）**：补两种服务端消息，形状一样（缺口 #49）：
+> - `{ "ch": "ack", "ts": …, "d": { "op": "auth" | "sub" | "unsub", "accountId"?, "channels"?, "rejected"? } }`
+> - `{ "ch": "error", "ts": …, "d": { "code": "UNAUTHORIZED" | "TOKEN_EXPIRED" | "INVALID_PARAMS", "message": "中文" } }`
+>
+> 其它几处实现细节：
+> - 频道名里的币对不区分大小写，服务端统一成大写（`depth:btcusdt` → `depth:BTCUSDT`）；只接受开放交易的币对、K 线只接受币安那 15 种周期
+> - 私有频道推给客户端时**频道名不带账户 id**（前端订的是 `order`，不是 `order:<id>`）
+> - `ticker` 频道跟着币安 `@markPrice@1s` 走（正好 1 秒一条），**不含涨跌幅**——那是 24 小时统计，前端首屏拉 `/market/ticker`（缺口 #50）
+> - **token 在连接期间过期**：服务端按 exp 取消这条连接的私有订阅并推 `TOKEN_EXPIRED`，重新 auth 即可（缺口 #52）
+> - 一个连接只认一个账户：再次 auth 换账户会先退掉上一个账户的私有订阅
+> - 实现用 `ws` 库直接接在 HTTP server 的 upgrade 上（`@hono/node-ws` 只兼容 node-server v1，缺口 #51）
 
 ### 公共频道
 

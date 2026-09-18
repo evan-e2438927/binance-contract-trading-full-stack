@@ -1,8 +1,10 @@
 import { leverageBrackets, type DbExecutor } from "@binance-contract-trading-full-stack/db";
-import { createEngine, type EngineInput, type LeverageBracket, type SymbolSpec } from "@binance-contract-trading-full-stack/engine";
+import { createEngine, type Engine, type EngineEvent, type EngineInput, type LeverageBracket, type SymbolSpec } from "@binance-contract-trading-full-stack/engine";
 import type { PositionMode } from "@binance-contract-trading-full-stack/shared";
 import { asc, inArray } from "drizzle-orm";
 import { startMarketFeed, type FeedStatus, type MarketFeed, type MarketFeedOptions } from "../market/market-feed";
+import { createMarketState, type MarketState } from "../market/market-state";
+import type { MarketEvent } from "../market/parse";
 import { loadEngineConfig, loadEngineSnapshot } from "../persistence/load";
 import { persistEvents } from "../persistence/persist";
 import { createEngineHost, type EngineHost } from "./engine-host";
@@ -23,12 +25,18 @@ import { createAccountRegistrar, type AccountRegistrar } from "./register-accoun
  */
 
 export interface TradingCore {
+  /** 只读视图给 WebSocket 推送用（第 14 讲）。写操作一律走 host，不要绕过队列 */
+  engine: Engine;
   host: EngineHost;
   feed: MarketFeed;
   /** 开户（第 12 讲鉴权层调用）：账户行 + 身份行 + INITIAL 流水一个事务落库 */
   accounts: AccountRegistrar;
   /** 引擎配置里的全部币对（REST 层校验币对用，第 13 讲） */
   symbols: readonly SymbolSpec[];
+  /** 行情层收到的最新标记价 / 指数价格 / 成交（第 13b 讲 ticker、status 接口） */
+  marketState: MarketState;
+  /** 账户当前的持仓模式（仓位表示法转换用，第 14 讲推送也要） */
+  positionModeOf: (accountId: string) => PositionMode;
   /** 分层表每日同步发现变化后调用：从数据库读这些币对的新表，喂进引擎并立刻扫风控 */
   reloadBrackets(symbols: readonly string[]): Promise<void>;
   stop(): Promise<void>;
@@ -41,6 +49,12 @@ export interface TradingCoreOptions {
   /** 测试注入：假行情 */
   startFeed?: (options: MarketFeedOptions) => MarketFeed;
   now?: () => number;
+  /** 行情事件（第 14 讲 WebSocket 公共频道）。在喂给引擎之前调用，不就绪的币对也会推——公共频道推的是行情源收到的原样 */
+  onMarketEvent?: (event: MarketEvent) => void;
+  /** 行情源状态变化（第 14 讲 market 频道） */
+  onFeedStatus?: (status: FeedStatus) => void;
+  /** 引擎事件落库并 commit 之后（第 14 讲私有频道）。这时读引擎视图是安全的 */
+  onCommitted?: (input: EngineInput, events: readonly EngineEvent[]) => void;
 }
 
 export async function startTradingCore(options: TradingCoreOptions): Promise<TradingCore> {
@@ -77,6 +91,7 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
       for (const event of events) {
         if (event.t === "positionModeUpdate") modes.set(event.accountId, event.positionMode);
       }
+      options.onCommitted?.(input, events); // 第 14 讲：私有频道推送（持仓模式先更新，推送里用的转换才是对的）
     },
   });
   // 注册账户要先有持仓模式：registerAccount 本身只产生 INITIAL 流水，不用转换，但下一笔成交就要用
@@ -89,6 +104,7 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
     },
   });
 
+  const marketState = createMarketState();
   const tradable = config.symbols.filter((s) => s.enabled && s.status === "TRADING").map((s) => s.symbol);
   let resolveReady: () => void = () => {};
   const ready = new Promise<void>((resolve) => (resolveReady = resolve));
@@ -96,11 +112,14 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
     symbols: tradable,
     logger,
     onEvent(event) {
+      marketState.onEvent(event);
+      options.onMarketEvent?.(event); // 第 14 讲：公共频道推送
       if (event.t === "kline") return; // K 线只给前端（第 14 讲）
       if (event.t === "markPrice") funding.onMarkPrice(event);
       host.feedMarket(event);
     },
     onStatusChange(status: FeedStatus) {
+      options.onFeedStatus?.(status);
       if (status === "ready") resolveReady();
     },
   });
@@ -119,10 +138,13 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
   logger.log(`[trading] 行情就绪，${tradable.length} 个币对开始撮合`);
 
   return {
+    engine,
     host,
     feed,
     accounts: registrar,
     symbols: config.symbols,
+    marketState,
+    positionModeOf,
     async reloadBrackets(symbols) {
       const known = symbols.filter((s) => config.symbols.some((spec) => spec.symbol === s));
       if (known.length === 0) return;

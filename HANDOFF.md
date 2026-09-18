@@ -1,13 +1,13 @@
 # 会话交接说明
 
 > 给接手这个项目的 Claude Code（或任何人）。
-> 生成时间：2026-09-15 ｜ 最后更新：2026-09-17（第 13a 讲完成）｜ 来源：Claude 桌面端 Cowork 会话
+> 生成时间：2026-09-15 ｜ 最后更新：2026-09-18（第 14 讲完成，服务端全部完成）｜ 来源：Claude 桌面端 Cowork 会话
 
 ---
 
 ## 一、目前走到哪了
 
-**数据库层已完成，引擎内核（第 02–09 讲）全部完成，服务端做到第 13a 讲（交易与账户 REST 接口）。下一讲 13b：行情接口、权益快照、排行榜。服务端 10–14 讲由 AI 写代码 + 讲义；第 11 讲起数据库 schema / 迁移也由 AI 写并应用到本地库（用户 2026-09-17 定）。总览和进度见 `docs/tutorial/README.md`。**
+**数据库层已完成，引擎内核（第 02–09 讲）全部完成，服务端 01～14 讲全部完成（数据库、引擎、行情、仓储、鉴权、REST、WebSocket）。下一步：前端 `apps/web`（AI 直接实现，不出教程）。服务端 10–14 讲由 AI 写代码 + 讲义；第 11 讲起数据库 schema / 迁移也由 AI 写并应用到本地库（用户 2026-09-17 定）。总览和进度见 `docs/tutorial/README.md`。**
 
 | 阶段 | 状态 |
 | --- | --- |
@@ -27,13 +27,15 @@
 | 第 11 讲 · 仓储层与引擎宿主 | ✅ 2026-09-17 AI 实现 + 讲义：迁移 0003 / 0004（symbols 交易规则 10 列、positions 带符号 `position_amt`、`LIQUIDATION` 枚举）已应用到本地库并重跑 `seed:symbols`；开放名单去掉 TONUSDT（19 个）；`apps/server/src/persistence`（uuid v5 id 换算、仓位互转、加载、一个事务落库）+ `engine-host`（串行队列 + 回滚、行情门控、资金费由标记价推送驱动、启动恢复、分层表热加载）；引擎加 `setBrackets`；server 启动实测恢复 → 行情就绪 → 19 个币对开始撮合（本机 3000 端口被另一个 node 进程占用，HTTP 那一步没起来）；引擎 285、db 51、server 66 条测试全绿；讲义 `docs/tutorial/11-engine-host.md`；**未 commit** |
 | 第 12 讲 · 鉴权 | ✅ 2026-09-17 AI 实现 + 讲义：迁移 0005（14 张表）；开户 = 账户 + 身份 + INITIAL 流水一个事务（`engine-host/register-account.ts`）；`auth/` 钱包 SIWE / SIWS、邮箱验证码（Resend，开发环境打日志）、Google OAuth + PKCE、JWT；`http/respond.ts` 响应包络；缺口 #35～#38；server 87 条测试；讲义 `docs/tutorial/12-auth.md`；2026-09-17 用户用真实 Google 凭据和 Resend（`onboarding@resend.dev`）各登录成功；已 commit |
 | 第 13a 讲 · REST 接口（上） | ✅ 2026-09-17 AI 实现 + 讲义：第 13 讲拆成 13a / 13b。13a：`http/`（数值边界只收字符串、最多 8 位小数；三档限流；游标分页）、引擎只读视图 `views.ts` + 宿主 `read()`、引擎输入 `cancelAllOrders`、`api/` 交易 3 + 仓位 4 + 账户 10 个接口、`app.ts` 组装；**修了两个 bug**：全仓强平价 cum 符号写反（缺口 #39，只影响展示）、宿主队列只剩同步任务时卡死；缺口 #12 #24 #26～#29 定了，新记 #39～#44；引擎 297、server 103 条测试；讲义 `docs/tutorial/13a-rest-trading-account.md`；已 commit |
-| 第 13b–14 讲 · 服务端 | ⬜ 13b 是下一讲：行情接口（K 线 / 历史资金费率代理币安并缓存）、每日权益快照、权益曲线、排行榜；14 WebSocket |
+| 第 13b 讲 · REST 接口（下） | ✅ 2026-09-17 AI 实现 + 讲义：`market/binance-rest.ts`（代理币安 K 线 / 历史资金费率 / 24 小时统计，缓存 + 限流退避 + 严格解析）、`market/market-state.ts`、`api/market.ts` 6 个接口、`api/leaderboard.ts`、`/account/equity-curve`、`jobs/equity-snapshot.ts` 每日 UTC 00:00 快照；排行榜口径用户定（缺口 #48：期初权益为分母、期内重置不上日榜周榜、胜率按平仓成交、错过快照不补、有成交才上榜）；缺口 #31 #34 #44 定了，新记 #45～#48；引擎 299、server 121 条测试；讲义 `docs/tutorial/13b-rest-market-leaderboard.md`；已 commit |
+| 第 14 讲 · WebSocket 网关 | ✅ 2026-09-18 AI 实现 + 讲义：`ws/`（protocol / hub / publisher / server），公共频道 depth·trade·ticker·kline·market + 私有频道 account·position·order·fill·liquidation·funding，auth 后自动订私有、token 过期降级、30 秒心跳；交易内核加三个事件钩子；缺口 #49～#52；server 138 条测试；真 server 实测五个频道都在推；讲义 `docs/tutorial/14-websocket.md`；已 commit |
+| 前端 `apps/web` | ⬜ 服务端全部完成（01～14 讲）。下一步是前端：由 AI 直接实现，不出教程（`docs/design/05-frontend-design.md`） |
 | 前端 | 不出教程——`apps/web` 由 AI 直接实现 |
 | 表结构 12 → 14 张（`identities` / `email_verification_codes`） | ✅ 2026-09-17 迁移 0005：`accounts` 删 `address` / `chain`，登录身份在 `identities`；集成测试改为插账户 + 身份两行 |
 
 **拿不定的地方以币安为标准**，见第六节"决策规则"。
 
-**写下一讲之前必看**：`docs/tutorial/README.md` 的"设计缺口清单"。写第 13b 讲前：缺口 #31（K 线缓存 / 历史 K 线）、#34（每日权益快照）、#44（杠杆最大可开）挂在 13b；#43（可用余额的全仓起始保证金按开仓价还是标记价）要先查币安原文再决定改不改引擎。新接口照 13a 的套路：挂在自己的前缀下、实时状态走 `host.read()`、历史走 `paginate()`、数值出口用 `toDecimal()`、组装在 `app.ts`。新账户一律走 `TradingCore.accounts.register`。
+**动手写前端之前必看**：`docs/design/05-frontend-design.md`；接口形状看 `docs/tutorial/13a-rest-trading-account.md` / `13b-rest-market-leaderboard.md`，推送看 `14-websocket.md`。要点：数值全是字符串（前端不要用 `Number` 参与计算）；断线重连后必须重新 auth、重新 sub，并用 REST 全量覆盖本地状态（`04` 第 12 节）；强平价、可用余额一律用服务端返回的，不要前端自己算。缺口 #43（可用余额口径）、#47（实时涨跌幅要不要订币安 ticker 流）仍待定。
 
 > **本节踩过的一个坑，供参考**：上一位接手者一开始把"M0 地基"理解成"AI 直接写代码"，写了一份完整的实现计划（`docs/superpowers/plans/2026-09-15-m0-foundation.md`）。用户确认后发现本意是"数据库/后端两层用户自己动手，AI 写教程带路，前端才是 AI 直接写"，于是那份计划改成了仅供参考（教程内容是从它转写的，代码经过和设计文档核对，可以放心抄），真正要跟的是 `docs/tutorial/01-database.md`。**如果又看到类似"AI 要不要直接写数据库/后端代码"的模糊指令，先跟用户确认这一点，别想当然直接开始写实现。**
 
@@ -64,7 +66,7 @@ docs/design/
 
 ## 三、仓库现状
 
-分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 commit，最近一次是第 13a 讲（REST 交易与账户接口）。
+分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 commit，最近一次是第 13b + 14 讲（行情接口、排行榜、WebSocket）。
 
 技术栈：Better-T-Stack 脚手架 —— Next.js 16 + React 19 + Hono + Drizzle + Supabase Postgres + Turborepo + pnpm 11 catalog。Node v22.23.2。脚手架的 `api` 和 `auth` 都是 `none`，所以前后端走 Hono 接口 + fetch，鉴权要自己实现。
 
@@ -91,7 +93,7 @@ docs/design/
 
 ## 五、下一步
 
-**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，引擎内核已经完成，服务端做到第 13a 讲，下一讲是**第 13b 讲：行情接口、权益快照、排行榜**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
+**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，引擎内核已经完成，服务端已全部完成，下一步是**前端 `apps/web`**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
 
 按 `数据库 → 后端 → 前端` 的顺序搭。前两层用户想自己一步步做，前端交给 AI。
 

@@ -1,104 +1,23 @@
-import "varlock/auto-load";
-import { accounts, createDb, ledgerEntries, orders, type DbExecutor } from "@binance-contract-trading-full-stack/db";
-import { createEngine, type Engine, type EngineInput, type Level } from "@binance-contract-trading-full-stack/engine";
-import { parse, type PositionMode } from "@binance-contract-trading-full-stack/shared";
+import { accounts, ledgerEntries, leverageBrackets, orders, type DbExecutor } from "@binance-contract-trading-full-stack/db";
+import { parse } from "@binance-contract-trading-full-stack/shared";
 import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
-import { createApp } from "../app";
-import { signToken } from "../auth/tokens";
-import { createEngineHost } from "../engine-host/engine-host";
-import { createAccountRegistrar } from "../engine-host/register-account";
-import { loadEngineConfig, loadEngineSnapshot } from "../persistence/load";
-import { persistEvents } from "../persistence/persist";
+import { createTestDb, marketOrder, setupApi } from "../testing/api-harness";
 import { RESET_COOLDOWN_MS } from "./account";
 
 /**
- * 第 13 讲验收：每个接口一条集成测试；同一个 clientOrderId 提交两次只产生一张单。
+ * 第 13a 讲验收：每个接口一条集成测试；同一个 clientOrderId 提交两次只产生一张单。
  *
- * 真数据库（整个用例包在最终回滚的事务里）+ 真引擎 + 真宿主 + createApp（和线上同一套路由、中间件、错误处理）。
+ * 脚手架见 testing/api-harness.ts：真数据库（事务最终回滚）+ 真引擎 + 真宿主 + createApp；
  * 行情是假的：BTCUSDT 一份固定盘口、标记价 50,000；交易规则和分层表是库里从币安同步来的真实数据
  * （最小名义价值 50、tickSize 0.1），所以金额断言只断言关系，不断言依赖分层表具体数值的数。
  */
 
-const db = createDb({ DATABASE_URL: process.env.DATABASE_URL! });
-afterAll(async () => {
-  await db.$client.end();
-});
-
-class Rollback extends Error {}
-async function inRollback(fn: (tx: DbExecutor) => Promise<void>): Promise<void> {
-  try {
-    await db.transaction(async (tx) => {
-      await fn(tx);
-      throw new Rollback();
-    });
-  } catch (error) {
-    if (!(error instanceof Rollback)) throw error;
-  }
-}
-
-const JWT_SECRET = "api-integration-test-secret-0123456789abcdef";
-const quiet = { log: () => {}, error: () => {} };
-const lv = (rows: [string, string][]): Level[] => rows.map(([p, q]) => ({ price: parse(p), qty: parse(q) }));
-
-async function setup(tx: DbExecutor) {
-  const config = await loadEngineConfig(tx);
-  const engine: Engine = createEngine(config, await loadEngineSnapshot(tx));
-  const modes = new Map<string, PositionMode>(engine.snapshot().accounts.map((a) => [a.id, a.positionMode]));
-  const clock = { t: Date.now() };
-  const now = () => clock.t;
-  const registrar = createAccountRegistrar({ submit: (input) => host.submit(input), now });
-  const host = createEngineHost({
-    engine,
-    isSymbolReady: (symbol) => symbol === "BTCUSDT", // 只有 BTCUSDT 有行情
-    logger: quiet,
-    persist: (events) =>
-      persistEvents(tx, events, { positionModeOf: (id) => modes.get(id)!, pendingRegistrationOf: registrar.pendingRegistrationOf }),
-    onCommitted(input, events) {
-      if (input.t === "registerAccount") modes.set(input.accountId, input.positionMode);
-      for (const e of events) if (e.t === "positionModeUpdate") modes.set(e.accountId, e.positionMode);
-    },
-  });
-
-  const market = (input: EngineInput) => host.submit(input);
-  await market({ t: "book", symbol: "BTCUSDT", bids: lv([["49999.9", "5"], ["49999", "5"]]), asks: lv([["50000", "5"], ["50001", "5"]]), ts: now() });
-  await market({ t: "markPrice", symbol: "BTCUSDT", markPrice: parse("50000"), fundingRate: parse("0.0001"), nextFundingTs: now() + 8 * 3600_000, ts: now() });
-
-  const app = createApp({
-    db: tx,
-    host,
-    registrar,
-    symbols: config.symbols,
-    jwtSecret: JWT_SECRET,
-    webOrigin: "http://localhost:3001",
-    mailer: null,
-    google: null,
-    secureCookies: false,
-    now,
-    logger: quiet,
-    logRequests: false,
-  });
-
-  async function newAccount() {
-    const id = await registrar.register({ provider: "email", providerId: `${randomUUID()}@test.local`, nickname: "tester" });
-    return { id, token: await signToken(id, JWT_SECRET, now()) };
-  }
-
-  async function api(method: string, path: string, options: { token?: string; body?: unknown } = {}) {
-    const res = await app.request(path, {
-      method,
-      headers: {
-        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
-        ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
-      },
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-    });
-    return { status: res.status, headers: res.headers, json: (await res.json()) as any };
-  }
-
-  return { engine, host, app, api, newAccount, clock, market, now };
-}
+const testDb = createTestDb();
+afterAll(testDb.close);
+const inRollback = testDb.inRollback;
+const setup = setupApi;
 
 const limitBuy = (clientOrderId: string, price = "49000", qty = "0.01") => ({
   clientOrderId,
@@ -109,7 +28,6 @@ const limitBuy = (clientOrderId: string, price = "49000", qty = "0.01") => ({
   price,
   qty,
 });
-const marketOrder = (side: "BUY" | "SELL", qty: string) => ({ symbol: "BTCUSDT", side, type: "MARKET", qty });
 
 async function ledgerMismatches(tx: DbExecutor, accountId: string) {
   const result = await tx.execute(sql`
@@ -219,7 +137,13 @@ describe("REST 接口（第 13 讲验收，真数据库）", () => {
       const { api, newAccount } = await setup(tx);
       const a = await newAccount();
 
-      expect((await api("POST", "/positions/leverage", { token: a.token, body: { symbol: "BTCUSDT", leverage: 10 } })).json.data).toEqual({ symbol: "BTCUSDT", leverage: 10 });
+      const leverage = (await api("POST", "/positions/leverage", { token: a.token, body: { symbol: "BTCUSDT", leverage: 10 } })).json.data;
+      expect(leverage).toMatchObject({ symbol: "BTCUSDT", leverage: 10 });
+      // 最大可开 = 允许 10x 的档位里上限最高的一档（用库里真实分层表独立算一遍）
+      const tiers = await tx.select().from(leverageBrackets).where(eq(leverageBrackets.symbol, "BTCUSDT"));
+      const expectedMax = tiers.filter((b) => b.maxLeverage >= 10).map((b) => b.notionalCap).reduce((m, v) => (v > m ? v : m), 0n);
+      expect(parse(leverage.maxNotional)).toBe(expectedMax);
+      expect(expectedMax > 0n).toBe(true);
       const tooHigh = await api("POST", "/positions/leverage", { token: a.token, body: { symbol: "BTCUSDT", leverage: 100000 } });
       expect(tooHigh.status).toBe(400);
       expect((await api("POST", "/positions/leverage", { token: a.token, body: { symbol: "BTCUSDT", leverage: "10" } })).json.error.code).toBe("INVALID_PARAMS");

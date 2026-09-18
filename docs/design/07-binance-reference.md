@@ -284,7 +284,21 @@
 
 ---
 
-## 12. 还没核对、写到时要查的
+## 12. 公开行情 REST（第 13b 讲）
+
+**出处**：网页版 Market Data REST API（Kline/Candlestick Data、Get Funding Rate History、24hr Ticker Price Change Statistics）+ 2026-09-17 实际请求｜核对：2026-09-17
+
+| 接口 | 币安规则 | 我们 |
+| --- | --- | --- |
+| `GET /fapi/v1/klines` | interval 15 种：1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M（没有 1s）；limit 默认 500、最大 1500；权重按 limit：[1,100) 1、[100,500) 2、[500,1000] 5、> 1000 10；不带 startTime / endTime 返回最近的 | `/market/klines` 同规则；最新 5 秒缓存，整段已收盘 10 分钟 |
+| `GET /fapi/v1/fundingRate` | limit 默认 100、最大 1000；和 fundingInfo 共享 500 次 / 5 分钟 / IP；文档说不带时间范围返回最近 200 条，按时间升序；响应带 `markPrice` `rateType`（Regular / Special） | `/market/funding-history`，60 秒缓存。**实测** `limit=1000` 返回 500 条（缺口 #46） |
+| `GET /fapi/v1/ticker/24hr` | 单币对权重 1，不带 symbol 40；`priceChangePercent` 形如 `-95.960`（百分数） | ticker 的 `stats24h`，3 秒缓存 |
+| 标记价推送 `<symbol>@markPrice@1s` | 字段 `i` 是指数价格（真实推送 fixtures 里有） | 行情层解析出 `indexPrice`，只给展示 |
+| 限流响应 | HTTP 429 / 418，带 `Retry-After` | 按 `Retry-After` 暂停请求（没有就 60 秒），期间直接 `SERVICE_UNAVAILABLE` |
+
+---
+
+## 13. 还没核对、写到时要查的
 
 | 讲 | 要查的币安规则 |
 | --- | --- |

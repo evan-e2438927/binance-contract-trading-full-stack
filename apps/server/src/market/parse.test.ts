@@ -46,12 +46,13 @@ describe("真实推送", () => {
     });
   });
 
-  it("markPrice@1s：标记价 p、费率 r、下次结算 T，时间取 E", () => {
+  it("markPrice@1s：标记价 p、指数价格 i、费率 r、下次结算 T，时间取 E", () => {
     const { raw, data } = first("markPrice");
     expect(parseStreamMessage(raw)).toEqual({
       t: "markPrice",
       symbol: data.s,
       markPrice: parse(data.p),
+      indexPrice: parse(data.i),
       fundingRate: parse(data.r),
       nextFundingTs: data.T,
       ts: data.E,

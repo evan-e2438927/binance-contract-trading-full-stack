@@ -16,7 +16,8 @@ import type { EngineInput, Level } from "@binance-contract-trading-full-stack/en
 
 export type BookEvent = Extract<EngineInput, { t: "book" }>;
 export type TradeEvent = Extract<EngineInput, { t: "trade" }>;
-export type MarkPriceEvent = Extract<EngineInput, { t: "markPrice" }>;
+/** 标记价推送：引擎输入之外多带一个指数价格（只给展示用，第 13b 讲 ticker 接口；引擎不看这个字段） */
+export type MarkPriceEvent = Extract<EngineInput, { t: "markPrice" }> & { indexPrice: Fixed };
 
 /** 1 分钟 K 线：只给前端画图，引擎不用（所以不是 EngineInput）。 */
 export interface KlineEvent {
@@ -106,13 +107,14 @@ function parseAggTrade(data: Record<string, unknown>, raw: string): TradeEvent {
   };
 }
 
-/** `<symbol>@markPrice@1s`：p 标记价、r 资金费率（可为负）、T 下次资金费结算时间；时间用事件时间 E。 */
+/** `<symbol>@markPrice@1s`：p 标记价、i 指数价格、r 资金费率（可为负）、T 下次资金费结算时间；时间用事件时间 E。 */
 function parseMarkPrice(data: Record<string, unknown>, raw: string): MarkPriceEvent {
   expectEvent(data, "markPriceUpdate", raw);
   return {
     t: "markPrice",
     symbol: str(data, "s", raw),
     markPrice: positive(data, "p", raw),
+    indexPrice: positive(data, "i", raw),
     fundingRate: decimal(data, "r", raw, true),
     nextFundingTs: int(data, "T", raw),
     ts: int(data, "E", raw),

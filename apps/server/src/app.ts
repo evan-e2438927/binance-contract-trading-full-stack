@@ -6,6 +6,8 @@ import { cors } from "hono/cors";
 import { logger as requestLogger } from "hono/logger";
 import { createAccountRoutes } from "./api/account";
 import type { ApiDeps } from "./api/context";
+import { createLeaderboardRoutes } from "./api/leaderboard";
+import { createMarketRoutes } from "./api/market";
 import { createOrderRoutes } from "./api/orders";
 import { createPositionRoutes } from "./api/positions";
 import type { MailSender } from "./auth/email";
@@ -14,13 +16,16 @@ import { createAuthRoutes, requireAuth, type AuthEnv } from "./auth/routes";
 import type { EngineHost } from "./engine-host/engine-host";
 import type { AccountRegistrar } from "./engine-host/register-account";
 import { rateLimit } from "./http/rate-limit";
+import type { BinanceRest } from "./market/binance-rest";
+import type { FeedStatus } from "./market/market-feed";
+import type { MarketState } from "./market/market-state";
 import { createErrorHandler } from "./http/respond";
 
 /**
  * 组装 HTTP 应用：index.ts 和集成测试用同一个入口，测试测到的就是线上的路由、中间件和错误处理。
  *
  * 限流（04-backend-design.md 第 11 节）：
- * - /auth/*：公共接口，按 IP 60 次 / 分钟
+ * - /auth/*、/market/*、/leaderboard：公共接口，按 IP 60 次 / 分钟（三组共用一个额度）
  * - /account/*、/positions/*：私有接口，按账户 120 次 / 分钟
  * - /orders（下单、撤单）：按账户 20 次 / 10 秒
  */
@@ -30,6 +35,9 @@ export interface AppDeps {
   host: EngineHost;
   registrar: AccountRegistrar;
   symbols: readonly SymbolSpec[];
+  feed: { status(): FeedStatus; symbolReady(symbol: string): boolean };
+  marketState: MarketState;
+  binanceRest: BinanceRest;
   jwtSecret: string;
   webOrigin: string;
   mailer: MailSender | null;
@@ -74,7 +82,8 @@ export function createApp(deps: AppDeps) {
   const auth = requireAuth(deps.jwtSecret);
   const privateRateLimit = rateLimit({ name: "private", limit: 120, windowMs: 60_000, key: byAccount, now });
 
-  app.use("/auth/*", rateLimit({ name: "public", limit: 60, windowMs: 60_000, key: clientIp, now }));
+  const publicRateLimit = rateLimit({ name: "public", limit: 60, windowMs: 60_000, key: clientIp, now });
+  app.use("/auth/*", publicRateLimit);
   app.route(
     "/auth",
     createAuthRoutes({
@@ -94,6 +103,14 @@ export function createApp(deps: AppDeps) {
   app.route("/orders", createOrderRoutes(api, { auth, orderRateLimit: rateLimit({ name: "orders", limit: 20, windowMs: 10_000, key: byAccount, now }) }));
   app.route("/positions", createPositionRoutes(api, { auth, rateLimit: privateRateLimit }));
   app.route("/account", createAccountRoutes(api, { auth, rateLimit: privateRateLimit }));
+  app.route(
+    "/market",
+    createMarketRoutes(
+      { db: deps.db, host: deps.host, symbols: deps.symbols, feed: deps.feed, marketState: deps.marketState, rest: deps.binanceRest },
+      { rateLimit: publicRateLimit },
+    ),
+  );
+  app.route("/leaderboard", createLeaderboardRoutes({ db: deps.db, jwtSecret: deps.jwtSecret }, { rateLimit: publicRateLimit }));
 
   return app;
 }

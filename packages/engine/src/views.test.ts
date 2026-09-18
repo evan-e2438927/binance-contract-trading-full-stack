@@ -153,4 +153,37 @@ describe("只读视图（第 13 讲）", () => {
     expect(p!.notional).toBe(notional(parse("1"), parse("52000")));
     expect(p!.roe! < 0n).toBe(true);
   });
+
+  it("marketView：引擎撮合用的盘口和价格；没收到的部分为 null；未知币对 null；返回拷贝", () => {
+    const engine = createEngine(testConfig());
+    expect(engine.marketView("BTCUSDT")).toEqual({
+      symbol: "BTCUSDT",
+      bids: [],
+      asks: [],
+      bookTs: null,
+      markPrice: null,
+      fundingRate: null,
+      nextFundingTs: null,
+      markTs: null,
+      lastPrice: null,
+    });
+    run(engine, bookInput());
+    run(engine, markPriceInput("50000"));
+    const view = engine.marketView("BTCUSDT")!;
+    expect(view).toMatchObject({ bookTs: T0, markPrice: parse("50000"), markTs: T0 });
+    expect(view.asks[0]).toEqual({ price: parse("50000"), qty: parse("2") });
+    view.asks[0]!.qty = 0n;
+    expect(engine.marketView("BTCUSDT")!.asks[0]!.qty).toBe(parse("2"));
+    expect(engine.marketView("NOPE")).toBeNull();
+  });
+
+  it("allAccountViews：全部账户按 id 排序", () => {
+    const engine = createEngine(testConfig());
+    run(engine, registerAccountInput("b"));
+    run(engine, registerAccountInput("a", "500"));
+    expect(engine.allAccountViews().map((v) => [v.accountId, v.walletBalance])).toEqual([
+      ["a", parse("500")],
+      ["b", parse("10000")],
+    ]);
+  });
 });

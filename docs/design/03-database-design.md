@@ -538,7 +538,7 @@ pnpm run db:studio     # 可视化查看
 | `sync:brackets` | 用官方签名接口同步开放币对的 `leverage_brackets`；`--dry-run` 只看差异 | server 每日 UTC 00:05 自动 + 手动 |
 | `verify:brackets` | 对齐检查：库内分层表结构合法、且与官方 0 差异，否则退出码 1 | 怀疑数据时 + 上线前 |
 | `reconcile:ledger` | 跑第六节的对账 SQL | 每小时定时 |
-| `snapshot:equity` | 每日 UTC 00:00 写权益快照 | 定时 |
+| ~~`snapshot:equity`~~ | 每日 UTC 00:00 写权益快照 | 定时。**第 13b 讲改为 server 定时任务** `apps/server/src/jobs/equity-snapshot.ts`：权益要用引擎按标记价算，独立脚本拿不到；错过 00:00 超过 60 秒跳过当天（缺口 #34 #48） |
 | `clean:nonces` | 清理过期 nonce | 每日 |
 
 `sync:brackets` / `verify:brackets` 需要 `BINANCE_API_KEY` / `BINANCE_SECRET_KEY`（只开「允许读取」，建议绑 IP 白名单），声明在 `apps/server/.env.schema`，db 包通过 `@import` 取用。

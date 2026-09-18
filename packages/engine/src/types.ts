@@ -411,6 +411,19 @@ export interface PositionView {
   updatedAt: number;
 }
 
+/** 行情视图：引擎撮合时实际用的那份盘口和价格（第 13b 讲 `/market/depth`）。还没收到的部分为 null */
+export interface MarketView {
+  symbol: string;
+  bids: Level[]; // 价格降序
+  asks: Level[]; // 价格升序
+  bookTs: number | null;
+  markPrice: Fixed | null;
+  fundingRate: Fixed | null;
+  nextFundingTs: number | null;
+  markTs: number | null;
+  lastPrice: Fixed | null;
+}
+
 /**
  * 宿主的调用协议：
  *
@@ -443,4 +456,8 @@ export interface Engine {
   accountView(accountId: string): AccountView | null;
   positionViews(accountId: string): PositionView[];
   openOrders(accountId: string): Order[];
+  /** 全部账户的资产视图，按账户 id 排序（每日权益快照用）。代价 O(账户数 × 仓位数) */
+  allAccountViews(): AccountView[];
+  /** 未知币对返回 null */
+  marketView(symbol: string): MarketView | null;
 }

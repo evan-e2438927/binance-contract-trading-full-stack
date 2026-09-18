@@ -3,7 +3,7 @@ import { initialMargin, notional, unrealizedPnl } from "./formulas";
 import { liquidationPrice, marginRatio } from "./liquidation";
 import { crossWalletBalance, positionMaintMargin } from "./risk";
 import { sortedOrders, sortedPositions, type EngineState } from "./state";
-import type { AccountView, Order, Position, PositionView } from "./types";
+import type { AccountView, MarketView, Order, Position, PositionView } from "./types";
 import { accountAvailable } from "./validate-order";
 
 /**
@@ -141,4 +141,27 @@ function liquidationPriceOf(state: EngineState, position: Readonly<Position>, ac
 export function openOrders(state: EngineState, accountId: string): Order[] {
   requireSettled(state);
   return structuredClone(sortedOrders(state, (o) => o.accountId === accountId));
+}
+
+export function allAccountViews(state: EngineState): AccountView[] {
+  requireSettled(state);
+  return [...state.accounts.keys()].sort().map((id) => accountView(state, id)!);
+}
+
+export function marketView(state: EngineState, symbol: string): MarketView | null {
+  requireSettled(state);
+  if (!state.symbols.has(symbol)) return null;
+  const book = state.books.get(symbol);
+  const mark = state.marks.get(symbol);
+  return structuredClone({
+    symbol,
+    bids: book?.bids ?? [],
+    asks: book?.asks ?? [],
+    bookTs: book?.ts ?? null,
+    markPrice: mark?.markPrice ?? null,
+    fundingRate: mark?.fundingRate ?? null,
+    nextFundingTs: mark?.nextFundingTs ?? null,
+    markTs: mark?.ts ?? null,
+    lastPrice: state.lastPrices.get(symbol) ?? null,
+  });
 }

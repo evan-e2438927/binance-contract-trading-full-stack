@@ -49,8 +49,8 @@
 | 11 | 仓储层与引擎宿主：落库、恢复、定时任务 | `apps/server` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[11-engine-host.md](11-engine-host.md) |
 | 12 | 鉴权：钱包 / 邮箱 / Google 三种登录 | `apps/server` `packages/db` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[12-auth.md](12-auth.md) ✅ 13a：REST `/account/positions` 按币安表示法输出（`positionSide` BOTH + `positionAmt` 带符号） |
 | 13a | REST 接口（上）：HTTP 基础设施、交易、账户 | `apps/server/src/api` `apps/server/src/http` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[13a-rest-trading-account.md](13a-rest-trading-account.md) |
-| 13b | REST 接口（下）：行情、权益快照、排行榜 | `apps/server/src/api` | ⬜ |
-| 14 | WebSocket 网关 | `apps/server/src/ws` | ⬜ |
+| 13b | REST 接口（下）：行情、权益快照、排行榜 | `apps/server/src/api` `apps/server/src/jobs` `apps/server/src/market` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[13b-rest-market-leaderboard.md](13b-rest-market-leaderboard.md) |
+| 14 | WebSocket 网关 | `apps/server/src/ws` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[14-websocket.md](14-websocket.md) |
 | — | 前端 | `apps/web` | 由 AI 直接实现 |
 
 ---
@@ -152,12 +152,13 @@
 - **验收**：每个接口一条集成测试；同一个 `clientOrderId` 提交两次只产生一张单
 - **拆成两讲**（2026-09-17）：接口有 25 个，13a 做 HTTP 基础设施 + 交易 + 账户，13b 做行情 + 权益快照 + 排行榜
 - **13a 实际完成**：`http/`（数值边界：只收字符串、超过 8 位小数拒绝不截断；固定窗口限流三档；游标分页 (时间, id)）；引擎只读视图 `views.ts`（账户资产 / 仓位视图，字段对照币安 account v3 / positionRisk v3，缺标记价返回 null）+ 宿主 `read()` 排队读；引擎新输入 `cancelAllOrders`；**修了全仓强平价 cum 符号 bug（缺口 #39）**，按币安 FAQ 重写并换档重算；修了宿主队列只剩同步任务时卡死的 bug；`api/` 交易 3 + 仓位 4 + 账户 10 个接口，`app.ts` 组装；缺口 #12 #24 #26～#29 定了，新记 #39～#44；真数据库集成测试 7 条（含并发幂等、并发重置、限流、分页不重不漏）；真 server 对真实行情下单撤单
-- **13b 待做**：`/market/*` 6 个（K 线、历史资金费率代理币安并缓存，缺口 #31）、每日权益快照（#34）、`/account/equity-curve`、`/leaderboard`、杠杆最大可开（#44）
+- **13b 实际完成**：`market/binance-rest.ts`（K 线 / 历史资金费率 / 24 小时统计代理币安，TTL 缓存 + 并发只请求一次 + 被限流按 Retry-After 退避 + 严格解析）、`market/market-state.ts`（最新标记价 / 指数价格 / 成交，标记价推送补解析指数价格 `i`）；引擎只读视图加 `marketView` `allAccountViews`；`api/market.ts` 6 个接口、`api/leaderboard.ts`、`/account/equity-curve`、调杠杆返回 `maxNotional`；`jobs/equity-snapshot.ts` 每日 UTC 00:00 快照；排行榜口径用户定（缺口 #48）；缺口 #31 #34 #44 定了，新记 #45～#48；测试脚手架抽到 `testing/api-harness.ts`；真数据库集成测试 9 条（行情 6、排行榜 3）
 
 ### 14 · WebSocket 网关
 
 - **做什么**：公共频道（行情）+ 私有频道（账户推送）；连接鉴权；心跳；行情降级通知
 - **验收**：两个账户同时在线互不串号；断线重连后状态一致
+- **实际完成**：`ws/protocol.ts`（消息与频道名解析，补 ack / error，缺口 #49）、`ws/hub.ts`（订阅、auth 后自动订私有频道、token 过期降级、30 秒心跳 / 60 秒断开）、`ws/publisher.ts`（行情事件 → 公共频道，宿主 `onCommitted` → 私有频道，账户快照按 apply 去重）、`ws/server.ts`（直接用 `ws` 库接 upgrade，缺口 #51）；交易内核加 `onMarketEvent` / `onFeedStatus` / `onCommitted` 三个钩子；缺口 #49～#52；server 138 条测试（新增 17：协议 2、hub 8、推送 4、端到端 3）；真 server 实测 9 秒内收到盘口 81 / 成交 32 / ticker 9 / K 线 18 条，下单撤单各推一条 order
 
 ---
 
@@ -199,10 +200,10 @@
 | 28 | 触发单没实现的币安参数 / 规则：`priceProtect`（触发时标记价和最新价偏差不能超过币对 `triggerProtect`，币安默认 false）；止损 / 止盈限价单委托价相对触发价的上下限（-4183 / -4184，文档没写用哪个字段）；`TRAILING_STOP_MARKET`；`GTD` | 13：REST 下单接口定参数时决定要不要支持；支持前 zod 直接拒这些参数 ✅ 13a：`POST /orders` 用 zod 严格模式，这些参数一律 `INVALID_PARAMS`"不支持的参数：xxx" |
 | 29 | 触发后沿用同一张订单（`triggered = true`），不像币安那样新开一张普通单（algoId → actualOrderId）。好处是 `orders` 表不用加映射；代价是对外接口的订单 id 语义和币安不同 | 13：REST / WS 输出订单时确认是否需要区分条件单和触发后的普通单 13a：不区分。订单输出带 `triggered` 字段，触发后还是同一个 id |
 | 30 | **TONUSDT 已下架结算**：2026-09-17 exchangeInfo 状态 `SETTLING`（`deliveryDate` = 2026-06-23），盘口为空，但还在 `packages/db/src/brackets/open-symbols.ts` 的 `OPEN_SYMBOLS` 里。订阅它行情源永远 ready 不了 | 行情层只订阅 `TRADING` 的币对（已做）。✅ 11：用户定去掉，开放名单 19 个，`seed:symbols` 已跑；`seed:symbols` 现在遇到开放名单里不是 TRADING 的币对直接中止 |
-| 31 | 行情层第 10 讲没做的：K 线缓存和历史 K 线（设计第 1 节 `kline-store.ts`、`binance-rest.ts`）。K 线只给前端画图，引擎不用 | 13 / 14：REST 行情接口和 WS 公共频道时再做 → 13b |
+| 31 | 行情层第 10 讲没做的：K 线缓存和历史 K 线（设计第 1 节 `kline-store.ts`、`binance-rest.ts`）。K 线只给前端画图，引擎不用 | 13 / 14：REST 行情接口和 WS 公共频道时再做 → 13b ✅ 13b：`/market/klines` 代理币安 REST（5 秒 / 已收盘段 10 分钟缓存），行情层实时 K 线推送留给第 14 讲 WS |
 | 32 | 设计文档第七节"纯挂单变化（下单成功、撤单）异步批量写"没做：第 11 讲**所有事件同步、一个事务**落库。实测会产生事件的输入很少（盘口、大部分行情成交、标记价推送都是 0 个事件，不碰库），同步换来"内存 == 数据库"始终成立、kill -9 什么都不丢 | 压测（06-testing-design 第 7 节）发现落库成为瓶颈时再做批量写 |
 | 33 | 资金费结算用的是结算时间之前最后一条标记价推送（最多早 1 秒）的费率和标记价，不是币安结算那一刻的精确值；结算前最后一条推送离结算时间超过 10 秒（行情断过）就跳过这次结算 | 币安 `GET /fapi/v1/fundingRate` 能查每次结算的精确费率和标记价，要更准可以结算后异步核对（未排期） |
-| 34 | 每日权益快照（`equity_snapshots`，大纲写在第 11 讲）没做：它只服务排行榜和收益曲线，和账目正确性无关 | 13：做排行榜接口时一起做 → 13b |
+| 34 | 每日权益快照（`equity_snapshots`，大纲写在第 11 讲）没做：它只服务排行榜和收益曲线，和账目正确性无关 | 13：做排行榜接口时一起做 → 13b ✅ 13b：server 定时任务 `jobs/equity-snapshot.ts`（不是设计里的独立脚本 `snapshot:equity`——权益要用引擎按标记价算，脚本连不上引擎），口径见 #48 |
 | 35 | **JWT 载荷**：`04` 第 11 节写 `{ sub: accountId, addr, chain, iat, exp }`，是只有钱包登录时的形状；拆出 `identities` 后账户没有地址，邮箱 / Google 账户也没有链 | ✅ 12：载荷只放 `{ sub: accountId, iat, exp }`，身份信息查 `/auth/me`。第 14 讲 WS 鉴权用同一个 `verifyToken`。`04` 已加注 |
 | 36 | **SIWE statement 不能是中文**：`04` 第 11 节示例的待签名文本里声明句是"登录币安合约模拟交易平台"；EIP-4361 规定 statement 是 ASCII（viem 只检查换行，中文能生成，但严格解析的钱包 / 库会拒） | ✅ 12：用英文声明句，写明"不是交易、不花 gas"（`wallet.ts` `SIGN_IN_STATEMENT`）。Solana SIWS 用同一句。`04` 已加注 |
 | 37 | **Google 取 sub 的方式**：`04` 写"用 access_token 查 userinfo" | ✅ 12：从 token 端点直接返回的 ID token 里取 sub（OpenID Connect Core 3.1.3.7：服务端经 TLS 直接从 token 端点拿到的 ID token 可用 TLS 校验代替签名校验），少一次请求，sub 相同。`04` 已加注 |
@@ -212,7 +213,15 @@
 | 41 | **下单幂等的范围**：设计文档是"同一 `(accountId, clientOrderId)` 返回已存在的单"；币安 `newClientOrderId` 只要求"在未完成订单里唯一"，重复时报错 | 13a：按设计文档做，而且对历史订单也生效（数据库唯一索引），重复提交返回原单 + 响应头 `X-Idempotent-Replay: true`。被拒的单不入库，同一个 id 改参数可以重下 |
 | 42 | 调逐仓保证金的 `type`：币安 Modify Isolated Position Margin 用 `1` 增加 / `2` 减少 | 13a：用可读的 `"ADD"` / `"REDUCE"`。我们的接口本来就不兼容币安（`qty` 不叫 `quantity`、数值是字符串） |
 | 43 | **可用余额里全仓起始保证金按开仓价算**（`04` 4.2 节、第 04 讲），币安 positionRisk 的 `initialMargin` 是 "with current mark price"。仓位展示已按币安用标记价，但可用余额（下单校验用的那个数）还是开仓价口径，两者对不上 | 待查：币安 `availableBalance` 的全仓起始保证金用哪个价（FAQ 没查到原文前不改引擎的下单校验）。13a 在 `views.test.ts` 里明确断言了现在的口径，改的时候会红 |
-| 44 | `POST /positions/leverage` 只返回 `{ symbol, leverage }`；币安 Change Initial Leverage 还返回 `maxNotionalValue`（当前杠杆下最大可开名义价值），前端"最大可开"要用 | 13b：做 `/market/symbols` 时一起暴露分层表或最大可开 |
+| 44 | `POST /positions/leverage` 只返回 `{ symbol, leverage }`；币安 Change Initial Leverage 还返回 `maxNotionalValue`（当前杠杆下最大可开名义价值），前端"最大可开"要用 | ✅ 13b：调杠杆返回 `maxNotional`；`/market/symbols` 带整张分层表 |
+| 45 | 胜率的"平仓成交"按 `fills.realized_pnl ≠ 0` 或强平成交认：fills 表没有开仓 / 平仓标记，已实现盈亏恰好为 0（精确到 1e-8）的平仓成交不计入胜率分母 | 13b：接受这个近似。要精确得给 fills 加一列（引擎 Fill 事件里其实知道是不是减仓），排行榜需要时再加 |
+| 46 | 币安 `GET /fapi/v1/fundingRate` 文档写 limit 最大 1000、不带时间范围时返回最近 200 条；2026-09-17 实测 `limit=1000` 返回 500 条 | 13b：接口按文档允许 1～1000，实际条数以币安返回为准，不补不编。`07` 第 12 节已记 |
+| 47 | ticker 的 24 小时统计走币安 REST（3 秒缓存），没订阅 `<symbol>@ticker` 推送流 | 13b：REST 首屏够用，不动第 10 讲的订阅；第 14 讲 WS 要实时推 24 小时统计时再决定加不加这个流 |
+| 48 | **排行榜口径**：设计文档只有 `roi / winRate / tradeCount` 字段名，没有定义，币安也没有可照搬的规则 | ✅ 2026-09-17 用户定：① 总榜 ROI = (权益 − 10,000) ÷ 10,000，从上次重置算；日榜 / 周榜 = 期内权益变化 ÷ 期初快照权益，期内重置过不上榜 ② 胜率按平仓成交（#45），成交次数 = 统计期内成交笔数 ③ 每日 UTC 00:00 快照，错过超过 60 秒就跳过当天、不补拍；缺标记价或行情未就绪的账户当天跳过 ④ 至少有过一笔成交才上榜。`04` 已加注 |
+| 49 | WebSocket 协议只写了数据推送 `{ ch, ts, d }` 和四种客户端 op，没写"订阅成功 / 出错怎么回" | ✅ 14：补两种服务端消息，形状和数据推送一致——`ch: "ack"`（回执：哪个 op、接受和拒绝了哪些频道）、`ch: "error"`（用 REST 同一套错误码）。`04` 第 12 节已加注 |
+| 50 | `ticker` 频道设计里要推"涨跌幅"，那是 24 小时统计，来自币安 REST（13b），推送里没有 | 14：推送只带实时价格（最新价 / 标记价 / 指数价 / 资金费率），涨跌幅前端首屏拉 `/market/ticker`。要实时涨跌幅就得订阅币安 `<symbol>@ticker` 流（缺口 #47） |
+| 51 | Hono 的 Node WebSocket 适配 `@hono/node-ws` 只兼容 `@hono/node-server` v1，我们用的是 v2 | ✅ 14：不用适配层，直接用 `ws` 库接在 HTTP server 的 upgrade 事件上（`ws/server.ts`）。协议本来就是消息驱动的，路由层面只认一个路径 |
+| 52 | 设计文档没写"token 在长连接期间过期怎么办" | ✅ 14：按 token 的 exp 排定时器，到点取消这条连接的私有订阅并推一条 `TOKEN_EXPIRED`，客户端重新 auth 即可。不然一条长连接能绕过 7 天有效期 |
 
 ---
 

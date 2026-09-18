@@ -43,6 +43,13 @@
       "when": 1789642729812,
       "tag": "0005_identities_email_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789700009593,
+      "tag": "0006_table_column_comments",
+      "breakpoints": true
     }
   ]
 }

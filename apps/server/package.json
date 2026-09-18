@@ -17,6 +17,7 @@
     "@binance-contract-trading-full-stack/engine": "workspace:*",
     "@binance-contract-trading-full-stack/shared": "workspace:*",
     "@hono/node-server": "^2.1.1",
+    "@types/ws": "^8.18.1",
     "arctic": "^3.7.0",
     "bs58": "^6.0.0",
     "drizzle-orm": "catalog:",
@@ -24,6 +25,7 @@
     "tweetnacl": "^1.0.3",
     "varlock": "catalog:",
     "viem": "^2.56.5",
+    "ws": "^8.21.3",
     "zod": "catalog:"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
-import { accounts, fills, fundingPayments, ledgerEntries, liquidations, orders } from "@binance-contract-trading-full-stack/db";
+import { accounts, equitySnapshots, fills, fundingPayments, ledgerEntries, liquidations, orders } from "@binance-contract-trading-full-stack/db";
 import { AppError, LEDGER_TYPE, POSITION_MODE } from "@binance-contract-trading-full-stack/shared";
-import { eq, notInArray } from "drizzle-orm";
+import { and, asc, eq, gt, notInArray } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import type { AuthEnv } from "../auth/routes";
@@ -160,6 +160,35 @@ export function createAccountRoutes(deps: ApiDeps, middleware: { auth: Middlewar
       cursor: query.cursor,
     });
     return ok(c, { items: page.items.map(liquidationJson), nextCursor: page.nextCursor });
+  });
+
+  /**
+   * 权益曲线：每日快照（UTC 00:00）+ 当前实时权益。没拍到快照的日子就是缺的，不插值（错过就跳过，第 13b 讲）。
+   */
+  routes.get("/equity-curve", async (c) => {
+    const accountId = c.var.accountId;
+    const { days } = parseQuery(
+      c,
+      z.object({ days: z.coerce.number({ error: "days 必须是整数" }).int("days 必须是整数").min(1, "days 最小 1").max(365, "days 最大 365").default(30) }),
+    );
+    const from = new Date(deps.now() - days * 86_400_000).toISOString().slice(0, 10);
+    const rows = await db
+      .select()
+      .from(equitySnapshots)
+      .where(and(eq(equitySnapshots.accountId, accountId), gt(equitySnapshots.snapDate, from)))
+      .orderBy(asc(equitySnapshots.snapDate));
+    const view = await host.read((engine) => engine.accountView(accountId));
+    if (!view) throw new AppError("UNAUTHORIZED", "账户不存在，请重新登录");
+    return ok(c, {
+      snapshots: rows.map((r) => ({
+        date: r.snapDate,
+        equity: toDecimal(r.equity),
+        walletBalance: toDecimal(r.walletBalance),
+        cumulativePnl: toDecimal(r.cumulativePnl),
+        roi: toDecimal(r.roi),
+      })),
+      current: { equity: view.marginBalance === null ? null : toDecimal(view.marginBalance), time: deps.now() },
+    });
   });
 
   /**
