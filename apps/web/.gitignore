@@ -61,3 +61,6 @@ dev-dist
 
 !.env.schema
 /src/env.ts
+
+# TradingView Charting Library（公司授权，不进 git；放置方法见 README）
+/public/charting_library/

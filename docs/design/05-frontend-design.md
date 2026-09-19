@@ -6,6 +6,28 @@
 
 ---
 
+## 0. 技术选型定稿（2026-09-19）
+
+| 领域 | 选型 | 说明 |
+| --- | --- | --- |
+| 框架 | Next.js 16（App Router）+ React 19 + React Compiler | 交易页整页客户端组件；首页、`/rules` 可以是服务端组件 |
+| 样式 / 组件 | Tailwind CSS 4 + shadcn/ui（`packages/ui`，base-ui 版） | 只做暗色；token 见第 14 节；字体 IBM Plex Sans（`next/font`），数字 `tabular-nums` |
+| API 请求 | **axios**（`lib/axios-client/`） | 拦截器：带 token、拆包络、错误转 `ApiError`（中文 message 原样透传）、401 清 token |
+| REST 请求与缓存 | **TanStack Query v5** | **只管 REST**：币对规格、历史委托 / 成交 / 流水 / 资金费 / 强平记录、排行榜、权益曲线；下单等写操作用 `useMutation` |
+| 实时数据 / 客户端状态 | **Zustand** | `market-store`（盘口、成交、ticker、行情源状态）、`account-store`（余额、仓位、挂单）、`ui-store`（周期、盘口精度、下单草稿、登录弹窗）、`auth-store`（登录态） |
+| WebSocket | **partysocket**（连接层）+ 自写协议层 `lib/ws-client/` | partysocket 负责重连退避 1s→30s、连接超时；协议层负责重新 auth / sub、pong、分发 |
+| K 线 | **TradingView Charting Library v31**（公司授权） | 放 `apps/web/public/charting_library/`，**不进 git**；K 线数据由 Datafeed 适配器直连 REST + WS，不进 store |
+| 小图表 | shadcn Chart（Recharts） | 权益曲线等 |
+| 钱包 | **Reown AppKit**（wagmi adapter + solana adapter） | 用它自带的连接弹窗（暗色 + 品牌色），签名走我们自己的 nonce / verify |
+| 数值 | `packages/shared` 定点数 | 前端也不许 `Number` 碰金额；`lib/format/` 全程 bigint |
+| 校验 / 提示 | zod / sonner | |
+| 代码检查 | Biome（`apps/web/biome.json`） | `pnpm -F web lint` / `format` |
+| 测试 | Vitest（jsdom）+ Playwright（E2E，主链路） | `pnpm -F web test` |
+
+页面和模块的完整清单（Figma 设计输入）见 `08-frontend-pages.md`。
+
+---
+
 ## 1. 页面与路由
 
 | 路由 | 页面 | 说明 |
@@ -30,7 +52,7 @@
 ├──────────────────────────────┬──────────────┬───────────────────┤
 │                              │              │                   │
 │   K 线图                      │   盘口        │   下单面板         │
-│   (lightweight-charts)       │   (20 档)     │   限价/市价/止盈止损│
+│   (TV Charting Library)      │   (20 档)     │   限价/市价/止盈止损│
 │                              │              │                   │
 │                              ├──────────────┤   杠杆滑块         │
 │                              │              │   保证金模式        │
@@ -63,7 +85,7 @@ app/trade/[symbol]/page.tsx
     ├── MarketStatusBanner          行情降级横幅
     ├── ChartPanel
     │   ├── IntervalTabs            1m/5m/15m/1h/4h/1d
-    │   └── CandleChart             lightweight-charts 封装
+    │   └── CandleChart             TradingView Charting Library 封装（Datafeed 见第 8 节）
     ├── OrderBookPanel
     │   ├── OrderBookHeader         精度切换
     │   ├── AskRows                 卖盘 20 档（倒序）
@@ -90,7 +112,7 @@ app/trade/[symbol]/page.tsx
 
 ## 4. 状态管理
 
-用 **Zustand**，分三个 store，职责不重叠。
+用 **Zustand** 管实时数据和界面状态，**TanStack Query 只管 REST**，职责不重叠。
 
 ```
 stores/
@@ -107,7 +129,8 @@ stores/
 
 | 数据 | 方案 |
 | --- | --- |
-| 行情（盘口/成交/K线/ticker） | WS 推送 → Zustand，不进 React Query |
+| 行情（盘口/成交/ticker） | WS 推送 → Zustand，不进 React Query |
+| K 线 | TradingView Datafeed 适配器直接拉 REST、订 WS，由图表库自己管数据，不进任何 store |
 | 账户实时数据（余额/仓位/订单） | REST 首屏 → Zustand，之后 WS 增量更新 |
 | 历史数据（成交历史/流水/排行榜） | React Query（真正的请求-缓存场景） |
 
@@ -119,12 +142,10 @@ interface MarketStore {
   books:    Record<string, OrderBook>     // symbol → 20 档
   tickers:  Record<string, Ticker>
   trades:   Record<string, Trade[]>       // 环形缓冲，只保留最近 50 条
-  klines:   Record<string, Candle[]>      // key: `${symbol}:${interval}`
 
   applyDepth(symbol: string, book: OrderBook): void
   applyTrade(symbol: string, trade: Trade): void
   applyTicker(symbol: string, ticker: Ticker): void
-  applyKline(key: string, candle: Candle): void
 }
 ```
 
@@ -166,7 +187,7 @@ interface AccountStore {
 
 ## 5. WebSocket 客户端
 
-`lib/ws-client.ts` —— 单例，全局一个连接。
+`lib/ws-client/`（实例在 `instance.ts`）—— 单例，全局一个连接。
 
 ### 职责
 
@@ -205,7 +226,7 @@ connect()
 ```
 unsubscribe(旧币对的 4 个频道)
 subscribe(新币对的 4 个频道)
-→ 同时用 REST 拉一次 /market/depth 和 /market/klines 填充首屏
+→ 同时用 REST 拉一次 /market/depth 和 /market/ticker 填充首屏（K 线由图表的 Datafeed 自己拉）
 ```
 
 不要只靠 WS 等第一条推送——盘口 100ms 一次还好，K 线可能要等一分钟才推一次，页面会空着。
@@ -266,7 +287,7 @@ const [symbols, depth, klines, account, positions, orders] = await Promise.allSe
 ### 格式化约定
 
 ```ts
-// lib/format.ts
+// lib/format/number.ts
 formatPrice(v: string, symbol: SymbolSpec): string   // 按 pricePrecision 补零
 formatQty(v: string, symbol: SymbolSpec): string     // 按 quantityPrecision
 formatUsdt(v: string): string                        // 千分位 + 2 位小数
@@ -288,40 +309,26 @@ formatCountdown(ms: number): string                  // 资金费倒计时 "03:4
 
 ## 8. 图表
 
-**lightweight-charts**（TradingView 开源版）。
+**TradingView Charting Library v31**（2026-09-19 定，替换原来的 lightweight-charts）。公司申请的授权，静态文件放 `apps/web/public/charting_library/`，**不进 git**（`.gitignore` 已加），新环境需要自己放进去。
 
-```ts
-// components/chart/CandleChart.tsx
-const chart = createChart(container, {
-  layout: { background: { color: '#161A1E' }, textColor: '#848E9C' },
-  grid: { vertLines: { color: '#2B3139' }, horzLines: { color: '#2B3139' } },
-  timeScale: { timeVisible: true, secondsVisible: false },
-  rightPriceScale: { borderColor: '#2B3139' },
-})
+### 接法
 
-const candleSeries = chart.addCandlestickSeries({
-  upColor: '#0ECB81', downColor: '#F6465D',
-  borderVisible: false,
-  wickUpColor: '#0ECB81', wickDownColor: '#F6465D',
-})
-```
+- 只在客户端加载：组件用 `next/dynamic` + `ssr: false`，`library_path: "/charting_library/"`
+- 主题：`theme: "dark"`，再用 `overrides` 把背景、网格、涨跌色改成第 14 节的 token
+- **Datafeed 适配器**（`lib/tv-datafeed.ts`）：
+
+| Datafeed 方法 | 对接 |
+| --- | --- |
+| `onReady` | 声明支持的周期：服务端支持 1m / 3m / 5m / 15m / 30m / 1h / 2h / 4h / 6h / 8h / 12h / 1d / 3d / 1w / 1M |
+| `resolveSymbol` | 从 `/market/symbols` 的 tickSize 换算 `pricescale` |
+| `getBars` | `GET /market/klines`（`startTime` / `endTime` 往左翻页，单次最多 1500 根） |
+| `subscribeBars` / `unsubscribeBars` | `wsClient.subscribe(["kline:<SYMBOL>:<interval>"])`，推送里 `closed` 标记收线 |
 
 ### 三条要点
 
-1. **首屏用 `setData()` 灌历史，之后用 `update()` 增量**。每次推送都 `setData()` 会导致整图重绘，视觉上会闪。
-
-2. **在图上画仓位线和强平线**，用 `createPriceLine()`：
-
-```ts
-candleSeries.createPriceLine({ price: 50000, color: '#0ECB81', title: '开仓价 1.0' })
-candleSeries.createPriceLine({ price: 45180.72, color: '#F6465D', title: '强平价' })
-```
-
-这是交易页最有用的一个细节——用户不用在表格和图之间来回看。
-
-3. **图表实例在 `useEffect` 里创建，卸载时 `chart.remove()`**。切币对时不要销毁重建整个图表，只 `setData()` 换数据，否则每次切换都有明显白屏。
-
----
+1. **切币对不销毁图表**，调 `setSymbol()` 换数据，否则每次切换都白屏。
+2. **图上画仓位线、强平线、挂单线**：用库自带的 `createPositionLine()` / `createOrderLine()`（d.ts 里有），支持在线上平仓、拖动改价、点叉撤单。这是交易页最有用的一个细节——用户不用在表格和图之间来回看。
+3. **卸载时 `widget.remove()`**。
 
 ## 9. 盘口组件：性能是主要问题
 
@@ -477,10 +484,11 @@ body: { symbol, side, positionSide, price, qty, leverage, marginMode }
 
 | 链 | 方案 |
 | --- | --- |
-| EVM | `wagmi` + `RainbowKit`（MetaMask、OKX、WalletConnect…） |
-| Solana | `@solana/wallet-adapter-react` + `wallet-adapter-react-ui`（Phantom、OKX…） |
+| EVM + Solana | **Reown AppKit**（`@reown/appkit` + `appkit-adapter-wagmi` + `appkit-adapter-solana`），一个弹窗同时列出两条链的钱包（MetaMask、OKX、Phantom、WalletConnect 扫码…） |
 
-两套 Provider 都挂在根布局上，"钱包" tab 里让用户先选链再选钱包。
+2026-09-19 定：原方案 RainbowKit + solana wallet-adapter 是两套弹窗、两套 Provider，体验割裂，改用 AppKit。只用它连钱包，**关掉它自带的邮箱 / 社交登录和 SIWX**，签名走下面我们自己的 nonce / verify。需要 Reown projectId（cloud.reown.com 免费注册），放 `NEXT_PUBLIC_REOWN_PROJECT_ID`。AppKit 包较大，登录弹窗打开时再懒加载。
+
+"钱包" tab 里一个「连接钱包」按钮，打开 AppKit 弹窗，用户直接选钱包，不用先选链。
 
 ```
 1. 用户选链 → 选钱包 → 拿到 address
@@ -573,15 +581,17 @@ BTCUSDT 多头 1.0 BTC
   --bg-base:      #0B0E11;   /* 页面底 */
   --bg-surface:   #161A1E;   /* 卡片 */
   --bg-elevated:  #1E2329;   /* 悬浮/输入框 */
-  --border:       #2B3139;
+  --line:         #2B3139;   /* 分割线/边框 */
   --text-primary: #EAECEF;
   --text-secondary:#848E9C;
   --up:           #0ECB81;
   --down:         #F6465D;
-  --accent:       #F0B90B;   /* 主按钮/强调 */
+  --brand:        #F0B90B;   /* 主按钮/强调 */
   --warn-bg:      #3A2E12;
 }
 ```
+
+实现时 `--border` / `--accent` 改名成 `--line` / `--brand`：这两个名字 shadcn 已经占用了（`--accent` 在 shadcn 里是悬停底色）。token 下面再把 shadcn 的语义变量（`--background`、`--card`、`--primary`……）映射到这些 token 上，组件库照常用；交易语义用 Tailwind 的 `text-up` / `text-down` / `bg-brand` / `bg-surface` / `bg-elevated` / `bg-warn-bg`。Figma 出稿后只改 token 那一段。
 
 **字号**：交易数据用等宽数字（`font-variant-numeric: tabular-nums`），否则盘口数字跳动时会左右抖。这个细节不做，整个页面的专业感会掉一档。
 

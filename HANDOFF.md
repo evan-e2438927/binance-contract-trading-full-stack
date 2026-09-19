@@ -29,13 +29,16 @@
 | 第 13a 讲 · REST 接口（上） | ✅ 2026-09-17 AI 实现 + 讲义：第 13 讲拆成 13a / 13b。13a：`http/`（数值边界只收字符串、最多 8 位小数；三档限流；游标分页）、引擎只读视图 `views.ts` + 宿主 `read()`、引擎输入 `cancelAllOrders`、`api/` 交易 3 + 仓位 4 + 账户 10 个接口、`app.ts` 组装；**修了两个 bug**：全仓强平价 cum 符号写反（缺口 #39，只影响展示）、宿主队列只剩同步任务时卡死；缺口 #12 #24 #26～#29 定了，新记 #39～#44；引擎 297、server 103 条测试；讲义 `docs/tutorial/13a-rest-trading-account.md`；已 commit |
 | 第 13b 讲 · REST 接口（下） | ✅ 2026-09-17 AI 实现 + 讲义：`market/binance-rest.ts`（代理币安 K 线 / 历史资金费率 / 24 小时统计，缓存 + 限流退避 + 严格解析）、`market/market-state.ts`、`api/market.ts` 6 个接口、`api/leaderboard.ts`、`/account/equity-curve`、`jobs/equity-snapshot.ts` 每日 UTC 00:00 快照；排行榜口径用户定（缺口 #48：期初权益为分母、期内重置不上日榜周榜、胜率按平仓成交、错过快照不补、有成交才上榜）；缺口 #31 #34 #44 定了，新记 #45～#48；引擎 299、server 121 条测试；讲义 `docs/tutorial/13b-rest-market-leaderboard.md`；已 commit |
 | 第 14 讲 · WebSocket 网关 | ✅ 2026-09-18 AI 实现 + 讲义：`ws/`（protocol / hub / publisher / server），公共频道 depth·trade·ticker·kline·market + 私有频道 account·position·order·fill·liquidation·funding，auth 后自动订私有、token 过期降级、30 秒心跳；交易内核加三个事件钩子；缺口 #49～#52；server 138 条测试；真 server 实测五个频道都在推；讲义 `docs/tutorial/14-websocket.md`；已 commit |
-| 前端 `apps/web` | ⬜ 服务端全部完成（01～14 讲）。下一步是前端：由 AI 直接实现，不出教程（`docs/design/05-frontend-design.md`） |
+| 前端 `apps/web` · 第 1 阶段 地基 | ✅ 2026-09-19 AI 实现，已 commit：技术选型定稿（`05` 第 0 节：axios / TanStack Query 只管 REST / Zustand / partysocket / TradingView Charting Library v31 / Reown AppKit / Biome）；`lib/`（api、endpoints、types、format、ws-client、session）、四个 store、`providers/ws-bridge`（重连后 hydrate、切回前台 hydrate、私有推送分发）；全站暗色 token；所有路由骨架，模块用带编号的占位块；页面模块清单 `docs/design/08-frontend-pages.md`（给 Figma 用）；web 26 条测试；实测首页 19 个币对实时跳价、交易页盘口 / 成交 / 标记价推送到 store。K 线库放 `apps/web/public/charting_library/`，不进 git |
+| 前端 · 首页 / 顶栏 / 登录弹窗 | 🟡 2026-09-19 AI 按 Figma 还原：顶栏（2:6 / 5:8055）、首页四个区块（2:2）、登录弹窗三个 tab（钱包只做样式，等 Reown Project ID）；邮箱验证码登录已实现，收码登录待用户验收。顺带：服务端加 `GET /market/tickers`（首页 1 个请求代替 19 个，修限流）、订币安 `@ticker` 流让 24h 统计实时（缺口 #47 解决，解析失败不影响撮合）；`packages/ui` Tabs 切换时旧面板立即隐藏。设计 `docs/superpowers/specs/2026-09-19-home-header-login-design.md`，计划 `docs/superpowers/plans/2026-09-19-home-header-login.md`；web 52、server 149 条测试；已 commit（邮箱收码登录待用户验收） |
+| 前端 · 模块化推进 | 📖 2026-09-19 按功能拆成 M00～M13，见 `docs/frontend/README.md`（功能点、数据、规则、后端缺口、验收）。UI 由用户找设计师做，这份只管功能。M00 基础设施 ✅，建议下一个 M01 → M02 → M04。后端必需补 `GET /account/symbol-config`（M07） |
+| 前端 · 第 2～6 阶段（旧说法，已被上面的模块表取代） | ⬜ 2 只读交易页（K 线 / 盘口 / 成交 / 行情条）→ 3 登录（邮箱、Google、钱包）→ 4 下单与账户（含补 `POST /orders/preview`）→ 5 历史 / 排行榜 / 规则 → 6 按 `05` 第 15 节验收。UI 等用户的 Figma 稿 |
 | 前端 | 不出教程——`apps/web` 由 AI 直接实现 |
 | 表结构 12 → 14 张（`identities` / `email_verification_codes`） | ✅ 2026-09-17 迁移 0005：`accounts` 删 `address` / `chain`，登录身份在 `identities`；集成测试改为插账户 + 身份两行 |
 
 **拿不定的地方以币安为标准**，见第六节"决策规则"。
 
-**动手写前端之前必看**：`docs/design/05-frontend-design.md`；接口形状看 `docs/tutorial/13a-rest-trading-account.md` / `13b-rest-market-leaderboard.md`，推送看 `14-websocket.md`。要点：数值全是字符串（前端不要用 `Number` 参与计算）；断线重连后必须重新 auth、重新 sub，并用 REST 全量覆盖本地状态（`04` 第 12 节）；强平价、可用余额一律用服务端返回的，不要前端自己算。缺口 #43（可用余额口径）、#47（实时涨跌幅要不要订币安 ticker 流）仍待定。
+**动手写前端之前必看**：`docs/design/05-frontend-design.md`；接口形状看 `docs/tutorial/13a-rest-trading-account.md` / `13b-rest-market-leaderboard.md`，推送看 `14-websocket.md`。要点：数值全是字符串（前端不要用 `Number` 参与计算）；断线重连后必须重新 auth、重新 sub，并用 REST 全量覆盖本地状态（`04` 第 12 节）；强平价、可用余额一律用服务端返回的，不要前端自己算。缺口 #43（可用余额口径）仍待定；#47 已于 2026-09-19 解决（服务端订币安 `@ticker` 流，24h 统计随 WS ticker 推送）。
 
 > **本节踩过的一个坑，供参考**：上一位接手者一开始把"M0 地基"理解成"AI 直接写代码"，写了一份完整的实现计划（`docs/superpowers/plans/2026-09-15-m0-foundation.md`）。用户确认后发现本意是"数据库/后端两层用户自己动手，AI 写教程带路，前端才是 AI 直接写"，于是那份计划改成了仅供参考（教程内容是从它转写的，代码经过和设计文档核对，可以放心抄），真正要跟的是 `docs/tutorial/01-database.md`。**如果又看到类似"AI 要不要直接写数据库/后端代码"的模糊指令，先跟用户确认这一点，别想当然直接开始写实现。**
 
@@ -147,6 +150,6 @@ docs/design/
 | --- | --- |
 | VPS 选型与开通 | 未开始。必须在**能直连 `fapi.binance.com`** 的海外区域（日/新/韩），上线前先 `curl https://fapi.binance.com/fapi/v1/time` 验证 |
 | Supabase 项目 | 复用 books 练手那个还是新建，未定 |
-| 前端 UI 设计稿 | 用户说交给 Figma 做，尚未产出 |
+| 前端 UI 设计稿 | 用户说交给 Figma 做，尚未产出。设计输入（页面、模块编号、状态）见 `docs/design/08-frontend-pages.md` |
 | 域名与 TLS | 未开始（浏览器 WSS 要求 https 来源） |
 | 数据库跟进第 04、07 讲 | ✅ 2026-09-17 第 11 讲完成（用户授权 AI 写并应用到本地库）：迁移 0003 / 0004、`seed:symbols` 新列 |
