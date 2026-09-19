@@ -8,7 +8,7 @@ import { AppError, parse, type Fixed } from "@binance-contract-trading-full-stac
  * | --- | --- | --- |
  * | `GET /fapi/v1/klines` | K 线 | limit 默认 500、最大 1500；权重按 limit 1 / 2 / 5 / 10 |
  * | `GET /fapi/v1/fundingRate` | 历史资金费率 | limit 默认 100、最大 1000；和 fundingInfo 共享 500 次 / 5 分钟 / IP |
- * | `GET /fapi/v1/ticker/24hr` | 24 小时统计 | 单币对权重 1 |
+ * | `GET /fapi/v1/ticker/24hr` | 24 小时统计 | 单币对权重 1；不带 symbol（全部币对）权重 40 |
  *
  * 为什么要缓存：这些限额是按**我们服务器的 IP** 算的，所有用户共用。前端每开一个页面都直连币安转发一次，
  * 几十个用户就能把 IP 打进币安的封禁名单（418），之后所有人的 K 线都没了。
@@ -74,6 +74,8 @@ export interface BinanceRest {
   klines(params: { symbol: string; interval: KlineInterval; limit: number; startTime?: number; endTime?: number }): Promise<Kline[]>;
   fundingRates(params: { symbol: string; limit: number }): Promise<FundingRateRecord[]>;
   ticker24h(symbol: string): Promise<Ticker24h>;
+  /** 全部币对的 24 小时统计，按币对名索引。首页币对列表用，一次请求代替 N 次 */
+  ticker24hAll(): Promise<Map<string, Ticker24h>>;
 }
 
 const INTERVAL_MS: Record<KlineInterval, number> = {
@@ -179,6 +181,12 @@ export function createBinanceRest(options: BinanceRestOptions = {}): BinanceRest
         parsed("/fapi/v1/ticker/24hr", await getJson("/fapi/v1/ticker/24hr", { symbol }), parseTicker24h),
       );
     },
+    ticker24hAll() {
+      // 权重 40（单币对的 40 倍），缓存 10 秒：最多每分钟 240，占 IP 限额 2400 / 分钟的一成
+      return cached("ticker:all", 10_000, async () =>
+        parsed("/fapi/v1/ticker/24hr", await getJson("/fapi/v1/ticker/24hr", {}), (body) => parseTicker24hAll(body, logger)),
+      );
+    },
   };
 }
 
@@ -232,6 +240,26 @@ export function parseFundingRates(body: unknown): FundingRateRecord[] {
       rateType: typeof r.rateType === "string" ? r.rateType : null,
     };
   });
+}
+
+/**
+ * 全量 24 小时统计（数组，每项多一个 symbol）。
+ * 币安会返回几百个币对，其中有我们不开放的（已下架、结算中的）。某一条格式不对只跳过它并记日志：
+ * 那个币对的 stats24h 就是 null（界面显示 --），不能因为一个无关币对让所有币对都拿不到统计。
+ */
+export function parseTicker24hAll(body: unknown, logger: Pick<Console, "error">): Map<string, Ticker24h> {
+  if (!Array.isArray(body)) throw new Error("全量 24 小时统计响应不是数组");
+  const result = new Map<string, Ticker24h>();
+  for (const item of body) {
+    const symbol = (item as { symbol?: unknown } | null)?.symbol;
+    if (typeof symbol !== "string") continue;
+    try {
+      result.set(symbol, parseTicker24h(item));
+    } catch (error) {
+      logger.error(`[binance-rest] /fapi/v1/ticker/24hr ${symbol} 格式不对，跳过：${(error as Error).message}`);
+    }
+  }
+  return result;
 }
 
 export function parseTicker24h(body: unknown): Ticker24h {

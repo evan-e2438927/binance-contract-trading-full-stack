@@ -36,12 +36,42 @@ export interface KlineEvent {
   ts: number;
 }
 
-export type MarketEvent = BookEvent | TradeEvent | MarkPriceEvent | KlineEvent;
+/**
+ * `<symbol>@ticker`：币安 24 小时滚动统计（不是 UTC 自然日），1 秒一条。只给界面展示（首页涨跌幅、成交额），
+ * 引擎不用。2026-09-19 加，解决缺口 #47（原来 24 小时统计只能进页面时拉一次 REST）。
+ */
+export interface Stats24hEvent {
+  t: "stats24h";
+  symbol: string;
+  priceChange: Fixed;
+  /** 已经是百分数：4.095 表示 4.095% */
+  priceChangePercent: Fixed;
+  openPrice: Fixed;
+  highPrice: Fixed;
+  lowPrice: Fixed;
+  lastPrice: Fixed;
+  volume: Fixed;
+  quoteVolume: Fixed;
+  /** 统计窗口开始 / 结束时间 */
+  openTime: number;
+  closeTime: number;
+  count: number;
+  ts: number;
+}
+
+export type MarketEvent = BookEvent | TradeEvent | MarkPriceEvent | KlineEvent | Stats24hEvent;
 
 export class MarketParseError extends Error {
-  constructor(message: string, readonly raw: string) {
+  /**
+   * 关键：这条流的数据会进撮合（盘口、成交、标记价）或者是就绪判断的依据。
+   * 关键流解析失败要让这条连接降级、暂停撮合；非关键（24 小时统计）只记日志——展示数据出错不能让交易停下来。
+   */
+  readonly critical: boolean;
+
+  constructor(message: string, readonly raw: string, options: { critical?: boolean } = {}) {
     super(message);
     this.name = "MarketParseError";
+    this.critical = options.critical ?? true;
   }
 }
 
@@ -67,6 +97,13 @@ export function parseStreamMessage(raw: string): MarketEvent | null {
       return parseMarkPrice(data, raw);
     case "kline_1m":
       return parseKline(data, raw);
+    case "ticker":
+      try {
+        return parseStats24h(data, raw);
+      } catch (error) {
+        if (!(error instanceof MarketParseError)) throw error;
+        throw new MarketParseError(error.message, raw, { critical: false });
+      }
     default:
       return null;
   }
@@ -138,6 +175,31 @@ function parseKline(data: Record<string, unknown>, raw: string): KlineEvent {
     close: positive(k, "c", raw),
     volume: decimal(k, "v", raw),
     closed,
+    ts: int(data, "E", raw),
+  };
+}
+
+/**
+ * 字段对照（2026-09-19 抓的真实推送，`__fixtures__/binance-ticker-2026-09-19.jsonl`）：
+ * p 涨跌额（可负）、P 涨跌幅（百分数，可负）、o 开盘、h 最高、l 最低、c 最新价、v 成交量、q 成交额、
+ * O / C 统计窗口开始 / 结束、n 成交笔数、E 事件时间。w 均价、Q 最新成交量、F / L 成交 id 不用。
+ */
+function parseStats24h(data: Record<string, unknown>, raw: string): Stats24hEvent {
+  expectEvent(data, "24hrTicker", raw);
+  return {
+    t: "stats24h",
+    symbol: str(data, "s", raw),
+    priceChange: decimal(data, "p", raw, true),
+    priceChangePercent: decimal(data, "P", raw, true),
+    openPrice: decimal(data, "o", raw),
+    highPrice: decimal(data, "h", raw),
+    lowPrice: decimal(data, "l", raw),
+    lastPrice: decimal(data, "c", raw),
+    volume: decimal(data, "v", raw),
+    quoteVolume: decimal(data, "q", raw),
+    openTime: int(data, "O", raw),
+    closeTime: int(data, "C", raw),
+    count: int(data, "n", raw),
     ts: int(data, "E", raw),
   };
 }

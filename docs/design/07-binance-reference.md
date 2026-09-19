@@ -152,7 +152,7 @@
 | 入口 | 我们要订阅的流 |
 | --- | --- |
 | `wss://fstream.binance.com/public/stream?streams=` | `<symbol>@depth20@100ms` |
-| `wss://fstream.binance.com/market/stream?streams=` | `<symbol>@aggTrade`、`<symbol>@markPrice@1s`、`<symbol>@kline_<interval>` |
+| `wss://fstream.binance.com/market/stream?streams=` | `<symbol>@aggTrade`、`<symbol>@markPrice@1s`、`<symbol>@kline_<interval>`、`<symbol>@ticker`（2026-09-19 加） |
 
 **连接规则**（本地 `usds-futures.txt` 的 websocket-market-streams/Connect，核对 2026-09-17）：
 
@@ -173,6 +173,7 @@
 | `@depth20@100ms`（事件 `depthUpdate`） | `s`、`T` 撮合时间、`b` / `a` 各 20 档 `[价格, 数量]` 字符串，买盘降序、卖盘升序 |
 | `@markPrice@1s`（事件 `markPriceUpdate`） | `s`、`E` 事件时间、`p` 标记价、`r` 资金费率（可为负）、`T` 下次资金费结算时间；另有 `i` 指数价、`P` 预估结算价、`ap` 不用 |
 | `@kline_1m`（事件 `kline`） | `k.t` / `k.T` 开收盘时间、`k.o/h/l/c/v`、`k.x` 是否收盘 |
+| `@ticker`（事件 `24hrTicker`，2026-09-19 实测，样例 `binance-ticker-2026-09-19.jsonl`） | 24 小时**滚动**统计（不是 UTC 自然日）：`p` 涨跌额、`P` 涨跌幅（百分数，可负）、`o/h/l/c`、`v` 成交量、`q` 成交额、`O` / `C` 统计窗口、`n` 笔数、`E` 事件时间；`w` `Q` `F` `L` `ps` `st` 不用。本地 `llms-full.txt` 里的 `@ticker` 样例是现货 / Alpha 的，字段不同，以实测为准 |
 
 **`@aggTrade` 实测推送**：
 
@@ -292,7 +293,7 @@
 | --- | --- | --- |
 | `GET /fapi/v1/klines` | interval 15 种：1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M（没有 1s）；limit 默认 500、最大 1500；权重按 limit：[1,100) 1、[100,500) 2、[500,1000] 5、> 1000 10；不带 startTime / endTime 返回最近的 | `/market/klines` 同规则；最新 5 秒缓存，整段已收盘 10 分钟 |
 | `GET /fapi/v1/fundingRate` | limit 默认 100、最大 1000；和 fundingInfo 共享 500 次 / 5 分钟 / IP；文档说不带时间范围返回最近 200 条，按时间升序；响应带 `markPrice` `rateType`（Regular / Special） | `/market/funding-history`，60 秒缓存。**实测** `limit=1000` 返回 500 条（缺口 #46） |
-| `GET /fapi/v1/ticker/24hr` | 单币对权重 1，不带 symbol 40；`priceChangePercent` 形如 `-95.960`（百分数） | ticker 的 `stats24h`，3 秒缓存 |
+| `GET /fapi/v1/ticker/24hr` | 单币对权重 1，不带 symbol 40；`priceChangePercent` 形如 `-95.960`（百分数） | ticker 的 `stats24h`，单币对 3 秒缓存；`/market/tickers` 用不带 symbol 的全量，10 秒缓存（权重 40 × 6 次 / 分钟 = 240，IP 限额 `REQUEST_WEIGHT` 2400 / 分钟，出处 `docs/vendor/binance/usds-futures.txt` exchangeInfo 示例） |
 | 标记价推送 `<symbol>@markPrice@1s` | 字段 `i` 是指数价格（真实推送 fixtures 里有） | 行情层解析出 `indexPrice`，只给展示 |
 | 限流响应 | HTTP 429 / 418，带 `Retry-After` | 按 `Retry-After` 暂停请求（没有就 60 秒），期间直接 `SERVICE_UNAVAILABLE` |
 

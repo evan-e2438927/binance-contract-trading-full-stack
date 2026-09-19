@@ -1,6 +1,6 @@
 import { AppError, parse } from "@binance-contract-trading-full-stack/shared";
 import { describe, expect, it, vi } from "vitest";
-import { createBinanceRest, parseKlines } from "./binance-rest";
+import { createBinanceRest, parseKlines, parseTicker24hAll } from "./binance-rest";
 
 const quiet = { error: () => {} };
 const kline = [1789600000000, "76500.1", "76600", "76400.5", "76575.6", "12.345", 1789600059999, "945000.12", 321, "6.1", "467000.5", "0"];
@@ -15,7 +15,59 @@ async function codeOf(p: Promise<unknown>) {
   }
 }
 
+const stats = (symbol: string, quoteVolume: string) => ({
+  symbol,
+  priceChange: "-120.5",
+  priceChangePercent: "-0.241",
+  weightedAvgPrice: "50000",
+  lastPrice: "50050",
+  lastQty: "0.1",
+  openPrice: "50170.5",
+  highPrice: "51000",
+  lowPrice: "49500",
+  volume: "123456.789",
+  quoteVolume,
+  openTime: 1,
+  closeTime: 2,
+  firstId: 1,
+  lastId: 999,
+  count: 999,
+});
+
 describe("币安 REST 代理", () => {
+  it("全量 24 小时统计：按币对建索引；某一条格式不对只跳过这一条（记日志），不连累其它币对", () => {
+    const errors: string[] = [];
+    const bad = { ...stats("WEIRDUSDT", "1"), highPrice: "1.123456789" };
+    const all = parseTicker24hAll([stats("BTCUSDT", "6180000000.12"), bad, stats("ETHUSDT", "3250000000")], {
+      error: (msg: string) => errors.push(msg),
+    });
+    expect([...all.keys()]).toEqual(["BTCUSDT", "ETHUSDT"]);
+    expect(all.get("BTCUSDT")?.quoteVolume).toBe(parse("6180000000.12"));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("WEIRDUSDT");
+  });
+
+  it("全量 24 小时统计不带 symbol 请求一次（权重 40），缓存 10 秒", async () => {
+    let t = 0;
+    const fetchMock = vi.fn(async () => json([stats("BTCUSDT", "1")]));
+    const rest = createBinanceRest({ fetch: fetchMock as typeof fetch, now: () => t, logger: quiet });
+    await Promise.all([rest.ticker24hAll(), rest.ticker24hAll()]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe("https://fapi.binance.com/fapi/v1/ticker/24hr?");
+    t += 9_999;
+    await rest.ticker24hAll();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    t += 1;
+    await rest.ticker24hAll();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("全量 24 小时统计的响应不是数组：SERVICE_UNAVAILABLE", async () => {
+    const fetchMock = vi.fn(async () => json({ code: -1 }));
+    const rest = createBinanceRest({ fetch: fetchMock as typeof fetch, logger: quiet });
+    expect(await codeOf(rest.ticker24hAll())).toBe("SERVICE_UNAVAILABLE");
+  });
+
   it("K 线按严格十进制解析成定标整数", () => {
     expect(parseKlines([kline])[0]).toEqual({
       openTime: 1789600000000,

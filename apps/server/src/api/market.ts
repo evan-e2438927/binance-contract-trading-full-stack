@@ -7,7 +7,8 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { toDecimal, toDecimalOrNull } from "../http/decimal";
 import { ok, parseQuery } from "../http/respond";
-import { KLINE_INTERVALS, type BinanceRest } from "../market/binance-rest";
+import { stats24hJson } from "./serialize";
+import { KLINE_INTERVALS, type BinanceRest, type Ticker24h } from "../market/binance-rest";
 import type { FeedStatus } from "../market/market-feed";
 import type { MarketState } from "../market/market-state";
 
@@ -87,17 +88,11 @@ export function createMarketRoutes(deps: MarketDeps, middleware: { rateLimit: Mi
     );
   });
 
-  routes.get("/ticker", async (c) => {
-    const { symbol } = parseQuery(c, z.object(symbolQuery));
-    openSymbol(symbol);
+  /** 一个币对的 ticker：实时部分来自行情层，stats 是币安 24 小时统计（拿不到为 null） */
+  function tickerOf(symbol: string, stats: Ticker24h | null) {
     const mark = deps.marketState.mark(symbol);
     const trade = deps.marketState.lastTrade(symbol);
-    // 24 小时统计拿不到（币安限流、网络）不影响实时价格部分，stats24h 为 null
-    const stats = await deps.rest.ticker24h(symbol).catch((error) => {
-      if (error instanceof AppError) return null;
-      throw error;
-    });
-    return ok(c, {
+    return {
       symbol,
       ready: deps.feed.symbolReady(symbol),
       lastPrice: trade ? toDecimal(trade.price) : null,
@@ -107,19 +102,43 @@ export function createMarketRoutes(deps: MarketDeps, middleware: { rateLimit: Mi
       fundingRate: mark ? toDecimal(mark.fundingRate) : null,
       nextFundingTime: mark?.nextFundingTs ?? null,
       markTime: mark?.ts ?? null,
-      stats24h: stats && {
-        priceChange: toDecimal(stats.priceChange),
-        priceChangePercent: toDecimal(stats.priceChangePercent),
-        openPrice: toDecimal(stats.openPrice),
-        highPrice: toDecimal(stats.highPrice),
-        lowPrice: toDecimal(stats.lowPrice),
-        volume: toDecimal(stats.volume),
-        quoteVolume: toDecimal(stats.quoteVolume),
-        openTime: stats.openTime,
-        closeTime: stats.closeTime,
-        count: stats.count,
-      },
+      stats24h: stats && stats24hJson(stats),
+    };
+  }
+
+  /** 24 小时统计拿不到（币安限流、网络）不影响实时价格部分，stats24h 为 null */
+  const orNull = <T>(p: Promise<T>) =>
+    p.catch((error) => {
+      if (error instanceof AppError) return null;
+      throw error;
     });
+
+  routes.get("/ticker", async (c) => {
+    const { symbol } = parseQuery(c, z.object(symbolQuery));
+    openSymbol(symbol);
+    // 优先用币安 @ticker 推送（1 秒一条，缺口 #47）；服务刚启动、推送还没到时才转发 REST
+    const stats = deps.marketState.stats24h(symbol) ?? (await orNull(deps.rest.ticker24h(symbol)));
+    return ok(c, tickerOf(symbol, stats));
+  });
+
+  /**
+   * 全部开放币对的 ticker（首页币对列表）。和 /ticker 一样的格式，顺序同 /symbols。
+   * 24 小时统计向币安要一次全量，不按币对逐个转发：首页一次加载只占 1 次限流额度，也只占币安 1 次请求。
+   */
+  routes.get("/tickers", async (c) => {
+    // 币对集合和顺序跟 /symbols 同一条查询，前端两份数据能一一对上
+    const rows = await deps.db
+      .select({ symbol: symbolsTable.symbol })
+      .from(symbolsTable)
+      .where(eq(symbolsTable.enabled, true))
+      .orderBy(asc(symbolsTable.sortOrder), asc(symbolsTable.symbol));
+    // 24 小时统计优先用推送；有币对还没收到推送（服务刚启动）才向币安要一次全量
+    const missing = rows.some(({ symbol }) => !deps.marketState.stats24h(symbol));
+    const all = missing ? await orNull(deps.rest.ticker24hAll()) : null;
+    return ok(
+      c,
+      rows.map(({ symbol }) => tickerOf(symbol, deps.marketState.stats24h(symbol) ?? all?.get(symbol) ?? null)),
+    );
   });
 
   routes.get("/depth", async (c) => {

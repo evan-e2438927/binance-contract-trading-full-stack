@@ -114,7 +114,7 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
     onEvent(event) {
       marketState.onEvent(event);
       options.onMarketEvent?.(event); // 第 14 讲：公共频道推送
-      if (event.t === "kline") return; // K 线只给前端（第 14 讲）
+      if (event.t === "kline" || event.t === "stats24h") return; // K 线、24 小时统计只给前端（第 14 讲、缺口 #47）
       if (event.t === "markPrice") funding.onMarkPrice(event);
       host.feedMarket(event);
     },

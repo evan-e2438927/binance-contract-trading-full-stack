@@ -119,7 +119,44 @@ describe("WebSocket 推送", () => {
     publisher.onMarketEvent({ t: "markPrice", symbol: "BTCUSDT", markPrice: parse("50040"), indexPrice: parse("50038"), fundingRate: parse("0.0001"), nextFundingTs: T + 3600_000, ts: T + 3 });
     expect(publicMsgs.at(-1)).toEqual({
       channel: "ticker:BTCUSDT",
-      data: { lastPrice: "50050", lastTradeTime: T + 1, markPrice: "50040", indexPrice: "50038", fundingRate: "0.0001", nextFundingTime: T + 3600_000, markTime: T + 3 },
+      data: { lastPrice: "50050", lastTradeTime: T + 1, markPrice: "50040", indexPrice: "50038", fundingRate: "0.0001", nextFundingTime: T + 3600_000, markTime: T + 3, stats24h: null },
+    });
+  });
+
+  it("ticker 推送带上最新的 24 小时统计（币安 @ticker 流，缺口 #47）；统计本身不单独推", () => {
+    const { publisher, publicMsgs, marketState } = setup();
+    const stats = {
+      t: "stats24h" as const,
+      symbol: "BTCUSDT",
+      priceChange: parse("-120.5"),
+      priceChangePercent: parse("-0.241"),
+      openPrice: parse("50170.5"),
+      highPrice: parse("51000"),
+      lowPrice: parse("49500"),
+      lastPrice: parse("50050"),
+      volume: parse("123456.789"),
+      quoteVolume: parse("6180000000.12"),
+      openTime: 1,
+      closeTime: 2,
+      count: 999,
+      ts: T,
+    };
+    marketState.onEvent(stats);
+    publisher.onMarketEvent(stats);
+    expect(publicMsgs).toHaveLength(0);
+
+    publisher.onMarketEvent({ t: "markPrice", symbol: "BTCUSDT", markPrice: parse("50040"), indexPrice: parse("50038"), fundingRate: parse("0.0001"), nextFundingTs: T + 3600_000, ts: T + 3 });
+    expect(publicMsgs.at(-1)?.data.stats24h).toEqual({
+      priceChange: "-120.5",
+      priceChangePercent: "-0.241",
+      openPrice: "50170.5",
+      highPrice: "51000",
+      lowPrice: "49500",
+      volume: "123456.789",
+      quoteVolume: "6180000000.12",
+      openTime: 1,
+      closeTime: 2,
+      count: 999,
     });
   });
 

@@ -7,8 +7,9 @@
  * - /private：用户数据流（我们用不到）
  * 不带入口的旧地址 /ws、/stream 只推 /public 那一类，2026-09-17 实测收得到 depth、收不到 aggTrade。
  *
- * 所以原设计的"连接 A 一条连三种流"要拆成两条：盘口一条、成交 + 标记价 + K 线一条。
- * 单条连接最多 1024 个流，20 个币对 × 3 = 60 个，一条 /market 连接够用。
+ * 所以原设计的"连接 A 一条连三种流"要拆成两条：盘口一条、成交 + 标记价 + K 线 + 24 小时统计一条。
+ * 单条连接最多 1024 个流，20 个币对 × 4 = 80 个，一条 /market 连接够用。
+ * `@ticker`（24 小时滚动统计，1 秒一条）2026-09-19 加（缺口 #47），只给界面展示，解析失败不影响撮合（parse.ts）。
  */
 
 export const BINANCE_WS_BASE = "wss://fstream.binance.com";
@@ -21,7 +22,7 @@ export function streamsFor(connection: ConnectionName, symbol: string): string[]
   const s = symbol.toLowerCase();
   return connection === "public"
     ? [`${s}@depth20@100ms`] // 20 档快照，每 100ms 一次（快照流，不需要维护序列号）
-    : [`${s}@aggTrade`, `${s}@markPrice@1s`, `${s}@kline_1m`];
+    : [`${s}@aggTrade`, `${s}@markPrice@1s`, `${s}@kline_1m`, `${s}@ticker`];
 }
 
 /** 组合流地址：wss://fstream.binance.com/<入口>/stream?streams=a/b/c，推送包成 {"stream","data"}。 */

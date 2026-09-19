@@ -87,6 +87,11 @@ export function startMarketFeed(options: MarketFeedOptions): MarketFeed {
       event = parseStreamMessage(text);
     } catch (error) {
       if (!(error instanceof MarketParseError)) throw error;
+      if (!error.critical) {
+        // 只给展示用的流（24 小时统计）：丢掉这一条，不连累撮合
+        logger.error(`[market:${name}] 展示用推送解析失败，已丢弃：${error.message}`, error.raw.slice(0, 500));
+        return;
+      }
       // 解析不了说明协议可能变了：这条连接的数据先不信，等下一轮完整快照再恢复就绪
       logger.error(`[market:${name}] 推送解析失败：${error.message}`, error.raw.slice(0, 500));
       invalidate(name);

@@ -29,6 +29,19 @@ function fakeRest() {
     takerBuyQuoteVolume: parse("300000"),
   };
   const state = { tickerFails: false };
+  const btcStats = {
+    priceChange: parse("-120.5"),
+    priceChangePercent: parse("-0.241"),
+    openPrice: parse("50170.5"),
+    highPrice: parse("51000"),
+    lowPrice: parse("49500"),
+    lastPrice: parse("50050"),
+    volume: parse("123456.789"),
+    quoteVolume: parse("6180000000.12"),
+    openTime: 1,
+    closeTime: 2,
+    count: 999,
+  };
   const rest: BinanceRest = {
     async klines(params) {
       calls.push({ method: "klines", params });
@@ -41,19 +54,16 @@ function fakeRest() {
     async ticker24h(symbol) {
       calls.push({ method: "ticker24h", params: symbol });
       if (state.tickerFails) throw new AppError("SERVICE_UNAVAILABLE", "行情数据暂时拿不到");
-      return {
-        priceChange: parse("-120.5"),
-        priceChangePercent: parse("-0.241"),
-        openPrice: parse("50170.5"),
-        highPrice: parse("51000"),
-        lowPrice: parse("49500"),
-        lastPrice: parse("50050"),
-        volume: parse("123456.789"),
-        quoteVolume: parse("6180000000.12"),
-        openTime: 1,
-        closeTime: 2,
-        count: 999,
-      };
+      return btcStats;
+    },
+    async ticker24hAll() {
+      calls.push({ method: "ticker24hAll", params: undefined });
+      if (state.tickerFails) throw new AppError("SERVICE_UNAVAILABLE", "行情数据暂时拿不到");
+      // 币安全量接口会返回我们没开放的币对，接口不能把它们带出去
+      return new Map([
+        ["BTCUSDT", btcStats],
+        ["NOTOPENUSDT", btcStats],
+      ]);
     },
   };
   return { rest, calls, state };
@@ -118,6 +128,61 @@ describe("行情接口（第 13b 讲验收）", () => {
 
       expect((await api("GET", "/market/ticker?symbol=FOOUSDT")).json.error.code).toBe("SYMBOL_NOT_TRADING");
       expect((await api("GET", "/market/ticker")).json.error.code).toBe("INVALID_PARAMS");
+    });
+  });
+
+  it("/market/tickers：一次返回全部开放币对，格式和 /market/ticker 相同；24 小时统计只向币安要一次", async () => {
+    await testDb.inRollback(async (tx) => {
+      const marketState = createMarketState();
+      const { rest, calls, state } = fakeRest();
+      const { api, now } = await setupApi(tx, { marketState, binanceRest: rest });
+      marketState.onEvent({ t: "trade", symbol: "BTCUSDT", tradeId: 1, price: parse("50050"), qty: parse("0.1"), buyerIsMaker: false, ts: now() });
+
+      const list = (await api("GET", "/market/tickers")).json.data as { symbol: string; stats24h: unknown }[];
+      const single = (await api("GET", "/market/ticker?symbol=BTCUSDT")).json.data;
+      const open = (await api("GET", "/market/symbols")).json.data as { symbol: string }[];
+      expect(list.map((t) => t.symbol)).toEqual(open.map((s) => s.symbol));
+      expect(list.find((t) => t.symbol === "BTCUSDT")).toEqual(single);
+      // 币安没给统计的开放币对：stats24h 为 null，不编
+      expect(list.filter((t) => t.symbol !== "BTCUSDT").every((t) => t.stats24h === null)).toBe(true);
+      expect(calls.filter((c) => c.method === "ticker24hAll")).toHaveLength(1);
+
+      state.tickerFails = true;
+      const degraded = await api("GET", "/market/tickers");
+      expect(degraded.status).toBe(200);
+      expect((degraded.json.data as { stats24h: unknown }[]).every((t) => t.stats24h === null)).toBe(true);
+    });
+  });
+
+  it("24 小时统计优先用币安推送（@ticker 流）；推送还没到的币对才向币安 REST 要", async () => {
+    await testDb.inRollback(async (tx) => {
+      const marketState = createMarketState();
+      const { rest, calls } = fakeRest();
+      const { api, now } = await setupApi(tx, { marketState, binanceRest: rest });
+      const symbols = ((await api("GET", "/market/symbols")).json.data as { symbol: string }[]).map((s) => s.symbol);
+      for (const symbol of symbols) {
+        marketState.onEvent({
+          t: "stats24h",
+          symbol,
+          priceChange: parse("1"),
+          priceChangePercent: parse("2.5"),
+          openPrice: parse("40"),
+          highPrice: parse("42"),
+          lowPrice: parse("39"),
+          lastPrice: parse("41"),
+          volume: parse("10"),
+          quoteVolume: parse("410"),
+          openTime: 1,
+          closeTime: 2,
+          count: 3,
+          ts: now(),
+        });
+      }
+      const single = (await api("GET", "/market/ticker?symbol=BTCUSDT")).json.data;
+      expect(single.stats24h).toMatchObject({ priceChangePercent: "2.5", quoteVolume: "410" });
+      const list = (await api("GET", "/market/tickers")).json.data as { stats24h: { quoteVolume: string } }[];
+      expect(list.every((t) => t.stats24h.quoteVolume === "410")).toBe(true);
+      expect(calls.filter((c) => c.method === "ticker24h" || c.method === "ticker24hAll")).toHaveLength(0);
     });
   });
 

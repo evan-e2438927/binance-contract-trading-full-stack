@@ -594,3 +594,26 @@ GET /account/equity-curve    → snapshots []、current.equity 10000
 6. "期内重置过"为什么查流水，不查 `accounts.last_reset_at`？
 7. 日榜收益率为什么用期初权益当分母，而不是 10,000？
 8. 带了无效 token 的排行榜请求为什么返回 401，而不是当作没登录？
+
+---
+
+## 补充（2026-09-19）：批量 ticker 接口 `/market/tickers`
+
+**为什么加**：前端首页币对列表原来对每个币对调一次 `/market/ticker`，19 个币对就是 19 个请求。行情接口按 IP 限流每分钟 60 次，一次加载用掉三分之一，刷新三次就被限流，被限流的币对 24 小时统计显示 `--`。
+
+**怎么做**：
+
+- `binance-rest.ts` 加 `ticker24hAll()`：`/fapi/v1/ticker/24hr` 不带 symbol，一次拿全部币对，权重 40（单币对是 1），缓存 10 秒。最坏每分钟 240 权重，占 IP 限额 2400 的一成
+- 全量响应里有几百个币对，包括我们不开放的。`parseTicker24hAll` 对**单条**格式不对的只跳过并记日志，不让整个响应失败——否则一个下架币对的脏数据会让首页所有币对都拿不到统计。这和「格式不对就报错，不猜」不冲突：跳过的那一条不会被猜成任何值，它的 `stats24h` 是 `null`
+- `api/market.ts`：`/ticker` 和 `/tickers` 共用 `tickerOf(symbol, stats)`，保证两者格式逐字段相同；`/tickers` 的币对集合和顺序跟 `/symbols` 同一条查询
+
+**测试**：`binance-rest.test.ts` 3 条（索引 + 坏条目跳过、缓存 10 秒、响应不是数组）；`market.integration.test.ts` 1 条（和 `/ticker` 逐字段相同、只向币安要一次、不带出未开放币对、币安失败时 `stats24h` 全为 `null`）。
+
+### 再补充（同日）：24 小时统计改成实时（缺口 #47）
+
+批量接口解决了限流，但 24h 涨跌和成交额仍然只在进页面时取一次。用户定了做成实时：
+
+- **订阅**：`/market` 连接每个币对多订一个 `<symbol>@ticker`（1 秒一条），19 个币对共 76 个流，远低于单连接 1024 的上限。字段以 2026-09-19 实测为准（`market/__fixtures__/binance-ticker-2026-09-19.jsonl`）——本地文档里的样例是现货 / Alpha 的，字段不一样
+- **★ 非关键流**：`/market` 连接上任何推送解析失败，原来都会让这条连接的就绪条件作废、暂停撮合。24 小时统计只给界面看，它格式出错不能让交易停下来。所以 `MarketParseError` 多了 `critical` 标记，ticker 流的错误是 `critical: false`，行情层遇到只记日志、丢掉这一条
+- **走向**：`stats24h` 事件只进 `marketState`（引擎不收，和 K 线一样在 `engine-host/start.ts` 过滤掉）；WS `ticker` 推送顺带最新统计，不另开频道；`/market/ticker(s)` 优先用推送来的统计，服务刚启动还没收到时才转发币安 REST
+- **前端**：推送的 `stats24h` 为 `null` 时保留旧值；首页行顺序只在首屏排一次，不随每秒变化的成交额重排

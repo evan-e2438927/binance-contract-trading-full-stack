@@ -8,6 +8,7 @@ import type {
 import type { AccountView, Order, PositionView } from "@binance-contract-trading-full-stack/engine";
 import type { PositionMode } from "@binance-contract-trading-full-stack/shared";
 import { toDecimal, toDecimalOrNull } from "../http/decimal";
+import type { Ticker24h } from "../market/binance-rest";
 import { toDbId } from "../persistence/ids";
 import { toDbPosition } from "../persistence/positions";
 
@@ -175,5 +176,21 @@ export function liquidationJson(l: LiquidationRow) {
     marginBalanceBefore: toDecimal(l.marginBalanceBefore),
     maintMarginAt: toDecimal(l.maintMarginAt),
     createdAt: l.createdAt.getTime(),
+  };
+}
+
+/** 24 小时统计：/market/ticker(s) 的 stats24h 和 WS ticker 推送共用，保证两边字段一样 */
+export function stats24hJson(stats: Ticker24h) {
+  return {
+    priceChange: toDecimal(stats.priceChange),
+    priceChangePercent: toDecimal(stats.priceChangePercent),
+    openPrice: toDecimal(stats.openPrice),
+    highPrice: toDecimal(stats.highPrice),
+    lowPrice: toDecimal(stats.lowPrice),
+    volume: toDecimal(stats.volume),
+    quoteVolume: toDecimal(stats.quoteVolume),
+    openTime: stats.openTime,
+    closeTime: stats.closeTime,
+    count: stats.count,
   };
 }

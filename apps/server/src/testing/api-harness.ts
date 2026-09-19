@@ -95,7 +95,12 @@ export async function setupApi(tx: DbExecutor, options: HarnessOptions = {}) {
     symbols: config.symbols,
     feed: { status: () => "ready", symbolReady: (symbol) => ready.has(symbol) },
     marketState,
-    binanceRest: options.binanceRest ?? { klines: unexpected, fundingRates: unexpected, ticker24h: unexpected },
+    binanceRest: options.binanceRest ?? {
+      klines: unexpected,
+      fundingRates: unexpected,
+      ticker24h: unexpected,
+      ticker24hAll: unexpected,
+    },
     jwtSecret: JWT_SECRET,
     webOrigin: "http://localhost:3001",
     mailer: null,

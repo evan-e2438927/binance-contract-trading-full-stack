@@ -50,7 +50,7 @@ describe("行情状态", () => {
       "wss://fstream.binance.com/public/stream?streams=btcusdt@depth20@100ms/ethusdt@depth20@100ms",
     );
     expect(conn("market").url).toBe(
-      "wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade/btcusdt@markPrice@1s/btcusdt@kline_1m/ethusdt@aggTrade/ethusdt@markPrice@1s/ethusdt@kline_1m",
+      "wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade/btcusdt@markPrice@1s/btcusdt@kline_1m/btcusdt@ticker/ethusdt@aggTrade/ethusdt@markPrice@1s/ethusdt@kline_1m/ethusdt@ticker",
     );
   });
 
@@ -104,6 +104,20 @@ describe("行情状态", () => {
     conn("public").onMessage(pick("btcusdt", "depth20"));
     conn("public").onMessage(pick("ethusdt", "depth20"));
     expect(feed.status()).toBe("ready");
+  });
+});
+
+describe("24 小时统计流（缺口 #47）", () => {
+  it("★ ticker 推送解析失败：只记日志，不降级、不停撮合（它只给界面展示用）", () => {
+    const { feed, conn, openBoth, snapshots, events } = setup();
+    openBoth();
+    snapshots();
+    expect(feed.status()).toBe("ready");
+    const before = events.length;
+    conn("market").onMessage('{"stream":"btcusdt@ticker","data":{"e":"24hrTicker","s":"BTCUSDT","q":"oops"}}');
+    expect(feed.status()).toBe("ready");
+    expect(feed.symbolReady("BTCUSDT")).toBe(true);
+    expect(events.length).toBe(before);
   });
 });
 

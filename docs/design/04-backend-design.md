@@ -157,7 +157,7 @@ wss://fstream.binance.com/stream?streams=btcusdt@aggTrade/btcusdt@depth20@100ms/
 - 恢复后**不补算**断线期间的成交
 
 > **已定（第 10 讲）**，实现在 `apps/server/src/market/`（文件和第 1 节规划的不同：`streams.ts` 流和地址、`parse.ts` 解析、`connection.ts` 单条连接 + 重连 + 看门狗、`market-feed.ts` 两条连接合成行情源和就绪状态、`exchange-info.ts` 查币对状态、`watch.ts` 验收脚本；盘口 / 标记价的"store"就是引擎自己的状态，不另建）：
-> 1. **两条连接**：`/public` 订 depth20，`/market` 订 aggTrade + markPrice@1s + kline_1m（缺口 #22）
+> 1. **两条连接**：`/public` 订 depth20，`/market` 订 aggTrade + markPrice@1s + kline_1m（缺口 #22）+ ticker（24 小时统计，2026-09-19 加，缺口 #47；解析失败只记日志，不降级、不停撮合）
 > 2. **重连**：退避 1s, 2s, 4s, 8s, 16s, 30s…；收到第一条数据才把退避清零（只连上不推数据不算恢复）
 > 3. **看门狗**：连着但 10 秒没有任何消息 → 主动关掉重连（拔网线、代理掉线时 TCP 可能很久不报 close）
 > 4. **pong**：Node 自带 WebSocket 自动回，不用处理
@@ -1066,6 +1066,7 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
 | --- | --- | --- |
 | GET | `/market/symbols` | 开放交易的币对及规格 |
 | GET | `/market/ticker?symbol=` | 最新价、标记价、涨跌幅、资金费率 |
+| GET | `/market/tickers` | 全部开放币对的 ticker（格式同上，顺序同 `/market/symbols`），首页列表用 |
 | GET | `/market/depth?symbol=` | 20 档盘口（首屏用，之后走 WS） |
 | GET | `/market/klines?symbol=&interval=&limit=` | K 线（服务端代理币安并缓存） |
 | GET | `/market/funding-history?symbol=&limit=` | 历史资金费率 |
@@ -1087,6 +1088,7 @@ GET /account/fills?limit=50&cursor=<上一页最后一条的 id>
 
 > **已定（第 13b 讲）**：实际形状和上面示例有出入：
 > - `/market/ticker`：`lastPrice` `lastTradeTime`（行情层最新成交）、`markPrice` `indexPrice` `fundingRate` `nextFundingTime` `markTime`（标记价推送）、`ready`，24 小时统计放在 `stats24h` 里（币安 REST，3 秒缓存；拿不到时为 `null`，实时部分照常返回）
+> - `/market/tickers`（2026-09-19 加）：首页原来每个币对调一次 `/market/ticker`，19 个请求一次加载就用掉公开接口每 IP 每分钟 60 次限额的三分之一，刷新三次就被限流。改成一次返回全部；24 小时统计向币安要一次全量（`/fapi/v1/ticker/24hr` 不带 symbol，权重 40，缓存 10 秒），全量里某一条格式不对只跳过那一条（该币对 `stats24h` 为 `null`）
 > - `/market/depth?limit=5|10|20`：引擎撮合实际用的那份盘口，`[价格, 数量]` 字符串对
 > - `/market/klines`：interval 按币安 15 种（没有 1s），limit 1～1500 默认 500，可带 startTime / endTime；代理币安并缓存（最新 5 秒、整段已收盘 10 分钟）
 > - `/market/funding-history`：limit 1～1000 默认 100，缓存 60 秒
@@ -1277,7 +1279,7 @@ wss://api.<域名>/ws
 > 其它几处实现细节：
 > - 频道名里的币对不区分大小写，服务端统一成大写（`depth:btcusdt` → `depth:BTCUSDT`）；只接受开放交易的币对、K 线只接受币安那 15 种周期
 > - 私有频道推给客户端时**频道名不带账户 id**（前端订的是 `order`，不是 `order:<id>`）
-> - `ticker` 频道跟着币安 `@markPrice@1s` 走（正好 1 秒一条），**不含涨跌幅**——那是 24 小时统计，前端首屏拉 `/market/ticker`（缺口 #50）
+> - `ticker` 频道跟着币安 `@markPrice@1s` 走（正好 1 秒一条）。2026-09-19 起带 `stats24h`（币安 `@ticker` 流，缺口 #47 / #50 已解决）；服务端还没收到时为 `null`，前端保留首屏 REST 拉到的
 > - **token 在连接期间过期**：服务端按 exp 取消这条连接的私有订阅并推 `TOKEN_EXPIRED`，重新 auth 即可（缺口 #52）
 > - 一个连接只认一个账户：再次 auth 换账户会先退掉上一个账户的私有订阅
 > - 实现用 `ws` 库直接接在 HTTP server 的 upgrade 上（`@hono/node-ws` 只兼容 node-server v1，缺口 #51）

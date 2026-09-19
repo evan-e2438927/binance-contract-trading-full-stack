@@ -4,7 +4,7 @@ import { toDecimal } from "../http/decimal";
 import type { MarketEvent } from "../market/parse";
 import type { FeedStatus } from "../market/market-feed";
 import type { MarketState } from "../market/market-state";
-import { accountJson, orderFromEngine, positionJson } from "../api/serialize";
+import { accountJson, orderFromEngine, positionJson, stats24hJson } from "../api/serialize";
 import { MARKET_STATUS_CHANNEL, type WsHub } from "./hub";
 import { closedPositionPayload, fillPayload, fundingPayload, liquidationPayload } from "./serialize";
 
@@ -79,8 +79,9 @@ export function createWsPublisher(options: WsPublisherOptions): WsPublisher {
           });
           return;
         case "markPrice": {
-          // 涨跌幅要 24 小时统计，那是币安 REST 的数（第 13b 讲），不在推送里（缺口 #50）：前端首屏拉一次 /market/ticker
+          // 24 小时统计来自币安 @ticker 流（缺口 #47），跟着这条一起推，不单独占一个频道；还没收到时为 null
           const trade = marketState.lastTrade(event.symbol);
+          const stats = marketState.stats24h(event.symbol);
           hub.publish(`ticker:${event.symbol}`, {
             lastPrice: trade ? toDecimal(trade.price) : null,
             lastTradeTime: trade?.ts ?? null,
@@ -89,9 +90,12 @@ export function createWsPublisher(options: WsPublisherOptions): WsPublisher {
             fundingRate: toDecimal(event.fundingRate),
             nextFundingTime: event.nextFundingTs,
             markTime: event.ts,
+            stats24h: stats ? stats24hJson(stats) : null,
           });
           return;
         }
+        case "stats24h":
+          return; // 只进 marketState，由下一条标记价推送顺带推出去
       }
     },
 

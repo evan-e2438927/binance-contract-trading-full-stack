@@ -73,6 +73,58 @@ describe("真实推送", () => {
   });
 });
 
+describe("24 小时统计（<symbol>@ticker，缺口 #47）", () => {
+  /** 2026-09-19 从 wss://fstream.binance.com/market/stream 抓的真实推送 */
+  const tickerLines = readFileSync(new URL("./__fixtures__/binance-ticker-2026-09-19.jsonl", import.meta.url), "utf8")
+    .split("\n")
+    .filter(Boolean);
+
+  it("字段对照：p 涨跌额、P 涨跌幅（百分数）、o/h/l/c、v 成交量、q 成交额、O/C 统计窗口、n 笔数；时间取 E", () => {
+    expect(parseStreamMessage(tickerLines[0]!)).toEqual({
+      t: "stats24h",
+      symbol: "BTCUSDT",
+      priceChange: parse("3195.80"),
+      priceChangePercent: parse("4.095"),
+      openPrice: parse("78044.50"),
+      highPrice: parse("81732.40"),
+      lowPrice: parse("77923.50"),
+      lastPrice: parse("81240.30"),
+      volume: parse("180534.136"),
+      quoteVolume: parse("14535062295.49"),
+      openTime: 1789730940000,
+      closeTime: 1789817393686,
+      count: 3816694,
+      ts: 1789817393687,
+    });
+    expect(parseStreamMessage(tickerLines[1]!)).toMatchObject({ t: "stats24h", symbol: "ETHUSDT" });
+  });
+
+  it("涨跌可以为负", () => {
+    const raw = tickerLines[0]!.replace('"p":"3195.80","P":"4.095"', '"p":"-3195.80","P":"-4.095"');
+    expect(parseStreamMessage(raw)).toMatchObject({ priceChange: parse("-3195.80"), priceChangePercent: parse("-4.095") });
+  });
+
+  it("★ 格式不对照样抛错，但标记为非关键（critical = false）：只影响展示，不能让行情层降级、停撮合", () => {
+    const raw = tickerLines[0]!.replace('"q":"14535062295.49"', '"q":"1.123456789"');
+    let error: unknown;
+    try {
+      parseStreamMessage(raw);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(MarketParseError);
+    expect((error as MarketParseError).critical).toBe(false);
+  });
+
+  it("撮合相关的流解析失败仍然是关键错误", () => {
+    try {
+      parseStreamMessage('{"stream":"btcusdt@depth20@100ms","data":{"e":"depthUpdate","b":"oops"}}');
+    } catch (e) {
+      expect((e as MarketParseError).critical).toBe(true);
+    }
+  });
+});
+
 describe("格式不对就抛错，不猜", () => {
   const trade = first("aggTrade");
   const withData = (patch: Record<string, unknown>) =>

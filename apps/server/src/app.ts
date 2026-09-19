@@ -32,16 +32,25 @@ import { createErrorHandler } from "./http/respond";
 
 export interface AppDeps {
   db: DbExecutor;
+  /** 撮合/风控/清算的唯一入口：所有下单、撤单、行情推送、只读查询都要排它的队 */
   host: EngineHost;
+  /** 开户：鉴权层验完身份后交给它排队建账户 */
   registrar: AccountRegistrar;
+  /** 支持交易的币对列表（分层表、精度等元数据） */
   symbols: readonly SymbolSpec[];
+  /** 行情连接状态；symbolReady 为 false 时该币对暂停撮合 */
   feed: { status(): FeedStatus; symbolReady(symbol: string): boolean };
+  /** 最新标记价格/指数价格/资金费率缓存，REST 查询和清算用 */
   marketState: MarketState;
   binanceRest: BinanceRest;
   jwtSecret: string;
+  /** CORS 允许的前端源 */
   webOrigin: string;
+  /** null = 没配邮件服务，邮箱验证码登录返回 SERVICE_UNAVAILABLE */
   mailer: MailSender | null;
+  /** null = 没配 Google OAuth，/auth/google 跳回前端并带 SERVICE_UNAVAILABLE */
   google: GoogleOAuth | null;
+  /** Set-Cookie 是否带 Secure（本地 http 开发环境要关掉） */
   secureCookies: boolean;
   now?: () => number;
   logger?: Pick<Console, "log" | "error">;
