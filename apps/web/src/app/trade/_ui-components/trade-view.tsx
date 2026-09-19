@@ -10,6 +10,9 @@ import { formatPrice, formatQty } from "@/lib/format/number";
 import type { SymbolSpec } from "@/server-api-module/market/types";
 import { useMarketStore } from "@/stores/market-store";
 
+import { SymbolBar } from "./symbol-bar/symbol-bar";
+import { usePriceTitle } from "./symbol-bar/use-price-title";
+
 /**
  * 交易页骨架（05 第 2 节的币安式网格，桌面优先 ≥ 1280px）：
  *
@@ -34,17 +37,12 @@ export function TradeView({ symbol }: { symbol: string }) {
 
 function TradeLayout({ spec }: { spec: SymbolSpec }) {
   useSymbolMarket(spec.symbol);
+  usePriceTitle(spec);
 
   return (
-    <div className="grid h-full min-h-[760px] grid-cols-[minmax(0,1fr)_320px_360px] grid-rows-[56px_minmax(0,1fr)_minmax(0,1fr)_320px] gap-px bg-border">
-      <div className="col-span-3 grid grid-cols-[220px_1fr] gap-px">
-        <ModulePlaceholder id="T-01" name="币对切换" note="下拉 + 搜索，列出开放币对和实时价" className="min-h-0" />
-        <ModulePlaceholder
-          id="T-02"
-          name="行情条"
-          note="最新价 · 24h 涨跌 · 标记价 · 指数价 · 资金费率 / 倒计时 · 24h 高低 · 24h 成交量"
-          className="min-h-0"
-        />
+    <div className="grid h-full min-h-[760px] grid-cols-[minmax(0,1fr)_320px_360px] grid-rows-[48px_minmax(0,1fr)_minmax(0,1fr)_320px] gap-px bg-border">
+      <div className="col-span-3">
+        <SymbolBar key={spec.symbol} spec={spec} />
       </div>
       <ModulePlaceholder
         id="T-03"
