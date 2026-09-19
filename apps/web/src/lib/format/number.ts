@@ -106,3 +106,9 @@ export function direction(value: Decimal | null | undefined): "up" | "down" | "f
   const fixed = parse(value);
   return fixed > 0n ? "up" : fixed < 0n ? "down" : "flat";
 }
+
+/** 去掉定标产生的尾随零："80715.20000000" → "80715.2"、"10.00000000" → "10"。给填进输入框、做 key 的值用 */
+export function trimDecimal(value: Decimal): string {
+  if (!value.includes(".")) return value;
+  return value.replace(/0+$/, "").replace(/\.$/, "");
+}
