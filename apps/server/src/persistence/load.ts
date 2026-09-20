@@ -149,6 +149,7 @@ export async function loadEngineSnapshot(db: DbExecutor): Promise<EngineSnapshot
       qty,
       entryPrice: p.entryPrice,
       isolatedMargin: p.isolatedMargin,
+      costBasis: p.costBasis,
       openedAt: p.openedAt.getTime(),
       updatedAt: p.updatedAt.getTime(),
     };

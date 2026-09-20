@@ -24,6 +24,7 @@ function position(overrides: Partial<Position> = {}): Position {
     qty: parse("1"),
     entryPrice: parse("50000"),
     isolatedMargin: parse("5000"),
+    costBasis: 0n,
     openedAt: T0,
     updatedAt: T0,
     ...overrides,

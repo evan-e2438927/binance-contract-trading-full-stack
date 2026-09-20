@@ -1,4 +1,4 @@
-import { divRound, type Fixed, type FillRole, type PositionMode } from "@binance-contract-trading-full-stack/shared";
+import { divRound, type Fixed, type FillRole, mul, type PositionMode } from "@binance-contract-trading-full-stack/shared";
 import { fee as feeOf, initialMargin, notional } from "./formulas";
 import { putAccount, putOrder, putPosition, removeOrder, removePosition } from "./journal";
 import { addToPosition, reducePosition, splitReverseFill } from "./position";
@@ -222,6 +222,11 @@ export function applyFill(
   let realizedPnl = 0n;
   let openQty = qty;
 
+  // 手续费先算出来：损益两平的累计成本要按平仓 / 开仓两段分摊（币安把每一笔手续费都算进分子）
+  const fee = feeOf(qty, price, role, state.config.fees);
+  // 买 +、卖 −：一个符号同时适用于开多 / 平多 / 开空 / 平空四种情况
+  const flowSign = order.side === "BUY" ? 1n : -1n;
+
   // ① 平仓部分。成交量超过仓位就是反手（只有单向模式会走到，双向模式的平仓方向单上面已经截断），
   //    用第 03 讲的 splitReverseFill 拆成"平掉全部仓位 + 剩余开反向仓"
   if (closeTarget && closable > 0n) {
@@ -235,10 +240,12 @@ export function applyFill(
       price,
     );
     realizedPnl = reduced.realizedPnl;
+    const closeFee = qty === 0n ? 0n : (fee * closeQty) / qty;
     const updated: Position = {
       ...closeTarget,
       qty: reduced.qty,
       isolatedMargin: closeTarget.isolatedMargin - reduced.releasedMargin,
+      costBasis: closeTarget.costBasis + closeFee + flowSign * mul(price, closeQty),
       updatedAt: ts,
     };
     events.push({ t: "positionUpdate", position: updated });
@@ -265,6 +272,8 @@ export function applyFill(
       );
     }
     const added = addToPosition(existing?.qty ?? 0n, existing?.entryPrice ?? 0n, openQty, price);
+    // 开仓那一段分到的手续费（反手时另一段已经跟着平掉的仓位一起消失了）
+    const openFee = qty === 0n ? 0n : fee - (fee * (qty - openQty)) / qty;
     const addedIsolatedMargin =
       setting.marginMode === "ISOLATED" ? initialMargin(openQty, price, setting.leverageNum) : 0n;
     const position: Position = {
@@ -276,6 +285,7 @@ export function applyFill(
       qty: added.qty,
       entryPrice: added.entryPrice,
       isolatedMargin: (existing?.isolatedMargin ?? 0n) + addedIsolatedMargin,
+      costBasis: (existing?.costBasis ?? 0n) + openFee + flowSign * mul(price, openQty),
       openedAt: existing?.openedAt ?? ts,
       updatedAt: ts,
     };
@@ -294,7 +304,7 @@ export function applyFill(
     price,
     qty,
     role,
-    fee: feeOf(qty, price, role, state.config.fees),
+    fee,
     realizedPnl,
     isLiquidation: false,
     ts,

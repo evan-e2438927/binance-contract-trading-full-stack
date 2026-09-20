@@ -107,6 +107,11 @@ export function direction(value: Decimal | null | undefined): "up" | "down" | "f
   return fixed > 0n ? "up" : fixed < 0n ? "down" : "flat";
 }
 
+/** bigint（定标 1e8）→ 十进制字符串，去掉尾随零。展示函数都吃字符串，算完要显示就过一道这个 */
+export function fromFixed(value: Fixed): string {
+  return trimDecimal(format(value, 8));
+}
+
 /** 去掉定标产生的尾随零："80715.20000000" → "80715.2"、"10.00000000" → "10"。给填进输入框、做 key 的值用 */
 export function trimDecimal(value: Decimal): string {
   if (!value.includes(".")) return value;

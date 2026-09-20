@@ -124,6 +124,13 @@ export interface Position {
   qty: Fixed; // 恒为非负，方向完全由 positionSide 决定
   entryPrice: Fixed; // 加权平均开仓价
   isolatedMargin: Fixed; // 仅逐仓有意义
+  /**
+   * 损益两平价的分子（币安 breakEvenPrice，FAQ "How to Visualize the Breakeven Price of Open Positions"，
+   * 2026-09-20 核对）：Σ开仓花的钱 + Σ手续费 − Σ平仓收回的钱。每笔成交按
+   * `+= 手续费 + 方向符号 × 成交价 × 数量`（买 +、卖 −）累加，仓位平完随仓位一起消失，下一轮从 0 开始。
+   * 损益两平价 = 本值 ÷ 有符号数量（多头 +qty、空头 −qty）。资金费不计入（币安也不计）。
+   */
+  costBasis: Fixed;
   openedAt: number; // 本轮开仓的时间戳（毫秒）
   updatedAt: number;
 }
@@ -406,6 +413,8 @@ export interface PositionView {
   maintMargin: Fixed | null;
   isolatedMargin: Fixed; // 全仓为 0
   liquidationPrice: Fixed | null; // null = 没有强平价，或缺标记价算不出来
+  breakEvenPrice: Fixed | null; // 损益两平价（币安 breakEvenPrice）：累计成本 ÷ 有符号数量，含手续费
+  marginRatio: Fixed | null; // 逐仓：本仓位维持保证金 ÷（逐仓保证金 + 未实现盈亏）；全仓：账户级全仓保证金率
   roe: Fixed | null; // 未实现盈亏 ÷ 按标记价的起始保证金（币安 FAQ ROI% 标记价口径），0.2 = 20%
   openedAt: number;
   updatedAt: number;

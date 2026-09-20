@@ -118,6 +118,7 @@ async function writeEvent(tx: DbExecutor, event: EngineEvent, ctx: PersistContex
         positionAmt,
         entryPrice: p.entryPrice,
         isolatedMargin: p.isolatedMargin,
+        costBasis: p.costBasis,
         openedAt: new Date(p.openedAt),
         updatedAt: new Date(p.updatedAt),
       };
@@ -132,6 +133,7 @@ async function writeEvent(tx: DbExecutor, event: EngineEvent, ctx: PersistContex
             positionAmt: row.positionAmt,
             entryPrice: row.entryPrice,
             isolatedMargin: row.isolatedMargin,
+            costBasis: row.costBasis,
             openedAt: row.openedAt,
             updatedAt: row.updatedAt,
           },

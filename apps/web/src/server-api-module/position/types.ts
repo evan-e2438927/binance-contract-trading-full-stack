@@ -35,6 +35,10 @@ export interface Position {
   isolatedMargin: Decimal;
   /** 预估强平价；null = 没有强平价，或缺标记价算不出来 */
   liquidationPrice: Decimal | null;
+  /** 损益两平价（币安 breakEvenPrice）：含手续费的成本价，价格到这里才不赚不赔；不含资金费 */
+  breakEvenPrice: Decimal | null;
+  /** 保证金比率：逐仓是本仓位的，全仓是账户级的全仓保证金率；缺标记价时为 null */
+  marginRatio: Decimal | null;
   /** 回报率 = 未实现盈亏 ÷ 按标记价的起始保证金，比例（0.2 = 20%）；缺标记价时为 null */
   roe: Decimal | null;
   /** 开仓时间 */

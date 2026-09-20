@@ -96,6 +96,8 @@ export function positionJson(mode: PositionMode, p: PositionView) {
     maintMargin: toDecimalOrNull(p.maintMargin),
     isolatedMargin: toDecimal(p.isolatedMargin),
     liquidationPrice: toDecimalOrNull(p.liquidationPrice),
+    breakEvenPrice: toDecimalOrNull(p.breakEvenPrice),
+    marginRatio: toDecimalOrNull(p.marginRatio),
     roe: toDecimalOrNull(p.roe),
     openedAt: p.openedAt,
     updatedAt: p.updatedAt,

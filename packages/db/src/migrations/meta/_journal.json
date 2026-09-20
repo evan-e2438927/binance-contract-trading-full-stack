@@ -50,6 +50,13 @@
       "when": 1789700009593,
       "tag": "0006_table_column_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789864719277,
+      "tag": "0007_position_cost_basis",
+      "breakpoints": true
     }
   ]
 }

@@ -49,6 +49,11 @@ export const positions = pgTable(
     isolatedMargin: bigint("isolated_margin", { mode: "bigint" })
       .notNull()
       .default(sql`0`), // 仅逐仓模式下有意义
+    // 损益两平价的分子（币安 breakEvenPrice）：Σ开仓花的钱 + Σ手续费 − Σ平仓收回的钱。
+    // 引擎每笔成交累加，仓位平完归零（见 packages/engine/src/types.ts 的 Position.costBasis）
+    costBasis: bigint("cost_basis", { mode: "bigint" })
+      .notNull()
+      .default(sql`0`),
     openedAt: timestamp("opened_at", { withTimezone: true }), // 首次开仓时间，qty 归零后不清空，留作历史记录
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

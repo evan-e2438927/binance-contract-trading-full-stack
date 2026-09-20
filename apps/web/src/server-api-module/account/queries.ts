@@ -64,6 +64,20 @@ export const fetchOrderHistory = (query: PageQuery = {}) =>
 /** GET /account/fills：成交记录，游标分页 */
 export const fetchFills = (query: PageQuery = {}) => request.get<Page<Fill>>("/account/fills", query);
 
+/** 给交易页「历史委托」tab 用：最近 N 条，成交 / 强平发生时由 ws-bridge 失效 */
+export const orderHistoryQuery = (query: PageQuery = {}) =>
+  queryOptions({
+    queryKey: [...accountKeys.orderHistory(query.symbol), query.limit ?? null] as const,
+    queryFn: () => fetchOrderHistory(query),
+  });
+
+/** 给交易页「历史成交」tab 用 */
+export const fillsQuery = (query: PageQuery = {}) =>
+  queryOptions({
+    queryKey: [...accountKeys.fills(query.symbol), query.limit ?? null] as const,
+    queryFn: () => fetchFills(query),
+  });
+
 /** GET /account/ledger：资金流水，游标分页 */
 export const fetchLedger = (query: LedgerQuery = {}) => request.get<Page<LedgerEntry>>("/account/ledger", query);
 

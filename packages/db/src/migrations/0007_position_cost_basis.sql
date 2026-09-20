@@ -1,0 +1,1 @@
+ALTER TABLE "positions" ADD COLUMN "cost_basis" bigint DEFAULT 0 NOT NULL;

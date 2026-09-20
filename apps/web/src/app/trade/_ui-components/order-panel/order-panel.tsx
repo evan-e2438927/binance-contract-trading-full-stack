@@ -1,15 +1,15 @@
 "use client";
 
-import { format, parse } from "@binance-contract-trading-full-stack/shared";
+import { parse } from "@binance-contract-trading-full-stack/shared";
 import { Checkbox } from "@binance-contract-trading-full-stack/ui/components/checkbox";
 import { cn } from "@binance-contract-trading-full-stack/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { formatDecimal, formatPrice, formatUsdt, PLACEHOLDER, trimDecimal } from "@/lib/format/number";
+import { formatDecimal, formatPrice, formatQty, formatUsdt, fromFixed, PLACEHOLDER } from "@/lib/format/number";
 import { notify } from "@/lib/toast/notify";
 import { symbolConfigQuery } from "@/server-api-module/account/queries";
-import type { TimeInForce } from "@/server-api-module/common/types";
+import type { OrderSide, TimeInForce } from "@/server-api-module/common/types";
 import type { SymbolSpec } from "@/server-api-module/market/types";
 import { placeOrder, previewOrder } from "@/server-api-module/order/mutations";
 import type { OrderPreview } from "@/server-api-module/order/types";
@@ -18,11 +18,13 @@ import { useAuthStore } from "@/stores/auth-store";
 import { useMarketStore } from "@/stores/market-store";
 import { useUiStore } from "@/stores/ui-store";
 
-import { buildPlaceOrderBody, type OrderTab } from "../../_lib/order-body";
+import { buildPlaceOrderBody, type OrderTab, positionSideOf } from "../../_lib/order-body";
 import { estimateOrder, qtyFromPercent } from "../../_lib/order-estimate";
 import { floorToTick, hasBlockingIssue, lotOf, validateOrderForm } from "../../_lib/order-validate";
+import { convertQtyInput, type QtyUnit, toBaseQty, toQuoteQty } from "../../_lib/qty-unit";
 import { useOrderFormStore } from "../../_stores/order-form-store";
 import { LeverageDialog, MarginModeDialog, PositionModeDialog } from "../dialogs/config-dialogs";
+import { ConfirmOrderDialog } from "../dialogs/confirm-order-dialog";
 import { ConfigButton, FieldAction, NumberField, PercentSlider } from "./fields";
 
 /**
@@ -62,66 +64,66 @@ export function OrderPanel({ spec }: { spec: SymbolSpec }) {
 
   const [dialog, setDialog] = useState<"leverage" | "margin" | "position" | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [preview, setPreview] = useState<OrderPreview | null>(null);
+  // 买、卖各一份预估（币安那样两个按钮各带一栏）
+  const [previews, setPreviews] = useState<{ BUY: OrderPreview | null; SELL: OrderPreview | null }>({
+    BUY: null,
+    SELL: null,
+  });
+  /** 点了买 / 卖按钮后弹确认框，确认了才真下单 */
+  const [confirming, setConfirming] = useState<OrderSide | null>(null);
   // 刚进页面时不要满屏红字：「请输入…」这类空值提示等用户碰过输入框（或点过下单）再显示
   const [touched, setTouched] = useState(false);
 
   const { data: config } = useQuery({ ...symbolConfigQuery(spec.symbol), enabled: loggedIn });
-  const leverageNum = config?.leverage ?? preview?.leverage ?? null;
+  const leverageNum = config?.leverage ?? previews.BUY?.leverage ?? null;
 
   const isMarket = form.tab === "MARKET" || (form.tab === "CONDITIONAL" && form.conditionalExec === "MARKET");
   const lot = useMemo(() => lotOf(spec, isMarket), [spec, isMarket]);
-  const allIssues = validateOrderForm({ values: form, spec, markPrice });
+  // 输入框可能是按 USDT 填的；校验、预估、下单一律用换算后的币数
+  const conversionPrice = isMarket ? markPrice : form.price || null;
+  const baseQty = toBaseQty(form.qty, form.qtyUnit, conversionPrice, lot);
+  const values = { ...form, qty: baseQty };
+  const allIssues = validateOrderForm({ values, spec, markPrice });
   const issues = touched ? allIssues : dropEmptyFieldHints(allIssues);
-  const estimatePrice = isMarket ? markPrice : form.price || null;
+  const estimatePrice = conversionPrice;
   const estimate = estimateOrder({
     price: estimatePrice,
-    qty: form.qty,
+    qty: baseQty,
     leverageNum: leverageNum ?? 0,
     takerFeeRate: spec.takerFeeRate,
   });
 
-  // 预估：输入停 300ms 后问服务端要「可开最大」和「成交后的强平价」
-  const previewKey = `${spec.symbol}|${form.side}|${form.openClose}|${isMarket ? "" : form.price}|${form.qty}|${leverageNum}|${positionMode}`;
+  // 预估：输入停 300ms 后问服务端要「可开最大」和「成交后的强平价」，买卖各要一份
+  const previewKey = `${spec.symbol}|${form.openClose}|${isMarket ? "" : form.price}|${baseQty}|${leverageNum}|${positionMode}`;
   const previewRef = useRef(previewKey);
   useEffect(() => {
     previewRef.current = previewKey;
     if (!loggedIn) {
-      setPreview(null);
+      setPreviews({ BUY: null, SELL: null });
       return;
     }
+    const ask = (side: OrderSide) =>
+      previewOrder({
+        symbol: spec.symbol,
+        side,
+        positionSide: positionSideOf(positionMode, side, form.openClose),
+        price: isMarket ? undefined : form.price || undefined,
+        qty: baseQty || undefined,
+      }).catch(() => null);
+
     const timer = setTimeout(async () => {
-      try {
-        const result = await previewOrder({
-          symbol: spec.symbol,
-          side: form.side,
-          positionSide:
-            positionMode === "ONE_WAY"
-              ? "BOTH"
-              : form.openClose === "OPEN"
-                ? form.side === "BUY"
-                  ? "LONG"
-                  : "SHORT"
-                : form.side === "BUY"
-                  ? "SHORT"
-                  : "LONG",
-          price: isMarket ? undefined : form.price || undefined,
-          qty: form.qty || undefined,
-        });
-        // 期间用户又改了输入，这次结果已经过时，丢掉
-        if (previewRef.current === previewKey) setPreview(result);
-      } catch {
-        if (previewRef.current === previewKey) setPreview(null);
-      }
+      const [buyPreview, sellPreview] = await Promise.all([ask("BUY"), ask("SELL")]);
+      // 期间用户又改了输入，这次结果已经过时，丢掉
+      if (previewRef.current === previewKey) setPreviews({ BUY: buyPreview, SELL: sellPreview });
     }, 300);
     return () => clearTimeout(timer);
-  }, [previewKey, loggedIn, spec.symbol, form.side, form.openClose, form.price, form.qty, isMarket, positionMode]);
+  }, [previewKey, loggedIn, spec.symbol, form.openClose, form.price, baseQty, isMarket, positionMode]);
 
-  const submit = async () => {
+  const submit = async (side: OrderSide) => {
     setTouched(true);
     const reference = form.workingType === "MARK_PRICE" ? markPrice : lastPrice;
     const body = buildPlaceOrderBody({
-      values: form,
+      values: { ...values, side },
       symbol: spec.symbol,
       positionMode,
       clientOrderId: `c-${Date.now()}-${orderSeqNum++}`,
@@ -137,6 +139,7 @@ export function OrderPanel({ spec }: { spec: SymbolSpec }) {
       await placeOrder(body);
       notify.success("下单成功");
       form.clearQty();
+      setConfirming(null);
       // 订单状态、仓位、余额都等 WS 推送更新，不手动改 store
     } catch (error) {
       notify.error(error);
@@ -146,10 +149,11 @@ export function OrderPanel({ spec }: { spec: SymbolSpec }) {
   };
 
   const percentNum = (() => {
-    if (!preview?.maxQty || !form.qty) return 0;
-    const max = parse(preview.maxQty);
+    const maxQty = previews[form.side]?.maxQty ?? previews.BUY?.maxQty ?? null;
+    if (!maxQty || !baseQty) return 0;
+    const max = parse(maxQty);
     if (max <= 0n) return 0;
-    const ratio = Number((parse(form.qty) * 100n) / max);
+    const ratio = Number((parse(baseQty) * 100n) / max);
     return [0, 25, 50, 75, 100].reduce(
       (best, step) => (Math.abs(step - ratio) < Math.abs(best - ratio) ? step : best),
       0,
@@ -157,7 +161,6 @@ export function OrderPanel({ spec }: { spec: SymbolSpec }) {
   })();
 
   const blocked = hasBlockingIssue(allIssues);
-  const buy = form.side === "BUY";
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-surface p-3.5">
@@ -203,30 +206,6 @@ export function OrderPanel({ spec }: { spec: SymbolSpec }) {
           ))}
         </div>
       )}
-
-      {/* 买 / 卖 */}
-      <div className="mt-3.5 flex h-[39.5px] shrink-0 overflow-hidden rounded-[6px] border">
-        <button
-          type="button"
-          onClick={() => form.set({ side: "BUY" })}
-          className={cn(
-            "flex-1 font-bold text-[13px] leading-[19.5px]",
-            buy ? "bg-up text-white" : "text-muted-foreground",
-          )}
-        >
-          买入/做多
-        </button>
-        <button
-          type="button"
-          onClick={() => form.set({ side: "SELL" })}
-          className={cn(
-            "flex-1 font-bold text-[13px] leading-[19.5px]",
-            buy ? "text-muted-foreground" : "bg-down text-white",
-          )}
-        >
-          卖出/做空
-        </button>
-      </div>
 
       <div className="flex flex-col gap-2.5 pt-3.5">
         <div className="flex items-center justify-between text-[11px]">
@@ -291,22 +270,43 @@ export function OrderPanel({ spec }: { spec: SymbolSpec }) {
           />
         )}
 
-        <NumberField
-          label={`数量 (${spec.baseAsset})`}
-          unit={spec.baseAsset}
-          placeholder={formatPrice("0", { tickSize: spec.stepSize })}
-          value={form.qty}
-          error={issues.qty}
-          onChange={(qty) => {
-            setTouched(true);
-            form.set({ qty });
-          }}
-        />
+        <div>
+          <NumberField
+            label={`数量 (${form.qtyUnit === "BASE" ? spec.baseAsset : spec.quoteAsset})`}
+            unit={form.qtyUnit === "BASE" ? spec.baseAsset : spec.quoteAsset}
+            placeholder={form.qtyUnit === "BASE" ? formatPrice("0", { tickSize: spec.stepSize }) : "0.00"}
+            value={form.qty}
+            error={issues.qty}
+            action={
+              <UnitSwitch
+                unit={form.qtyUnit}
+                baseAsset={spec.baseAsset}
+                quoteAsset={spec.quoteAsset}
+                onChange={(qtyUnit) =>
+                  form.set({ qtyUnit, qty: convertQtyInput(form.qty, form.qtyUnit, qtyUnit, conversionPrice, lot) })
+                }
+              />
+            }
+            onChange={(qty) => {
+              setTouched(true);
+              form.set({ qty });
+            }}
+          />
+          {/* 按 USDT 输入时把换算出来的币数显示出来：下单提交的是这个数 */}
+          {form.qtyUnit === "QUOTE" && form.qty.trim() && (
+            <p className="pt-1 text-[10px] text-muted-foreground leading-[15px]">
+              {baseQty ? `≈ ${formatQty(baseQty, spec)} ${spec.baseAsset}` : "还没有价格，暂时换算不了"}
+            </p>
+          )}
+        </div>
 
         <PercentSlider
           value={percentNum}
-          disabled={!preview?.maxQty}
-          onChange={(percent) => form.set({ qty: qtyFromPercent(preview?.maxQty ?? null, percent, lot) })}
+          disabled={!previews.BUY?.maxQty}
+          onChange={(percent) => {
+            const base = qtyFromPercent(previews[form.side]?.maxQty ?? previews.BUY?.maxQty ?? null, percent, lot);
+            form.set({ qty: form.qtyUnit === "BASE" ? base : toQuoteQty(base, conversionPrice) });
+          }}
         />
 
         {issues.warning && <p className="text-[10px] text-brand leading-[15px]">{issues.warning}</p>}
@@ -341,38 +341,67 @@ export function OrderPanel({ spec }: { spec: SymbolSpec }) {
           )}
         </div>
 
-        {/* 预估区 */}
+        {/* 预估区：只依赖输入的三项两边一样，放上面 */}
         <div className="flex flex-col gap-[3px] rounded-[5px] bg-background px-2.5 py-2 text-[11px] leading-[16.5px]">
           <EstimateRow
             label="名义价值"
-            value={estimate ? `${formatUsdt(bigintToString(estimate.notional))} USDT` : `0.00 USDT`}
+            value={estimate ? `${formatUsdt(fromFixed(estimate.notional))} USDT` : "0.00 USDT"}
           />
           <EstimateRow
             label="预估保证金"
-            value={estimate ? `${formatUsdt(bigintToString(estimate.margin))} USDT` : `0.00 USDT`}
+            value={estimate ? `${formatUsdt(fromFixed(estimate.margin))} USDT` : "0.00 USDT"}
           />
           <EstimateRow
             label="预估手续费"
-            value={estimate ? `${formatDecimal(bigintToString(estimate.fee), 4)} USDT` : "0.0000 USDT"}
-          />
-          <EstimateRow label="可开最大" value={preview?.maxQty ? `${preview.maxQty} ${spec.baseAsset}` : PLACEHOLDER} />
-          <EstimateRow
-            label="预估强平价"
-            value={preview?.liquidationPrice ? formatPrice(preview.liquidationPrice, spec) : PLACEHOLDER}
+            value={estimate ? `${formatDecimal(fromFixed(estimate.fee), 4)} USDT` : "0.0000 USDT"}
           />
         </div>
 
-        <SubmitButton
-          loggedIn={loggedIn}
-          matchingEnabled={matchingEnabled}
-          blocked={blocked}
-          submitting={submitting}
-          buy={buy}
-          baseAsset={spec.baseAsset}
-          onLogin={() => setLoginOpen(true)}
-          onSubmit={submit}
-        />
+        {/* 买 / 卖两个按钮并排，各自带这一侧的预估（08 T-06；设计稿是单按钮，用户 2026-09-20 定按币安做） */}
+        {loggedIn ? (
+          <div className="grid grid-cols-2 gap-2">
+            {(["BUY", "SELL"] as const).map((side) => (
+              <SideColumn
+                key={side}
+                side={side}
+                spec={spec}
+                preview={previews[side]}
+                disabled={!matchingEnabled || blocked || submitting}
+                disabledText={!matchingEnabled ? "行情中断，暂停交易" : null}
+                onClick={() => {
+                  setTouched(true);
+                  if (!hasBlockingIssue(allIssues)) setConfirming(side);
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setLoginOpen(true)}
+            className="w-full rounded-[6px] bg-brand py-2.5 font-bold text-[14px] text-black"
+          >
+            登录
+          </button>
+        )}
       </div>
+
+      {confirming && (
+        <ConfirmOrderDialog
+          open
+          onOpenChange={(open) => !open && setConfirming(null)}
+          side={confirming}
+          spec={spec}
+          values={values}
+          positionMode={positionMode}
+          leverageNum={leverageNum}
+          marginMode={config?.marginMode ?? null}
+          preview={previews[confirming]}
+          estimatePrice={estimatePrice}
+          submitting={submitting}
+          onConfirm={() => submit(confirming)}
+        />
+      )}
 
       {config && (
         <>
@@ -409,6 +438,31 @@ function dropEmptyFieldHints(issues: ReturnType<typeof validateOrderForm>) {
   return visible;
 }
 
+/** 数量输入框右侧的单位切换：币 ⇄ USDT（08 T-06） */
+function UnitSwitch({
+  unit,
+  baseAsset,
+  quoteAsset,
+  onChange,
+}: {
+  unit: QtyUnit;
+  baseAsset: string;
+  quoteAsset: string;
+  onChange: (unit: QtyUnit) => void;
+}) {
+  const next: QtyUnit = unit === "BASE" ? "QUOTE" : "BASE";
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(next)}
+      title={`改用 ${next === "BASE" ? baseAsset : quoteAsset} 输入`}
+      className="rounded-[3px] border px-1 text-[10px] text-muted-foreground leading-[14px] hover:border-brand/60 hover:text-foreground"
+    >
+      ⇄
+    </button>
+  );
+}
+
 function EstimateRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between">
@@ -418,55 +472,61 @@ function EstimateRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SubmitButton({
-  loggedIn,
-  matchingEnabled,
-  blocked,
-  submitting,
-  buy,
-  baseAsset,
-  onLogin,
-  onSubmit,
+/**
+ * 一侧的下单按钮 + 这一侧的预估（强平价、保证金、可开最大），排版照币安：
+ * 两个按钮并排，数字各算各的——做多和做空的成本、强平价本来就不一样。
+ */
+function SideColumn({
+  side,
+  spec,
+  preview,
+  disabled,
+  disabledText,
+  onClick,
 }: {
-  loggedIn: boolean;
-  matchingEnabled: boolean;
-  blocked: boolean;
-  submitting: boolean;
-  buy: boolean;
-  baseAsset: string;
-  onLogin: () => void;
-  onSubmit: () => void;
+  side: OrderSide;
+  spec: SymbolSpec;
+  preview: OrderPreview | null;
+  disabled: boolean;
+  disabledText: string | null;
+  onClick: () => void;
 }) {
-  if (!loggedIn) {
-    return (
+  const buy = side === "BUY";
+  return (
+    <div className="flex flex-col gap-1.5">
       <button
         type="button"
-        onClick={onLogin}
-        className="w-full rounded-[6px] bg-brand py-2.5 font-bold text-[14px] text-black"
+        disabled={disabled}
+        onClick={onClick}
+        className={cn(
+          "w-full rounded-[6px] py-2.5 font-bold text-[13px] text-white transition-opacity",
+          buy ? "bg-up" : "bg-down",
+          disabled && "cursor-not-allowed opacity-50",
+        )}
       >
-        登录
+        {disabledText ?? (buy ? "买入/做多" : "卖出/做空")}
       </button>
-    );
-  }
-  const disabled = !matchingEnabled || blocked || submitting;
-  const text = !matchingEnabled
-    ? "行情中断，暂停交易"
-    : submitting
-      ? "提交中…"
-      : `${buy ? "买入" : "卖出"} ${baseAsset}`;
+      <div className="flex flex-col gap-0.5 text-[10px] text-muted-foreground leading-[15px]">
+        <SideLine
+          label="强平价"
+          value={preview?.liquidationPrice ? formatPrice(preview.liquidationPrice, spec) : PLACEHOLDER}
+        />
+        <SideLine label="保证金" value={preview?.cost ? `${formatUsdt(preview.cost)} USDT` : PLACEHOLDER} />
+        <SideLine
+          label="可开"
+          value={preview?.maxQty ? `${formatQty(preview.maxQty, spec)} ${spec.baseAsset}` : PLACEHOLDER}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SideLine({ label, value }: { label: string; value: string }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onSubmit}
-      className={cn(
-        "w-full rounded-[6px] py-2.5 font-bold text-[14px] text-white transition-opacity",
-        buy ? "bg-up" : "bg-down",
-        disabled && "cursor-not-allowed opacity-50",
-      )}
-    >
-      {text}
-    </button>
+    <div className="flex items-center justify-between gap-1">
+      <span>{label}</span>
+      <span className="num truncate font-mono text-foreground">{value}</span>
+    </div>
   );
 }
 
@@ -474,10 +534,5 @@ function SubmitButton({
 function snapTick(value: string, spec: SymbolSpec): string {
   if (!value.trim()) return value;
   const snapped = floorToTick(parse(value), parse(spec.tickSize));
-  return bigintToString(snapped);
-}
-
-/** bigint → 十进制字符串（展示函数都吃字符串） */
-function bigintToString(value: bigint): string {
-  return trimDecimal(format(value, 8));
+  return fromFixed(snapped);
 }

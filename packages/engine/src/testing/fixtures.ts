@@ -216,6 +216,8 @@ export function testPosition(overrides: Partial<Position> = {}): Position {
     qty: parse("1"),
     entryPrice: parse("50000"),
     isolatedMargin: 0n,
+    // 1 BTC @ 50,000 买进来、Taker 0.05%：50,000 + 25
+    costBasis: parse("50025"),
     openedAt: T0,
     updatedAt: T0,
     ...overrides,

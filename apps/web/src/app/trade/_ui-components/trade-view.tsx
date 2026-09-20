@@ -2,16 +2,17 @@
 
 import Link from "next/link";
 
-import { ModulePlaceholder } from "@/components/module-placeholder";
 import { useSymbolMarket } from "@/hooks/use-symbol-market";
 import { useSymbols } from "@/hooks/use-symbols";
 import { DEFAULT_SYMBOL } from "@/lib/config/constants";
 import type { SymbolSpec } from "@/server-api-module/market/types";
 
+import { AccountPanel } from "./account-panel/account-panel";
 import { ChartPanel } from "./chart/chart-panel";
 import { OrderBook } from "./order-book/order-book";
 import { OrderPanel } from "./order-panel/order-panel";
 import { RecentTrades } from "./recent-trades/recent-trades";
+import { RecordsPanel } from "./records/records-panel";
 import { SymbolBar } from "./symbol-bar/symbol-bar";
 import { usePriceTitle } from "./symbol-bar/use-price-title";
 
@@ -54,13 +55,10 @@ function TradeLayout({ spec }: { spec: SymbolSpec }) {
         <OrderPanel spec={spec} />
       </div>
       <RecentTrades spec={spec} />
-      <ModulePlaceholder
-        id="T-07"
-        name="仓位 / 委托表格区"
-        note="仓位（含一键平仓、调整保证金）· 当前委托（含前方排队、撤单）· 历史委托 · 成交"
-        className="col-span-2"
-      />
-      <ModulePlaceholder id="T-08" name="账户概览" note="保证金率 · 维持保证金 · 保证金余额 · 钱包余额 · 未实现盈亏" />
+      <div className="col-span-2 min-h-0">
+        <RecordsPanel symbol={spec.symbol} />
+      </div>
+      <AccountPanel />
     </div>
   );
 }

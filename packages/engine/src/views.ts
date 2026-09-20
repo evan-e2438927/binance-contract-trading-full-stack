@@ -96,11 +96,40 @@ export function positionViews(state: EngineState, accountId: string): PositionVi
       maintMargin: mark === null ? null : positionMaintMargin(state, position, mark),
       isolatedMargin: position.marginMode === "ISOLATED" ? position.isolatedMargin : 0n,
       liquidationPrice: liquidationPriceOf(state, position, positions),
+      breakEvenPrice: breakEvenPriceOf(position),
+      marginRatio: positionMarginRatio(state, position, mark),
       roe: pnl === null || im === null || im === 0n ? null : divRound(pnl, im),
       openedAt: position.openedAt,
       updatedAt: position.updatedAt,
     };
   });
+}
+
+/**
+ * 仓位的保证金比率 = 维持保证金 ÷ 保证金余额。
+ * 逐仓：分母是这个仓位自己的保证金 + 它的未实现盈亏——爆的只是它。
+ * 全仓：这个仓位单独算没有意义（全账户一起扛），给账户级的全仓保证金率，和 T-08 的那个是同一个数。
+ * 缺标记价时为 null。
+ */
+function positionMarginRatio(state: EngineState, position: Readonly<Position>, mark: Fixed | null): Fixed | null {
+  if (mark === null) return null;
+  const maint = positionMaintMargin(state, position, mark);
+  if (position.marginMode === "ISOLATED") {
+    const balance = position.isolatedMargin + unrealizedPnl(position, mark);
+    return balance <= 0n ? null : marginRatio(maint, balance);
+  }
+  const view = accountView(state, position.accountId);
+  return view?.marginRatio ?? null;
+}
+
+/**
+ * 损益两平价（币安 breakEvenPrice）= 累计成本 ÷ 有符号数量。含手续费、不含资金费（和币安一致）。
+ * 数量为 0 的仓位不会出现在视图里；真出现了返回 null，不做除零。
+ */
+function breakEvenPriceOf(position: Readonly<Position>): Fixed | null {
+  if (position.qty === 0n) return null;
+  const signedQty = position.positionSide === "SHORT" ? -position.qty : position.qty;
+  return divRound(position.costBasis, signedQty);
 }
 
 /**

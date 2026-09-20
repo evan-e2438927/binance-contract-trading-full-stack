@@ -1,6 +1,6 @@
 import { type Fixed, format, mul, parse } from "@binance-contract-trading-full-stack/shared";
 
-import { trimDecimal } from "@/lib/format/number";
+import { decimalsOf, formatDecimal, fromFixed, trimDecimal } from "@/lib/format/number";
 import type { SymbolSpec } from "@/server-api-module/market/types";
 
 import type { OrderFormValues } from "./order-body";
@@ -123,7 +123,8 @@ export function validateOrderForm({ values, spec, markPrice }: ValidateArgs): Fo
     const up = spec.percentPriceUp ? mul(mark, parse(spec.percentPriceUp)) : null;
     const down = spec.percentPriceDown ? mul(mark, parse(spec.percentPriceDown)) : null;
     if ((up !== null && priceFixed > up) || (down !== null && priceFixed < down)) {
-      issues.warning = `委托价偏离标记价 ${show(mark)} 太多，这一单会被拒`;
+      // 价格按币对精度显示（全站规则），不要把定标后的 8 位小数抖出来
+      issues.warning = `委托价偏离标记价 ${formatDecimal(fromFixed(mark), decimalsOf(spec.tickSize))} 太多，这一单会被拒`;
     }
   }
 

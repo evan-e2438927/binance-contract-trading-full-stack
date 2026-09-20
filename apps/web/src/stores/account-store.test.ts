@@ -47,6 +47,8 @@ const position = (symbol: string, positionAmt: string, openedAt = 1): Position =
   isolatedMargin: "0",
   liquidationPrice: null,
   roe: "0",
+  breakEvenPrice: null,
+  marginRatio: null,
   openedAt,
   updatedAt: openedAt,
 });
