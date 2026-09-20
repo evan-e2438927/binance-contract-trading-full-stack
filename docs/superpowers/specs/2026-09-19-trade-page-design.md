@@ -205,8 +205,9 @@ app/trade/
 3. **M03**：`chart/*`、`tv-datafeed.ts`，自定义工具栏
 4. **B1 + B2 → M07**：`order-panel/*`、T-09 / T-10 / G-07、`order-validate` / `order-estimate` / `order-body`
 5. **B3 → M08**：`records/*`、`account-panel`、T-11 / T-12 / T-14 / G-08、止盈止损弹窗前两个 tab
-6. **第 15 讲 → 跟踪委托 tab**
-7. **M09**：`trade-lines.tsx`
+6. **S01 行情层升级**：服务端改用增量深度流维护完整盘口（见 `docs/frontend/README.md` S01）
+7. **第 15 讲 → 跟踪委托 tab**
+8. **M09**：`trade-lines.tsx`
 
 ## 八、验收
 

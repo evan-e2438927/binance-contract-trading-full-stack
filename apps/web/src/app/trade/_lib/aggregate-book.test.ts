@@ -68,8 +68,8 @@ describe("aggregateSide", () => {
 });
 
 describe("stepOptions", () => {
-  it("给出 tickSize 的 1 / 10 / 100 倍", () => {
-    expect(stepOptions("0.1")).toEqual(["0.1", "1", "10"]);
-    expect(stepOptions("0.001")).toEqual(["0.001", "0.01", "0.1"]);
+  it("给出五档：tickSize 的 1 / 10 / 100 / 1000 / 10000 倍（和币安网页版一致）", () => {
+    expect(stepOptions("0.1")).toEqual(["0.1", "1", "10", "100", "1000"]);
+    expect(stepOptions("0.001")).toEqual(["0.001", "0.01", "0.1", "1", "10"]);
   });
 });

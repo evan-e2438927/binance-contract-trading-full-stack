@@ -8,8 +8,9 @@ import {
 } from "@binance-contract-trading-full-stack/ui/components/dropdown-menu";
 import { cn } from "@binance-contract-trading-full-stack/ui/lib/utils";
 import { ChevronDownIcon } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { decimalsOf, formatDecimal } from "@/lib/format/number";
 import type { BookLevel, SymbolSpec } from "@/server-api-module/market/types";
 import { useMarketStore } from "@/stores/market-store";
 import { useUiStore } from "@/stores/ui-store";
@@ -20,6 +21,9 @@ import { BookMid } from "./book-mid";
 import { BookRow } from "./book-row";
 import { BookViewToggle } from "./book-view-toggle";
 
+/** 合并到一侧只剩这么少行时，底部出提示 */
+const MERGED_HINT_ROWS = 3;
+
 /** T-04 盘口（Figma 4:5076）：卖盘 20 档（倒序）· 最新价 / 标记价 · 买盘 20 档 */
 export function OrderBook({ spec }: { spec: SymbolSpec }) {
   const view = useUiStore((s) => s.bookView);
@@ -27,6 +31,10 @@ export function OrderBook({ spec }: { spec: SymbolSpec }) {
   const step = useUiStore((s) => s.bookStep[spec.symbol]) ?? spec.tickSize;
   const setStep = useUiStore((s) => s.setBookStep);
   const steps = useMemo(() => stepOptions(spec.tickSize), [spec.tickSize]);
+  // 聚合到只剩几行时说明原因：我们只有 20 档，不是数据掉了（02 第九节失真点 #4）
+  const [askRows, setAskRows] = useState(0);
+  const [bidRows, setBidRows] = useState(0);
+  const merged = step !== spec.tickSize && Math.min(askRows, bidRows) <= MERGED_HINT_ROWS;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
@@ -36,7 +44,7 @@ export function OrderBook({ spec }: { spec: SymbolSpec }) {
           <BookViewToggle view={view} onChange={setView} />
           <DropdownMenu>
             <DropdownMenuTrigger className="flex items-center gap-0.5 rounded-[3px] px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-elevated">
-              {step}
+              {formatDecimal(step, decimalsOf(step))}
               <ChevronDownIcon className="size-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -46,7 +54,7 @@ export function OrderBook({ spec }: { spec: SymbolSpec }) {
                   onClick={() => setStep(spec.symbol, option)}
                   className={cn("num justify-end font-mono text-[11px]", option === step && "text-brand")}
                 >
-                  {option}
+                  {formatDecimal(option, decimalsOf(option))}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -61,10 +69,17 @@ export function OrderBook({ spec }: { spec: SymbolSpec }) {
       </div>
 
       <div className="num flex min-h-0 flex-1 flex-col">
-        {view !== "bids" && <BookSideRows spec={spec} side="ask" step={step} align="end" />}
-        <BookMid spec={spec} />
-        {view !== "asks" && <BookSideRows spec={spec} side="bid" step={step} align="start" />}
+        {view !== "bids" && <BookSideRows spec={spec} side="ask" step={step} align="end" onRowCount={setAskRows} />}
+        {/* 按币对重新挂载：新币对的价格不能和旧币对的上一笔比较着色 */}
+        <BookMid key={spec.symbol} spec={spec} />
+        {view !== "asks" && <BookSideRows spec={spec} side="bid" step={step} align="start" onRowCount={setBidRows} />}
       </div>
+
+      {merged && (
+        <p className="shrink-0 border-t px-3 py-1 text-[10px] text-muted-foreground leading-[15px]">
+          本平台只用币安 20 档真实盘口撮合，精度放大后档位会合并成很少几行
+        </p>
+      )}
     </div>
   );
 }
@@ -78,17 +93,23 @@ function BookSideRows({
   side,
   step,
   align,
+  onRowCount,
 }: {
   spec: SymbolSpec;
   side: BookSide;
   step: string;
   align: "start" | "end";
+  onRowCount: (count: number) => void;
 }) {
   const levels = useMarketStore((s) => (side === "bid" ? s.books[spec.symbol]?.bids : s.books[spec.symbol]?.asks));
   const fillPrice = useOrderFormStore((s) => s.fillPrice);
   const fillQty = useOrderFormStore((s) => s.fillQty);
   const rows = useMemo(() => aggregateSide((levels ?? []) as BookLevel[], step, side), [levels, step, side]);
   const display = side === "ask" ? [...rows].reverse() : rows;
+
+  useEffect(() => {
+    onRowCount(rows.length);
+  }, [rows.length, onRowCount]);
 
   return (
     <div

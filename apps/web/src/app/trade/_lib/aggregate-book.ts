@@ -66,8 +66,10 @@ export function aggregateSide(levels: readonly BookLevel[], step: string, side: 
   }));
 }
 
-/** 精度选项：tickSize 的 1 / 10 / 100 倍（08 T-04） */
+/** 精度选项：tickSize 的 1 / 10 / 100 / 1000 / 10000 倍（对齐币安网页版的五档） */
+const STEP_MULTIPLIERS = [1n, 10n, 100n, 1000n, 10_000n];
+
 export function stepOptions(tickSize: string): string[] {
   const base = parse(tickSize);
-  return [base, base * 10n, base * 100n].map(fixedToString);
+  return STEP_MULTIPLIERS.map((multiplier) => fixedToString(base * multiplier));
 }

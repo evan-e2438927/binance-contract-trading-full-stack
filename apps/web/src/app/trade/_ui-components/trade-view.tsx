@@ -8,6 +8,7 @@ import { useSymbols } from "@/hooks/use-symbols";
 import { DEFAULT_SYMBOL } from "@/lib/config/constants";
 import type { SymbolSpec } from "@/server-api-module/market/types";
 
+import { ChartPanel } from "./chart/chart-panel";
 import { OrderBook } from "./order-book/order-book";
 import { RecentTrades } from "./recent-trades/recent-trades";
 import { SymbolBar } from "./symbol-bar/symbol-bar";
@@ -44,12 +45,9 @@ function TradeLayout({ spec }: { spec: SymbolSpec }) {
       <div className="col-span-3">
         <SymbolBar key={spec.symbol} spec={spec} />
       </div>
-      <ModulePlaceholder
-        id="T-03"
-        name="K 线图"
-        note="TradingView Charting Library：周期切换、指标、图上画开仓线 / 强平线 / 挂单线"
-        className="row-span-2"
-      />
+      <div className="row-span-2 min-h-0">
+        <ChartPanel spec={spec} />
+      </div>
       <OrderBook spec={spec} />
       <ModulePlaceholder
         id="T-06"
