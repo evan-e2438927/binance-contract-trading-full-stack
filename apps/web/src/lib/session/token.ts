@@ -10,7 +10,15 @@
 
 const STORAGE_KEY = "bct.token";
 
-type Listener = (token: string | null) => void;
+/**
+ * token 为什么变了：
+ * - login  三种方式之一登录成功
+ * - logout 用户自己点退出
+ * - expired 服务端说这个 token 不认了（REST 401 或 WS TOKEN_EXPIRED）——这一种要提示用户
+ */
+export type TokenChangeReason = "login" | "logout" | "expired";
+
+type Listener = (token: string | null, reason: TokenChangeReason) => void;
 
 let current: string | null = null;
 let loaded = false;
@@ -31,7 +39,7 @@ export function getToken(): string | null {
   return load();
 }
 
-export function setToken(token: string | null): void {
+export function setToken(token: string | null, reason: TokenChangeReason = token ? "login" : "logout"): void {
   load();
   if (token === current) return;
   current = token;
@@ -41,10 +49,10 @@ export function setToken(token: string | null): void {
   } catch {
     // 存不进去就只留在内存里，刷新后需要重新登录
   }
-  for (const listener of listeners) listener(token);
+  for (const listener of listeners) listener(token, reason);
 }
 
-/** 订阅 token 变化（登录 / 登出 / 401 被清），返回退订函数 */
+/** 订阅 token 变化（登录 / 登出 / 被服务端判过期），返回退订函数 */
 export function onTokenChange(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);

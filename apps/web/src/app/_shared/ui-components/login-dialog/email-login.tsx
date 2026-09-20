@@ -2,11 +2,12 @@
 
 import { cn } from "@binance-contract-trading-full-stack/ui/lib/utils";
 import { type FormEvent, useState } from "react";
-import { toast } from "sonner";
+
 import { z } from "zod";
 
 import { toApiError } from "@/lib/axios-client/api-error";
 import { INITIAL_BALANCE_DISPLAY } from "@/lib/config/constants";
+import { notify } from "@/lib/toast/notify";
 import { sendEmailCode, verifyEmailCode } from "@/server-api-module/auth/mutations";
 import { useAuthStore } from "@/stores/auth-store";
 import { useUiStore } from "@/stores/ui-store";
@@ -67,7 +68,7 @@ export function EmailLogin() {
     try {
       const result = await verifyEmailCode(sentTo, code);
       await login(result.token);
-      if (result.account.isNew) toast.success(`开户成功，已发放 ${INITIAL_BALANCE_DISPLAY} USDT 模拟资金`);
+      if (result.account.isNew) notify.success(`开户成功，已发放 ${INITIAL_BALANCE_DISPLAY} USDT 模拟资金`);
       setLoginOpen(false);
     } catch (e) {
       setError(toApiError(e).message);

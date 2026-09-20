@@ -48,7 +48,7 @@ export function toApiError(error: unknown): ApiError {
   const body = response.data as Partial<Envelope<unknown>> | undefined;
   if (body && body.ok === false && body.error) {
     const { code, message } = body.error;
-    if (AUTH_ERROR_CODES.has(code) && getToken()) setToken(null);
+    if (AUTH_ERROR_CODES.has(code) && getToken()) setToken(null, "expired");
     const retryAfter = Number(response.headers["retry-after"]);
     return new ApiError(code, message, response.status, Number.isFinite(retryAfter) ? retryAfter * 1000 : null);
   }

@@ -100,9 +100,9 @@ M13 整体验收：最后
 - [x] 行情降级横幅：服务端行情"连接中"和"中断"两种文案；出现时全站禁止下单
 - [x] 强平通知弹窗：收到强平推送就弹，多条排队、逐条确认
 - [x] 404 页、币对不存在页
-- [ ] Toast 统一封装：成功 / 业务错误 / 系统错误（带"重试"），`ApiError.retryable` 决定是否显示重试
+- [x] Toast 统一封装 `lib/toast/notify.ts`：成功 / 业务错误 / 系统错误（带"重试"），`ApiError.retryable` 决定是否显示重试；组件不再直接 import sonner
 - [ ] 强平弹窗的"查看详情"跳到历史记录的强平 tab（等 M10）
-- [ ] 全局错误边界：页面渲染崩了显示兜底页，不白屏
+- [x] 全局错误边界：`app/error.tsx`（页面崩了给重试 + 回首页）、`app/global-error.tsx`（根布局崩了的极简兜底）
 
 **数据**：WS `market` 频道 → `feedStatus` / `matchingEnabled`；WS `liquidation` 频道 → `account-store.liquidationQueue`
 
@@ -222,7 +222,7 @@ M13 整体验收：最后
 - [x] 登录态恢复：刷新页面用本地 token 调 `/auth/me`，失败只回到未登录，不自动弹登录
 - [x] 退出登录：清 token、清账户数据、WS 断开重连（丢掉私有订阅）
 - [ ] **邮箱登录**：发验证码 → 60 秒倒计时 → 输入 6 位验证码登录；错误次数、过期、频率限制按服务端返回的中文显示（2026-09-19 已实现，Figma 5:7251；格式校验、发送失败提示已在浏览器验证；**收码登录成功待用户用自己的邮箱验收**，本地 Resend 是测试发件地址，只能发给账户本人）
-- [ ] **钱包登录**（Reown AppKit，EVM + Solana；弹窗样式已按 Figma 5:6852 做，点击提示「即将开放」）：
+- [ ] **钱包登录**（Reown AppKit，EVM + Solana；弹窗样式已按 Figma 5:6852 做，点击提示「即将开放」）——**等用户申请 Reown Project ID**（2026-09-20 用户定：他先申请，拿到后一次做完）：
   - 连接钱包 → 拿地址和链 → `POST /auth/nonce` → 钱包签名 message → `POST /auth/verify` → token
   - 用户在钱包里拒绝签名、nonce 过期、签名校验失败都要有提示
   - 退出登录**不**断开钱包
@@ -230,7 +230,7 @@ M13 整体验收：最后
   - 需要环境变量 `NEXT_PUBLIC_REOWN_PROJECT_ID`（在 cloud.reown.com 免费注册）
 - [ ] 账户菜单：登录方式 + 标识（地址缩写 / 脱敏邮箱）、余额、昵称；菜单项接到 M06（样式和余额已做，菜单项等 M06）
 - [x] 新用户（`isNew`）首次登录给一个欢迎提示："已发放 10,000 USDT 模拟资金"
-- [ ] token 过期（WS 推 `TOKEN_EXPIRED` 或接口 401）：退回未登录 + Toast 提示
+- [x] token 过期（WS 推 `TOKEN_EXPIRED` 或接口 401）：退回未登录 + Toast 提示。`setToken` 带上原因（login / logout / expired），只有 expired 才提示，用户自己点退出不提示
 
 **数据**：`/auth/nonce`、`/auth/verify`、`/auth/email/code`、`/auth/email/verify`、`/auth/google`、`/auth/me`
 

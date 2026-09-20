@@ -1,6 +1,6 @@
 "use client";
 
-import { toast } from "sonner";
+import { notify } from "@/lib/toast/notify";
 
 import { PRIMARY_BUTTON } from "./styles";
 
@@ -10,7 +10,7 @@ import { PRIMARY_BUTTON } from "./styles";
  */
 export function WalletLogin() {
   return (
-    <button type="button" className={PRIMARY_BUTTON} onClick={() => toast.info("钱包登录即将开放")}>
+    <button type="button" className={PRIMARY_BUTTON} onClick={() => notify.info("钱包登录即将开放")}>
       <span aria-hidden className="text-[18px] leading-[27px]">
         🔗
       </span>

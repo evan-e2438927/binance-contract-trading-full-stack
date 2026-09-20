@@ -2,9 +2,10 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { toast } from "sonner";
 
-import { getToken, onTokenChange } from "@/lib/session/token";
+import { ApiError } from "@/lib/axios-client/api-error";
+import { getToken, onTokenChange, setToken } from "@/lib/session/token";
+import { notify } from "@/lib/toast/notify";
 import { wsClient } from "@/lib/ws-client/instance";
 import { systemChannels, type WsErrorPayload } from "@/lib/ws-client/protocol";
 import { accountKeys } from "@/server-api-module/account/queries";
@@ -77,20 +78,20 @@ export function WsBridge() {
         void queryClient.invalidateQueries({ queryKey: accountKeys.liquidations });
       }),
       wsClient.on<WsErrorPayload>(systemChannels.error, ({ d }) => {
-        if (d.code === "TOKEN_EXPIRED") {
-          useAuthStore.getState().logout();
-          toast.error(d.message);
-        }
+        // 提示由下面的 onTokenChange 统一发，这里只负责把本地 token 作废
+        if (d.code === "TOKEN_EXPIRED") setToken(null, "expired");
       }),
 
-      onTokenChange((token) => {
+      onTokenChange((token, reason) => {
         wsClient.setToken(token);
         if (token) {
           rehydrate();
-        } else {
-          account.clear();
-          queryClient.removeQueries({ queryKey: accountKeys.all });
+          return;
         }
+        account.clear();
+        queryClient.removeQueries({ queryKey: accountKeys.all });
+        // 过期是"被动登出"，要说一声；用户自己点退出就不用了
+        if (reason === "expired") notify.error(new ApiError("TOKEN_EXPIRED", "登录已过期，请重新登录", 401));
       }),
     );
 
