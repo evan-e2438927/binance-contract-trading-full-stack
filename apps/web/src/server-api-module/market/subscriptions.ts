@@ -9,8 +9,11 @@ import type { KlineInterval, KlinePush, MarketStatusPush, OrderBook, TickerPush,
 export const marketChannels = {
   /** 行情源状态 */
   market: "market",
-  /** 盘口：20 档全量快照 */
-  depth: (symbol: string) => `depth:${symbol}`,
+  /**
+   * 盘口：服务端按精度聚合好的 20 行全量快照（2026-09-20）。
+   * 不传 step 走老写法，服务端按该币对 tickSize（最细）聚合。
+   */
+  depth: (symbol: string, step?: string) => (step ? `depth:${symbol}:${step}` : `depth:${symbol}`),
   /** 最新成交 */
   trade: (symbol: string) => `trade:${symbol}`,
   /** 价格：约 1 秒一条 */
@@ -23,9 +26,9 @@ export const marketChannels = {
 export const onMarketStatus = (handler: (status: MarketStatusPush) => void) =>
   wsClient.on<MarketStatusPush>(marketChannels.market, ({ d }) => handler(d));
 
-/** 监听盘口 */
-export const onDepth = (symbol: string, handler: (book: OrderBook) => void) =>
-  wsClient.on<OrderBook>(marketChannels.depth(symbol), ({ d }) => handler(d));
+/** 监听盘口。step 要和 subscribe 时用的一致，否则收不到 */
+export const onDepth = (symbol: string, step: string | undefined, handler: (book: OrderBook) => void) =>
+  wsClient.on<OrderBook>(marketChannels.depth(symbol, step), ({ d }) => handler(d));
 
 /** 监听最新成交 */
 export const onTrade = (symbol: string, handler: (trade: Trade) => void) =>

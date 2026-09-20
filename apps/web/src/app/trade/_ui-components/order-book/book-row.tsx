@@ -14,6 +14,12 @@ import type { BookSide, BookRow as Row } from "../../_lib/aggregate-book";
  * memo + 价格做 key：一帧只重渲染数量变了的那几行。
  * 背景条宽度走 CSS 变量，不每次生成新的 style 对象（05 第 9 节）。
  */
+/**
+ * 一行的高度（px）。order-book.tsx 要用它算「这块高度能放下几整行」，
+ * 所以必须导出——两边各写一份迟早对不上（2026-09-20）。
+ */
+export const BOOK_ROW_HEIGHT = 20.5;
+
 export const BookRow = memo(function BookRow({
   row,
   side,

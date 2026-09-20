@@ -91,9 +91,12 @@ const testPosition = (overrides: Partial<Position> = {}): Position => ({
 function setup() {
   const publicMsgs: { channel: string; data: any }[] = [];
   const privateMsgs: { accountId: string; channel: string; data: any }[] = [];
+  // 假装这些 depth 频道有人订（publisher 只给被订阅的精度做聚合）
+  const subscribed = new Set<string>(["depth:BTCUSDT"]);
   const hub = {
     publish: (channel: string, data: unknown) => publicMsgs.push({ channel, data }),
     publishToAccount: (accountId: string, channel: string, data: unknown) => privateMsgs.push({ accountId, channel, data }),
+    activeChannels: (prefix: string) => [...subscribed].filter((c) => c.startsWith(prefix)),
   } as unknown as WsHub;
   const marketState = createMarketState();
   const publisher = createWsPublisher({
@@ -101,15 +104,25 @@ function setup() {
     engine: { accountView: (id: string) => accountView(id), positionViews: () => [positionView()] },
     marketState,
     positionModeOf: () => "ONE_WAY",
+    tickSizeOf: () => "0.1",
   });
-  return { publisher, publicMsgs, privateMsgs, marketState };
+  return { publisher, publicMsgs, privateMsgs, marketState, subscribed };
 }
 
 describe("WebSocket 推送", () => {
   it("公共频道：盘口、成交、K 线、ticker（跟着标记价推送走，1 秒一条）", () => {
     const { publisher, publicMsgs, marketState } = setup();
     publisher.onMarketEvent({ t: "book", symbol: "BTCUSDT", bids: [{ price: parse("49999.9"), qty: parse("1.5") }], asks: [{ price: parse("50000"), qty: parse("2") }], ts: T });
-    expect(publicMsgs.at(-1)).toEqual({ channel: "depth:BTCUSDT", data: { bids: [["49999.9", "1.5"]], asks: [["50000", "2"]], updateTime: T } });
+    // 服务端已经聚合好（2026-09-20）：不带精度的老频道按 tickSize 0.1 算，带累计量和背景条百分比
+    expect(publicMsgs.at(-1)).toEqual({
+      channel: "depth:BTCUSDT",
+      data: {
+        step: "0.1",
+        bids: [{ price: "49999.9", qty: "1.5", cumulative: "1.5", percentNum: 100 }],
+        asks: [{ price: "50000", qty: "2", cumulative: "2", percentNum: 100 }],
+        updateTime: T,
+      },
+    });
 
     const trade = { t: "trade" as const, symbol: "BTCUSDT", tradeId: 7, price: parse("50050"), qty: parse("0.3"), buyerIsMaker: true, ts: T + 1 };
     marketState.onEvent(trade);

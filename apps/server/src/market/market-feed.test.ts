@@ -91,13 +91,13 @@ describe("行情状态", () => {
     expect(statuses).toEqual(["ready"]);
   });
 
-  it("★ S01：先收到增量 → 去拉一份 500 档快照 → 合成完整盘口发给引擎", async () => {
+  it("★ S01：先收到增量 → 去拉一份 1000 档快照 → 合成完整盘口发给引擎", async () => {
     const { conn, openBoth, events, snapshotCalls } = setup(["BTCUSDT"]);
     openBoth();
     conn("public").onMessage(depthDiff("btcusdt"));
     // 还没有快照：先缓冲，不发盘口
     expect(events.some((e) => e.t === "book")).toBe(false);
-    expect(snapshotCalls).toEqual([{ symbol: "BTCUSDT", limit: 500 }]);
+    expect(snapshotCalls).toEqual([{ symbol: "BTCUSDT", limit: 1000 }]);
     await flush();
     const book = events.find((e) => e.t === "book");
     expect(book).toBeDefined();

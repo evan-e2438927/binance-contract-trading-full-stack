@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidStep } from "@binance-contract-trading-full-stack/shared";
 import { KLINE_INTERVALS } from "../market/binance-rest";
 
 /**
@@ -45,10 +46,22 @@ export interface ParsedChannel {
   kind: (typeof PUBLIC_CHANNEL_KINDS)[number] | "market";
   symbol?: string;
   interval?: string;
+  /** depth 频道的聚合精度（2026-09-20）。必须是该币对 tickSize 的合法倍数 */
+  step?: string;
 }
 
-/** 解析并校验一个公共频道名；不认识、币对没开放、interval 不支持都返回 null */
-export function parsePublicChannel(name: string, isOpenSymbol: (symbol: string) => boolean): ParsedChannel | null {
+/**
+ * 解析并校验一个公共频道名；不认识、币对没开放、interval / step 不支持都返回 null。
+ *
+ * `depth` 带第三段精度，和 `kline` 带 interval 是同一个形状：`depth:BNBUSDT:0.1`。
+ * 2026-09-20 加的——盘口改成**服务端按精度聚合好再推**，精度必须跟着订阅走（S03 讲义）。
+ * 不带第三段的 `depth:BNBUSDT` 仍然认，按 tickSize（最细）算，老客户端不会断。
+ */
+export function parsePublicChannel(
+  name: string,
+  isOpenSymbol: (symbol: string) => boolean,
+  tickSizeOf?: (symbol: string) => string | undefined,
+): ParsedChannel | null {
   if (name === MARKET_STATUS_CHANNEL) return { name, kind: "market" };
   const [kind, rawSymbol, interval, ...rest] = name.split(":");
   if (rest.length > 0 || !kind || !rawSymbol) return null;
@@ -58,6 +71,15 @@ export function parsePublicChannel(name: string, isOpenSymbol: (symbol: string) 
   if (kind === "kline") {
     if (!interval || !(KLINE_INTERVALS as readonly string[]).includes(interval)) return null;
     return { name: `kline:${symbol}:${interval}`, kind: "kline", symbol, interval };
+  }
+  if (kind === "depth") {
+    const tickSize = tickSizeOf?.(symbol);
+    // 拿不到 tickSize 就只认不带精度的老写法，不瞎猜
+    if (interval === undefined) {
+      return { name: `depth:${symbol}`, kind: "depth", symbol, step: tickSize };
+    }
+    if (tickSize === undefined || !isValidStep(tickSize, interval)) return null;
+    return { name: `depth:${symbol}:${interval}`, kind: "depth", symbol, step: interval };
   }
   if (interval !== undefined) return null;
   return { name: `${kind}:${symbol}`, kind: kind as ParsedChannel["kind"], symbol };

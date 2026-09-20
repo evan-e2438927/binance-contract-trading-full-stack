@@ -45,6 +45,8 @@ export interface WsHubOptions {
   jwtSecret: string;
   /** 这个币对是不是开放交易（公共频道只认开放的币对） */
   isOpenSymbol: (symbol: string) => boolean;
+  /** 币对的 tickSize（depth 频道校验聚合精度用，2026-09-20） */
+  tickSizeOf?: (symbol: string) => string | undefined;
   now?: () => number;
   logger?: Pick<Console, "log" | "error">;
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -58,6 +60,11 @@ export interface WsHub {
   connect(send: (raw: string) => void, close: (code: number, reason: string) => void): WsClient;
   /** 推给订阅了这个公共频道的所有连接 */
   publish(channel: string, data: unknown): void;
+  /**
+   * 当前真的有人订阅、且以 `prefix` 开头的频道名（2026-09-20）。
+   * publisher 用它只为**被订阅的精度**做聚合，没人看的精度一次都不算。
+   */
+  activeChannels(prefix: string): string[];
   /** 推给这个账户的所有连接（私有频道） */
   publishToAccount(accountId: string, channel: string, data: unknown): void;
   stop(): void;
@@ -114,6 +121,18 @@ export function createWsHub(options: WsHubOptions): WsHub {
     if (set.size === 0) subscribers.delete(channel);
   }
 
+  /**
+   * 当前真的有人订阅、且以 prefix 开头的频道名（2026-09-20）。
+   * publisher 用它只为被订阅的精度做聚合，没人看的精度一次都不算。
+   */
+  function activeChannels(prefix: string): string[] {
+    const found: string[] = [];
+    for (const [channel, set] of subscribers) {
+      if (set.size > 0 && channel.startsWith(prefix)) found.push(channel);
+    }
+    return found;
+  }
+
   function privateChannelsOf(accountId: string): string[] {
     return PRIVATE_CHANNELS.map((c) => `${c}:${accountId}`);
   }
@@ -156,7 +175,7 @@ export function createWsHub(options: WsHubOptions): WsHub {
     const accepted: string[] = [];
     const rejected: string[] = [];
     for (const raw of channels) {
-      const parsed = parsePublicChannel(raw, options.isOpenSymbol);
+      const parsed = parsePublicChannel(raw, options.isOpenSymbol, options.tickSizeOf);
       if (!parsed) {
         rejected.push(raw);
         continue;
@@ -249,6 +268,7 @@ export function createWsHub(options: WsHubOptions): WsHub {
         },
       };
     },
+    activeChannels,
     publish(channel, data) {
       const set = subscribers.get(channel);
       if (!set || set.size === 0) return;

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { useUiStore } from "@/stores/ui-store";
 import { useSymbolMarket } from "@/hooks/use-symbol-market";
 import { useSymbols } from "@/hooks/use-symbols";
 import { DEFAULT_SYMBOL } from "@/lib/config/constants";
@@ -39,7 +40,9 @@ export function TradeView({ symbol }: { symbol: string }) {
 }
 
 function TradeLayout({ spec }: { spec: SymbolSpec }) {
-  useSymbolMarket(spec.symbol);
+  // 盘口精度决定订哪个 depth 频道（服务端按它聚合好再推，S03 讲义），所以订阅要知道它
+  const step = useUiStore((s) => s.bookStep[spec.symbol]) ?? spec.tickSize;
+  useSymbolMarket(spec.symbol, step);
   usePriceTitle(spec);
 
   return (

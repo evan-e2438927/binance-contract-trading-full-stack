@@ -33,10 +33,19 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="zh-CN" className="dark" suppressHydrationWarning>
       <body className={`${plexSans.variable} ${plexMono.variable} antialiased`}>
         <Providers>
-          <div className="grid h-svh grid-rows-[auto_auto_1fr]">
+          {/*
+            ⚠️ 2026-09-20：这里原来是 `grid grid-rows-[auto_auto_1fr]`，三行对三个孩子。
+            但 MarketStatusBanner 在行情正常时 **return null**，不产生 DOM 节点——
+            于是只剩两个孩子，落进前两行（都是 auto），第三行 1fr 空着，
+            把视口剩下的高度全吃掉：1200px 的屏幕底部空出 372px 黑边，
+            而且只有行情异常（横幅出现）时才「碰巧」正常。
+
+            改成 flex 列：横幅渲不渲染都不影响，main 始终吃掉剩余高度。
+          */}
+          <div className="flex h-svh flex-col">
             <AppHeader />
             <MarketStatusBanner />
-            <main className="min-h-0 overflow-auto">{children}</main>
+            <main className="min-h-0 flex-1 overflow-auto">{children}</main>
           </div>
           <LiquidationDialog />
         </Providers>

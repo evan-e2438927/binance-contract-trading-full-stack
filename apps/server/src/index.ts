@@ -1,5 +1,7 @@
 import { env } from "./env.server";
 
+import { format } from "@binance-contract-trading-full-stack/shared";
+
 import { serve } from "@hono/node-server";
 import {
   createBracketFetcher,
@@ -28,15 +30,22 @@ const trading = await startTradingCore({
   onFeedStatus: (status) => publisher?.onFeedStatus(status),
   onCommitted: (input, events) => publisher?.onCommitted(input, events),
 });
+// depth 频道带聚合精度（`depth:BTCUSDT:0.1`），要用 tickSize 校验它是合法倍数
+const tickSizeOf = (symbol: string) => {
+  const spec = trading.symbols.find((s) => s.symbol === symbol);
+  return spec ? format(spec.tickSize, 8).replace(/0+$/, "").replace(/\.$/, "") : undefined;
+};
 const wsHub = createWsHub({
   jwtSecret: env.JWT_SECRET,
   isOpenSymbol: (symbol) => trading.symbols.some((s) => s.symbol === symbol && s.enabled && s.status === "TRADING"),
+  tickSizeOf,
 });
 publisher = createWsPublisher({
   hub: wsHub,
   engine: trading.engine,
   marketState: trading.marketState,
   positionModeOf: trading.positionModeOf,
+  tickSizeOf,
 });
 
 // 鉴权（第 12 讲）：钱包 / 邮箱 / Google 三种登录，开户交给交易内核排队（账户 + 身份 + INITIAL 流水一个事务）

@@ -1,3 +1,5 @@
+import type { BookRow } from "@binance-contract-trading-full-stack/shared";
+
 import type { Decimal } from "../common/types";
 
 /** 行情模块（/market/*，公共接口，不用登录）的 DTO。来源：apps/server/src/api/market.ts、ws/publisher.ts */
@@ -150,18 +152,34 @@ export interface Ticker {
 /** 一档盘口：[价格, 数量] */
 export type BookLevel = [price: Decimal, qty: Decimal];
 
-/** 盘口快照。WS `depth:<SYMBOL>` 推送就是这个形状（20 档全量，不是增量） */
+/**
+ * 盘口快照。WS `depth:<SYMBOL>:<STEP>` 推送就是这个形状（20 行全量，不是增量）。
+ *
+ * 2026-09-20 起**服务端已经按订阅精度聚合好**：bids / asks 是 BookRow（带累计量和背景条百分比），
+ * 不再是原始的 [价格, 数量]。前端不再自己聚合——原来那条链路是「服务端先切前 50 档、前端再合并」，
+ * 等于先截断再合并，精度放粗就只剩几行（S03 讲义）。
+ * REST `/market/depth` 仍然返回原始档位，首屏用 shared 的 aggregateSide 自己合一次。
+ */
 export interface OrderBook {
-  /** 买盘，价格从高到低 */
-  bids: BookLevel[];
-  /** 卖盘，价格从低到高 */
-  asks: BookLevel[];
+  /** 这份盘口是按哪个精度聚合的 */
+  step: string;
+  /** 买盘，价格从高到低，已按 step 合并 */
+  bids: BookRow[];
+  /** 卖盘，价格从低到高，已按 step 合并 */
+  asks: BookRow[];
   /** 盘口时间；新快照比旧的小时丢弃 */
   updateTime: number;
 }
 
+/** GET /market/depth 的原始档位（没聚合）。首屏用它，自己合一次 */
+export interface RawDepth {
+  bids: BookLevel[];
+  asks: BookLevel[];
+  updateTime: number;
+}
+
 /** GET /market/depth：引擎撮合实际用的那份盘口 */
-export interface DepthSnapshot extends OrderBook {
+export interface DepthSnapshot extends RawDepth {
   /** 币对名 */
   symbol: string;
   /** 该币对行情是否就绪 */

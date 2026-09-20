@@ -1,5 +1,5 @@
 import type { Engine, EngineEvent, EngineInput } from "@binance-contract-trading-full-stack/engine";
-import type { PositionMode } from "@binance-contract-trading-full-stack/shared";
+import { aggregateSide, type PositionMode } from "@binance-contract-trading-full-stack/shared";
 import { toDecimal } from "../http/decimal";
 import type { MarketEvent } from "../market/parse";
 import type { FeedStatus } from "../market/market-feed";
@@ -24,6 +24,8 @@ export interface WsPublisherOptions {
   engine: Pick<Engine, "accountView" | "positionViews">;
   marketState: MarketState;
   positionModeOf: (accountId: string) => PositionMode;
+  /** 币对 tickSize：老写法 `depth:SYMBOL`（不带精度）按它聚合（2026-09-20） */
+  tickSizeOf?: (symbol: string) => string | undefined;
 }
 
 export interface WsPublisher {
@@ -32,11 +34,42 @@ export interface WsPublisher {
   onCommitted(input: EngineInput, events: readonly EngineEvent[]): void;
 }
 
-/** 推给浏览器的盘口档数（每侧）。撮合用的是引擎里的 200 档，这里只是展示 */
-export const WS_DEPTH_LEVELS = 50;
+/**
+ * 推给浏览器的盘口**行数**（每侧，聚合之后）。
+ *
+ * 2026-09-20 从「前 50 档原始档位」改成「按订阅精度聚合好的 20 行」。
+ *
+ * 原来的做法是服务端切前 50 档、前端再聚合，等于**先截断再合并**：
+ * BNBUSDT（tick 0.01）50 档只覆盖 0.5 USDT，精度选 0.1 就只剩 5~6 行，选 1 只剩 1 行——
+ * 而设计稿要的是 20 行。现在反过来：服务端拿完整的 {@link BOOK_LEVELS} 档**先合并、再取前 20 行**，
+ * 每种精度都能填满，而且推的字节数还更少（50 档约 2KB → 20 行约 0.9KB）。
+ */
+export const WS_DEPTH_ROWS = 20;
 
 export function createWsPublisher(options: WsPublisherOptions): WsPublisher {
   const { hub, engine, marketState } = options;
+
+  /**
+   * 盘口：按**当前真的有人订阅的精度**各聚合一次再推。
+   *
+   * 没人订的精度一次都不算；同一个精度多少个客户端都只算一次。
+   * 频道名 `depth:SYMBOL:STEP`（老写法 `depth:SYMBOL` 仍然认，按 tickSize 算）。
+   */
+  function publishDepth(event: Extract<MarketEvent, { t: "book" }>): void {
+    const bids = event.bids.map((l) => [toDecimal(l.price), toDecimal(l.qty)] as const);
+    const asks = event.asks.map((l) => [toDecimal(l.price), toDecimal(l.qty)] as const);
+    for (const channel of hub.activeChannels(`depth:${event.symbol}`)) {
+      // depth:BTCUSDT:0.1 → "0.1"；depth:BTCUSDT → 没有第三段，用 tickSize
+      const step = channel.split(":")[2] ?? options.tickSizeOf?.(event.symbol);
+      if (step === undefined) continue;
+      hub.publish(channel, {
+        step,
+        bids: aggregateSide(bids, step, "bid", WS_DEPTH_ROWS),
+        asks: aggregateSide(asks, step, "ask", WS_DEPTH_ROWS),
+        updateTime: event.ts,
+      });
+    }
+  }
 
   function pushAccount(accountId: string): void {
     const view = engine.accountView(accountId);
@@ -53,13 +86,7 @@ export function createWsPublisher(options: WsPublisherOptions): WsPublisher {
     onMarketEvent(event) {
       switch (event.t) {
         case "book":
-          hub.publish(`depth:${event.symbol}`, {
-            // 引擎里是 200 档（S01），推给浏览器只推前 WS_DEPTH_LEVELS 档：
-            // 200 档 × 2 边 × 每秒 10 次 ≈ 100 KB/s/币对，界面用不到那么多
-            bids: event.bids.slice(0, WS_DEPTH_LEVELS).map((l) => [toDecimal(l.price), toDecimal(l.qty)]),
-            asks: event.asks.slice(0, WS_DEPTH_LEVELS).map((l) => [toDecimal(l.price), toDecimal(l.qty)]),
-            updateTime: event.ts,
-          });
+          publishDepth(event);
           return;
         case "trade":
           hub.publish(`trade:${event.symbol}`, {

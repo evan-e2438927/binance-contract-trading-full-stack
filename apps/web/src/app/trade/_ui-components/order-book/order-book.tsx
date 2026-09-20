@@ -11,18 +11,21 @@ import { ChevronDownIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { decimalsOf, formatDecimal } from "@/lib/format/number";
-import type { BookLevel, SymbolSpec } from "@/server-api-module/market/types";
+import type { SymbolSpec } from "@/server-api-module/market/types";
+import { useVisibleRows } from "@/hooks/use-visible-rows";
 import { useMarketStore } from "@/stores/market-store";
 import { useUiStore } from "@/stores/ui-store";
 
-import { aggregateSide, type BookSide, stepOptions } from "../../_lib/aggregate-book";
+import { type BookSide, stepOptions } from "../../_lib/aggregate-book";
 import { useOrderFormStore } from "../../_stores/order-form-store";
 import { BookMid } from "./book-mid";
-import { BookRow } from "./book-row";
+import { BOOK_ROW_HEIGHT, BookRow } from "./book-row";
 import { BookViewToggle } from "./book-view-toggle";
 
 /** 合并到一侧只剩这么少行时，底部出提示 */
-const MERGED_HINT_ROWS = 3;
+// 聚合到 8 行以内就提示。BNBUSDT 这类 tick 0.01 的币对，精度选 0.1 只剩 5~6 行，
+// 原来的阈值 3 够不到，用户看到的就是「莫名其妙少一截」（2026-09-20）
+const MERGED_HINT_ROWS = 8;
 
 /** T-04 盘口（Figma 4:5076）：卖盘 20 档（倒序）· 最新价 / 标记价 · 买盘 20 档 */
 export function OrderBook({ spec }: { spec: SymbolSpec }) {
@@ -77,7 +80,7 @@ export function OrderBook({ spec }: { spec: SymbolSpec }) {
 
       {merged && (
         <p className="shrink-0 border-t px-3 py-1 text-[10px] text-muted-foreground leading-[15px]">
-          撮合用币安 200 档真实盘口，界面显示前 50 档；精度放大后档位会合并
+          撮合用币安 1,000 档真实盘口，服务端按所选精度合并后推前 20 行；这个精度下盘口深度不够，只能合出这几行
         </p>
       )}
     </div>
@@ -101,18 +104,34 @@ function BookSideRows({
   align: "start" | "end";
   onRowCount: (count: number) => void;
 }) {
-  const levels = useMarketStore((s) => (side === "bid" ? s.books[spec.symbol]?.bids : s.books[spec.symbol]?.asks));
+  // 2026-09-20 起服务端已经按精度聚合好了，这里不再自己合并（S03 讲义）。
+  // book.step 和当前选的 step 不一致说明是切精度途中的旧数据，先不画，等新频道第一条
+  const book = useMarketStore((s) => s.books[spec.symbol]);
   const fillPrice = useOrderFormStore((s) => s.fillPrice);
   const fillQty = useOrderFormStore((s) => s.fillQty);
-  const rows = useMemo(() => aggregateSide((levels ?? []) as BookLevel[], step, side), [levels, step, side]);
-  const display = side === "ask" ? [...rows].reverse() : rows;
+  const rows = useMemo(() => {
+    if (!book || book.step !== step) return [];
+    return side === "bid" ? book.bids : book.asks;
+  }, [book, step, side]);
 
+  // ⚠️ 2026-09-20：只渲染**放得下的整行**。
+  // 原来是把全部行都塞进 overflow-hidden 里，靠溢出截掉多的——行少时看不出来，
+  // 服务端改成每侧推 20 行之后，边上永远露着半行，看着像坏了。
+  // 截掉的永远是离成交价最远的那几档（卖盘从上、买盘从下），最优价始终贴着中间行。
+  const { ref, visibleRows } = useVisibleRows(BOOK_ROW_HEIGHT);
+  const display = useMemo(() => {
+    if (visibleRows === null) return []; // 还没量到高度，先不画，避免闪一下
+    return side === "ask" ? rows.slice(0, visibleRows).reverse() : rows.slice(0, visibleRows);
+  }, [rows, side, visibleRows]);
+
+  // 提示看的是**数据够不够**，不是窗口放不放得下，所以报 rows.length
   useEffect(() => {
     onRowCount(rows.length);
   }, [rows.length, onRowCount]);
 
   return (
     <div
+      ref={ref}
       className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", align === "end" ? "justify-end" : "justify-start")}
     >
       {display.map((row) => (
