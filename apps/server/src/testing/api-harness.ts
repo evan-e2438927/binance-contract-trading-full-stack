@@ -97,6 +97,7 @@ export async function setupApi(tx: DbExecutor, options: HarnessOptions = {}) {
     marketState,
     binanceRest: options.binanceRest ?? {
       klines: unexpected,
+      depthSnapshot: unexpected,
       fundingRates: unexpected,
       ticker24h: unexpected,
       ticker24hAll: unexpected,

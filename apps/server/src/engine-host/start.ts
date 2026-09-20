@@ -2,9 +2,10 @@ import { leverageBrackets, type DbExecutor } from "@binance-contract-trading-ful
 import { createEngine, type Engine, type EngineEvent, type EngineInput, type LeverageBracket, type SymbolSpec } from "@binance-contract-trading-full-stack/engine";
 import type { PositionMode } from "@binance-contract-trading-full-stack/shared";
 import { asc, inArray } from "drizzle-orm";
+import { createBinanceRest } from "../market/binance-rest";
 import { startMarketFeed, type FeedStatus, type MarketFeed, type MarketFeedOptions } from "../market/market-feed";
 import { createMarketState, type MarketState } from "../market/market-state";
-import type { MarketEvent } from "../market/parse";
+import type { FeedEvent } from "../market/market-feed";
 import { loadEngineConfig, loadEngineSnapshot } from "../persistence/load";
 import { persistEvents } from "../persistence/persist";
 import { createEngineHost, type EngineHost } from "./engine-host";
@@ -48,9 +49,11 @@ export interface TradingCoreOptions {
   readyTimeoutMs?: number;
   /** 测试注入：假行情 */
   startFeed?: (options: MarketFeedOptions) => MarketFeed;
+  /** 拉盘口快照（S01 本地盘口用）。默认走 binance-rest 的 depthSnapshot */
+  fetchDepthSnapshot?: MarketFeedOptions["fetchDepthSnapshot"];
   now?: () => number;
   /** 行情事件（第 14 讲 WebSocket 公共频道）。在喂给引擎之前调用，不就绪的币对也会推——公共频道推的是行情源收到的原样 */
-  onMarketEvent?: (event: MarketEvent) => void;
+  onMarketEvent?: (event: FeedEvent) => void;
   /** 行情源状态变化（第 14 讲 market 频道） */
   onFeedStatus?: (status: FeedStatus) => void;
   /** 引擎事件落库并 commit 之后（第 14 讲私有频道）。这时读引擎视图是安全的 */
@@ -111,6 +114,8 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
   feed = (options.startFeed ?? startMarketFeed)({
     symbols: tradable,
     logger,
+    fetchDepthSnapshot:
+      options.fetchDepthSnapshot ?? ((symbol, limit) => createBinanceRest({ logger }).depthSnapshot({ symbol, limit })),
     onEvent(event) {
       marketState.onEvent(event);
       options.onMarketEvent?.(event); // 第 14 讲：公共频道推送

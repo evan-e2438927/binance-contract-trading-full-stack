@@ -1,6 +1,7 @@
 import { OPEN_SYMBOLS } from "@binance-contract-trading-full-stack/db/brackets/open-symbols";
 import { format, type Fixed } from "@binance-contract-trading-full-stack/shared";
 import { fetchSymbolStatuses } from "./exchange-info";
+import { createBinanceRest } from "./binance-rest";
 import { startMarketFeed } from "./market-feed";
 
 /**
@@ -29,6 +30,7 @@ const show = (value: Fixed | undefined, precision = 4) => (value === undefined ?
 
 const feed = startMarketFeed({
   symbols,
+  fetchDepthSnapshot: (symbol, limit) => createBinanceRest().depthSnapshot({ symbol, limit }),
   logger: { log: () => {}, error: (...args: unknown[]) => console.error(...args) },
   onEvent(event) {
     const row = rows.get(event.symbol);

@@ -21,7 +21,7 @@ export type ConnectionName = "public" | "market";
 export function streamsFor(connection: ConnectionName, symbol: string): string[] {
   const s = symbol.toLowerCase();
   return connection === "public"
-    ? [`${s}@depth20@100ms`] // 20 档快照，每 100ms 一次（快照流，不需要维护序列号）
+    ? [`${s}@depth@100ms`] // 增量深度，每 100ms 一次；配合 REST 快照在本地维护完整盘口（S01，local-book.ts）
     : [`${s}@aggTrade`, `${s}@markPrice@1s`, `${s}@kline_1m`, `${s}@ticker`];
 }
 

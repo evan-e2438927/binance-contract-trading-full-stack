@@ -1,4 +1,7 @@
+import type { Level } from "@binance-contract-trading-full-stack/engine";
 import { AppError, parse, type Fixed } from "@binance-contract-trading-full-stack/shared";
+
+import type { DepthSnapshot } from "./local-book";
 
 /**
  * 币安公开行情 REST 的代理（第 13b 讲；04-backend-design.md 第 1 节规划的 `binance-rest.ts`）。
@@ -73,6 +76,8 @@ export interface BinanceRestOptions {
 export interface BinanceRest {
   klines(params: { symbol: string; interval: KlineInterval; limit: number; startTime?: number; endTime?: number }): Promise<Kline[]>;
   fundingRates(params: { symbol: string; limit: number }): Promise<FundingRateRecord[]>;
+  /** 盘口快照（S01 本地盘口用）。limit=1000 权重 20；不缓存——快照要的就是"此刻"，缓存会让序列号对不上 */
+  depthSnapshot(params: { symbol: string; limit: number }): Promise<DepthSnapshot>;
   ticker24h(symbol: string): Promise<Ticker24h>;
   /** 全部币对的 24 小时统计，按币对名索引。首页币对列表用，一次请求代替 N 次 */
   ticker24hAll(): Promise<Map<string, Ticker24h>>;
@@ -171,6 +176,10 @@ export function createBinanceRest(options: BinanceRestOptions = {}): BinanceRest
         parsed("/fapi/v1/klines", await getJson("/fapi/v1/klines", { symbol, interval, limit, startTime, endTime }), parseKlines),
       );
     },
+    depthSnapshot({ symbol, limit }) {
+      return (async () =>
+        parsed("/fapi/v1/depth", await getJson("/fapi/v1/depth", { symbol, limit }), parseDepthSnapshot))();
+    },
     fundingRates({ symbol, limit }) {
       return cached(`funding:${symbol}:${limit}`, 60_000, async () =>
         parsed("/fapi/v1/fundingRate", await getJson("/fapi/v1/fundingRate", { symbol, limit }), parseFundingRates),
@@ -193,6 +202,23 @@ export function createBinanceRest(options: BinanceRestOptions = {}): BinanceRest
 // ─────────────────────────────────────────────────────────────
 // 解析：每个字段校验类型和格式
 // ─────────────────────────────────────────────────────────────
+
+/** GET /fapi/v1/depth：lastUpdateId + bids / asks（[价格, 数量] 字符串对） */
+function parseDepthSnapshot(body: unknown): DepthSnapshot {
+  if (typeof body !== "object" || body === null) throw new Error("depth 响应不是对象");
+  const record = body as Record<string, unknown>;
+  const lastUpdateId = record.lastUpdateId;
+  if (typeof lastUpdateId !== "number" || !Number.isInteger(lastUpdateId)) throw new Error("lastUpdateId 不是整数");
+  return { lastUpdateId, bids: parseDepthLevels(record.bids, "bids"), asks: parseDepthLevels(record.asks, "asks") };
+}
+
+function parseDepthLevels(value: unknown, name: string): Level[] {
+  if (!Array.isArray(value)) throw new Error(`${name} 不是数组`);
+  return value.map((row) => {
+    if (!Array.isArray(row) || row.length < 2) throw new Error(`${name} 的档位不是 [价格, 数量]`);
+    return { price: decimal(row[0], `${name}.price`), qty: decimal(row[1], `${name}.qty`) };
+  });
+}
 
 const DECIMAL = /^\d+(\.\d{1,8})?$/;
 const SIGNED_DECIMAL = /^-?\d+(\.\d{1,8})?$/;

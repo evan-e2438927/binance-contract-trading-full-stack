@@ -43,6 +43,10 @@ function fakeRest() {
     count: 999,
   };
   const rest: BinanceRest = {
+    async depthSnapshot(params) {
+      calls.push({ method: "depthSnapshot", params });
+      return { lastUpdateId: 1, bids: [], asks: [] };
+    },
     async klines(params) {
       calls.push({ method: "klines", params });
       return [kline];

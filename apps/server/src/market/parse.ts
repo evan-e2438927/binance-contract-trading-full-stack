@@ -59,7 +59,22 @@ export interface Stats24hEvent {
   ts: number;
 }
 
-export type MarketEvent = BookEvent | TradeEvent | MarkPriceEvent | KlineEvent | Stats24hEvent;
+/**
+ * `<symbol>@depth@100ms`：增量深度（S01）。b / a 里的数量是**绝对值**，0 表示删档；
+ * U / u / pu 用来判断有没有掉包，规则见 local-book.ts。
+ */
+export interface DepthDiffEvent {
+  t: "depthDiff";
+  symbol: string;
+  firstUpdateId: number;
+  finalUpdateId: number;
+  prevFinalUpdateId: number;
+  bids: Level[];
+  asks: Level[];
+  ts: number;
+}
+
+export type MarketEvent = BookEvent | DepthDiffEvent | TradeEvent | MarkPriceEvent | KlineEvent | Stats24hEvent;
 
 export class MarketParseError extends Error {
   /**
@@ -89,8 +104,8 @@ export function parseStreamMessage(raw: string): MarketEvent | null {
   const kind = stream.split("@")[1];
 
   switch (kind) {
-    case "depth20":
-      return parseDepth(data, raw);
+    case "depth":
+      return parseDepthDiff(data, raw);
     case "aggTrade":
       return parseAggTrade(data, raw);
     case "markPrice":
@@ -109,19 +124,24 @@ export function parseStreamMessage(raw: string): MarketEvent | null {
   }
 }
 
-/** `<symbol>@depth20@100ms`：b / a 各 20 档 [价格, 数量]，买盘降序、卖盘升序。时间用撮合时间 T。 */
-function parseDepth(data: Record<string, unknown>, raw: string): BookEvent {
+/**
+ * `<symbol>@depth@100ms`：增量深度（S01）。
+ *
+ * 和原来的 depth20 快照流不同，这里**不检查排序**：增量推送里的档位本来就不保证有序，
+ * 排序由本地盘口（local-book.ts）维护。U / u / pu 三个序列号必须都在，缺了说明协议变了。
+ */
+function parseDepthDiff(data: Record<string, unknown>, raw: string): DepthDiffEvent {
   expectEvent(data, "depthUpdate", raw);
-  const bids = levels(data.b, "b", raw);
-  const asks = levels(data.a, "a", raw);
-  // 引擎假设 bids[0] 是买一、asks[0] 是卖一（state.ts BookState）。顺序不对说明协议变了，不能悄悄重排
-  for (let i = 1; i < bids.length; i++) {
-    if (bids[i]!.price >= bids[i - 1]!.price) throw new MarketParseError("买盘不是按价格降序", raw);
-  }
-  for (let i = 1; i < asks.length; i++) {
-    if (asks[i]!.price <= asks[i - 1]!.price) throw new MarketParseError("卖盘不是按价格升序", raw);
-  }
-  return { t: "book", symbol: str(data, "s", raw), bids, asks, ts: int(data, "T", raw) };
+  return {
+    t: "depthDiff",
+    symbol: str(data, "s", raw),
+    firstUpdateId: int(data, "U", raw),
+    finalUpdateId: int(data, "u", raw),
+    prevFinalUpdateId: int(data, "pu", raw),
+    bids: levels(data.b, "b", raw, true),
+    asks: levels(data.a, "a", raw, true),
+    ts: int(data, "T", raw),
+  };
 }
 
 /**
@@ -252,7 +272,11 @@ function positive(data: Record<string, unknown>, key: string, raw: string): Fixe
   return value;
 }
 
-function levels(value: unknown, name: string, raw: string): Level[] {
+/**
+ * 盘口档位。增量深度流里数量可以是 0（表示删掉这一档，币安文档第 8 条），
+ * 所以 allowZeroQty 打开时只要求数量非负；价格任何时候都必须为正。
+ */
+function levels(value: unknown, name: string, raw: string, allowZeroQty = false): Level[] {
   if (!Array.isArray(value)) throw new MarketParseError(`盘口 ${name} 不是数组`, raw);
   return value.map((row, i) => {
     if (!Array.isArray(row) || row.length !== 2 || typeof row[0] !== "string" || typeof row[1] !== "string") {
@@ -263,7 +287,9 @@ function levels(value: unknown, name: string, raw: string): Level[] {
       throw new MarketParseError(`盘口 ${name}[${i}] 不是十进制数：${price} / ${qty}`, raw);
     }
     const level = { price: parse(price), qty: parse(qty) };
-    if (level.price <= 0n || level.qty <= 0n) throw new MarketParseError(`盘口 ${name}[${i}] 价格或数量不为正`, raw);
+    if (level.price <= 0n || level.qty < 0n || (!allowZeroQty && level.qty === 0n)) {
+      throw new MarketParseError(`盘口 ${name}[${i}] 价格或数量不为正`, raw);
+    }
     return level;
   });
 }

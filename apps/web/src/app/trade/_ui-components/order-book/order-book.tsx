@@ -31,7 +31,7 @@ export function OrderBook({ spec }: { spec: SymbolSpec }) {
   const step = useUiStore((s) => s.bookStep[spec.symbol]) ?? spec.tickSize;
   const setStep = useUiStore((s) => s.setBookStep);
   const steps = useMemo(() => stepOptions(spec.tickSize), [spec.tickSize]);
-  // 聚合到只剩几行时说明原因：我们只有 20 档，不是数据掉了（02 第九节失真点 #4）
+  // 聚合到只剩几行时说明原因：界面拿到的是前 50 档，不是数据掉了（02 第九节失真点 #4）
   const [askRows, setAskRows] = useState(0);
   const [bidRows, setBidRows] = useState(0);
   const merged = step !== spec.tickSize && Math.min(askRows, bidRows) <= MERGED_HINT_ROWS;
@@ -77,7 +77,7 @@ export function OrderBook({ spec }: { spec: SymbolSpec }) {
 
       {merged && (
         <p className="shrink-0 border-t px-3 py-1 text-[10px] text-muted-foreground leading-[15px]">
-          本平台只用币安 20 档真实盘口撮合，精度放大后档位会合并成很少几行
+          撮合用币安 200 档真实盘口，界面显示前 50 档；精度放大后档位会合并
         </p>
       )}
     </div>

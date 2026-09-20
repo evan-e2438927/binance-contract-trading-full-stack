@@ -147,7 +147,14 @@ export function createMarketRoutes(deps: MarketDeps, middleware: { rateLimit: Mi
   });
 
   routes.get("/depth", async (c) => {
-    const query = parseQuery(c, z.object({ ...symbolQuery, limit: z.enum(["5", "10", "20"], { error: "limit 只能是 5、10、20" }).default("20") }));
+    // S01：引擎里现在是 200 档，接口放开到 200（原来只有 20 档可选）
+    const query = parseQuery(
+      c,
+      z.object({
+        ...symbolQuery,
+        limit: z.enum(["5", "10", "20", "50", "100", "200"], { error: "limit 只能是 5、10、20、50、100、200" }).default("20"),
+      }),
+    );
     openSymbol(query.symbol);
     const view = await deps.host.read((engine) => engine.marketView(query.symbol));
     if (!view) throw new AppError("SYMBOL_NOT_TRADING", `${query.symbol} 不存在或未开放交易`);

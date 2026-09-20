@@ -32,6 +32,9 @@ export interface WsPublisher {
   onCommitted(input: EngineInput, events: readonly EngineEvent[]): void;
 }
 
+/** 推给浏览器的盘口档数（每侧）。撮合用的是引擎里的 200 档，这里只是展示 */
+export const WS_DEPTH_LEVELS = 50;
+
 export function createWsPublisher(options: WsPublisherOptions): WsPublisher {
   const { hub, engine, marketState } = options;
 
@@ -51,8 +54,10 @@ export function createWsPublisher(options: WsPublisherOptions): WsPublisher {
       switch (event.t) {
         case "book":
           hub.publish(`depth:${event.symbol}`, {
-            bids: event.bids.map((l) => [toDecimal(l.price), toDecimal(l.qty)]),
-            asks: event.asks.map((l) => [toDecimal(l.price), toDecimal(l.qty)]),
+            // 引擎里是 200 档（S01），推给浏览器只推前 WS_DEPTH_LEVELS 档：
+            // 200 档 × 2 边 × 每秒 10 次 ≈ 100 KB/s/币对，界面用不到那么多
+            bids: event.bids.slice(0, WS_DEPTH_LEVELS).map((l) => [toDecimal(l.price), toDecimal(l.qty)]),
+            asks: event.asks.slice(0, WS_DEPTH_LEVELS).map((l) => [toDecimal(l.price), toDecimal(l.qty)]),
             updateTime: event.ts,
           });
           return;
