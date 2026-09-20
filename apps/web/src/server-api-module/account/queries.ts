@@ -5,7 +5,16 @@ import { request } from "@/lib/axios-client/client";
 import type { Page, PageQuery } from "../common/types";
 import type { Order } from "../order/types";
 import type { Position } from "../position/types";
-import type { Account, EquityCurve, Fill, FundingPayment, LedgerEntry, LedgerQuery, Liquidation } from "./types";
+import type {
+  Account,
+  EquityCurve,
+  Fill,
+  FundingPayment,
+  LedgerEntry,
+  LedgerQuery,
+  Liquidation,
+  SymbolConfig,
+} from "./types";
 
 /**
  * 账户模块的 queryKey。
@@ -24,10 +33,22 @@ export const accountKeys = {
   funding: (symbol?: string) => [...accountKeys.fundingRoot, symbol ?? "all"] as const,
   liquidations: ["account", "liquidations"] as const,
   equityCurve: (days: number) => ["account", "equity-curve", days] as const,
+  symbolConfig: (symbol: string) => ["account", "symbol-config", symbol] as const,
 };
 
 /** GET /account：资产汇总 + 昵称、重置状态 */
 export const fetchAccount = () => request.get<Account>("/account");
+
+/** GET /account/symbol-config：这个币对当前的杠杆和保证金模式 */
+export const fetchSymbolConfig = (symbol: string) => request.get<SymbolConfig>("/account/symbol-config", { symbol });
+
+/** 给下单面板用：改杠杆 / 保证金模式后手动失效这个 key */
+export const symbolConfigQuery = (symbol: string) =>
+  queryOptions({
+    queryKey: accountKeys.symbolConfig(symbol),
+    queryFn: () => fetchSymbolConfig(symbol),
+    staleTime: 60_000,
+  });
 
 /** GET /account/positions：当前全部仓位 */
 export const fetchPositions = () => request.get<Position[]>("/account/positions");

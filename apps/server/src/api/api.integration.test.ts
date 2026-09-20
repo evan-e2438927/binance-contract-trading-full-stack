@@ -39,6 +39,62 @@ async function ledgerMismatches(tx: DbExecutor, accountId: string) {
 }
 
 describe("REST 接口（第 13 讲验收，真数据库）", () => {
+  it("下单面板的两个接口：币对配置 + 预估（可开最大能真的下进去）", async () => {
+    await inRollback(async (tx) => {
+      const { api, newAccount } = await setup(tx);
+      const a = await newAccount();
+
+      // 没有持仓时也能读到这个币对当前的杠杆和保证金模式
+      const config = await api("GET", "/account/symbol-config?symbol=BTCUSDT", { token: a.token });
+      expect(config.status).toBe(200);
+      expect(config.json.data).toMatchObject({ symbol: "BTCUSDT", marginMode: "CROSS" });
+      expect(config.json.data.leverage).toBeGreaterThan(0);
+
+      await api("POST", "/positions/leverage", { token: a.token, body: { symbol: "BTCUSDT", leverage: 10 } });
+      const after = await api("GET", "/account/symbol-config?symbol=BTCUSDT", { token: a.token });
+      expect(after.json.data.leverage).toBe(10);
+
+      // 预估：限价买，成本、可开最大、成交后的强平价都有值
+      const preview = await api("POST", "/orders/preview", {
+        token: a.token,
+        body: { symbol: "BTCUSDT", side: "BUY", price: "49000", qty: "0.01" },
+      });
+      expect(preview.status).toBe(200);
+      expect(preview.json.data).toMatchObject({ symbol: "BTCUSDT", leverage: 10, marginMode: "CROSS", price: "49000", warnings: [] });
+      expect(parse(preview.json.data.cost)).toBeGreaterThan(0n);
+      // 仓位很小时钱包足够扛到价格归零，没有强平价——这时给 null，不编一个数
+      expect(preview.json.data.liquidationPrice).toBeNull();
+
+      // 按"可开最大"下单不会被可用余额拒（这正是这个字段存在的意义）
+      const maxQty = preview.json.data.maxQty as string;
+      const atMax = await api("POST", "/orders/preview", {
+        token: a.token,
+        body: { symbol: "BTCUSDT", side: "BUY", price: "49000", qty: maxQty },
+      });
+      // 用满可用余额时就有强平价了
+      expect(parse(atMax.json.data.liquidationPrice)).toBeGreaterThan(0n);
+      const placed = await api("POST", "/orders", {
+        token: a.token,
+        body: { clientOrderId: "c-max", symbol: "BTCUSDT", side: "BUY", type: "LIMIT", timeInForce: "GTC", price: "49000", qty: maxQty },
+      });
+      expect(placed.status).toBe(200);
+      expect(placed.json.data.status).toBe("NEW");
+    });
+  });
+
+  it("预估：不认识的参数直接拒，不假装支持", async () => {
+    await inRollback(async (tx) => {
+      const { api, newAccount } = await setup(tx);
+      const a = await newAccount();
+      const res = await api("POST", "/orders/preview", {
+        token: a.token,
+        body: { symbol: "BTCUSDT", side: "BUY", qty: "0.01", leverage: 20 },
+      });
+      expect(res.status).toBe(400);
+      expect(res.json.error.message).toContain("不支持的参数");
+    });
+  });
+
   it("★ 下单 → 查挂单 → 撤单 → 按币对全撤；同一个 clientOrderId 提交两次（含并发）只产生一张单", async () => {
     await inRollback(async (tx) => {
       const { api, newAccount, clock } = await setup(tx);

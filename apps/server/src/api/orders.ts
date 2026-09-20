@@ -10,6 +10,7 @@ import { isUniqueViolation } from "../http/db-errors";
 import { decimalInput } from "../http/decimal";
 import { ok, parseBody, parseQuery } from "../http/respond";
 import { requireKnownSymbol, requireTradableSymbol, submitOrThrow, type ApiDeps } from "./context";
+import { toDecimalOrNull } from "../http/decimal";
 import { orderFromDb, orderFromEngine } from "./serialize";
 
 /**
@@ -43,6 +44,23 @@ const placeOrderSchema = z.strictObject(
   },
   {
     // 缺口 #28：priceProtect、goodTillDate、activationPrice（跟踪止损）等没实现的参数，直接拒，不假装支持
+    error: (issue) => (issue.code === "unrecognized_keys" ? `不支持的参数：${issue.keys.join(", ")}` : undefined),
+  },
+);
+
+/**
+ * 下单预估（前端 M07 的预估区）。只读，不产生任何订单。
+ * price 不传 = 市价，用标记价估；qty 不传 = 只想知道可开最大数量。
+ */
+const previewSchema = z.strictObject(
+  {
+    symbol: z.string({ error: "缺少 symbol" }).min(1, "缺少 symbol"),
+    side: z.enum(ORDER_SIDE, { error: "side 只能是 BUY 或 SELL" }),
+    positionSide: z.enum(POSITION_SIDE, { error: "positionSide 只能是 BOTH / LONG / SHORT" }).default("BOTH"),
+    price: decimalInput("price").optional(),
+    qty: decimalInput("qty").optional(),
+  },
+  {
     error: (issue) => (issue.code === "unrecognized_keys" ? `不支持的参数：${issue.keys.join(", ")}` : undefined),
   },
 );
@@ -95,6 +113,32 @@ export function createOrderRoutes(deps: ApiDeps, middleware: { auth: MiddlewareH
     const update = events.findLast((e) => e.t === "orderUpdate" && e.order.id === orderId);
     if (!update || update.t !== "orderUpdate") throw new Error(`下单 ${orderId} 没有产生订单事件`);
     return ok(c, orderFromEngine(update.order));
+  });
+
+  routes.post("/preview", async (c) => {
+    const accountId = c.var.accountId;
+    const body = await parseBody(c, previewSchema);
+    requireTradableSymbol(deps.symbols, body.symbol);
+    const view = await host.read((engine) =>
+      engine.previewOrder({
+        accountId,
+        symbol: body.symbol,
+        side: body.side,
+        positionSide: body.positionSide,
+        price: body.price ?? null,
+        qty: body.qty ?? null,
+      }),
+    );
+    return ok(c, {
+      symbol: view.symbol,
+      leverage: view.leverageNum,
+      marginMode: view.marginMode,
+      price: toDecimalOrNull(view.price),
+      cost: toDecimalOrNull(view.cost),
+      maxQty: toDecimalOrNull(view.maxQty),
+      liquidationPrice: toDecimalOrNull(view.liquidationPrice),
+      warnings: view.warnings,
+    });
   });
 
   routes.delete("/:id", async (c) => {

@@ -57,6 +57,19 @@ export interface Account extends AccountSummary {
   resetAvailableAt: number | null;
 }
 
+/** GET /account/symbol-config：这个币对当前的杠杆和保证金模式（对应币安 GET /fapi/v1/symbolConfig） */
+export interface SymbolConfig {
+  symbol: string;
+  /** 当前杠杆倍数 */
+  leverage: number;
+  /** 当前保证金模式 */
+  marginMode: MarginMode;
+  /** 该币对允许的最高杠杆（分层表第 1 层） */
+  maxLeverage: number;
+  /** 当前杠杆下允许的最大名义价值 */
+  maxNotional: Decimal;
+}
+
 /** POST /account/reset 响应 */
 export interface ResetAccountResult {
   /** 重置后的钱包余额（初始资金） */

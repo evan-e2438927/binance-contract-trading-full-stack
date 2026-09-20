@@ -18,7 +18,7 @@
 | M04 | 盘口与最新成交 | T-04 · T-05 | M02 | — | 🟡 |
 | M05 | 登录与会话 | L-01～L-04 · G-04 · G-05 | M01 | — | 🟡 |
 | M06 | 账户设置 | G-06～G-08 | M05 | — | ⬜ |
-| M07 | 下单 | T-06 · T-09 · T-10 | M04 · M05 | 2 个接口 | ⬜ |
+| M07 | 下单 | T-06 · T-09 · T-10 | M04 · M05 | ✅ 已补 | 🟡 |
 | M08 | 仓位、委托与账户 | T-07 · T-08 · T-11～T-14 | M07 | — | ⬜ |
 | S01 | 行情层升级：完整盘口 | T-04 · 撮合 | M08 | 服务端 + 引擎（单独一讲） | ⬜ |
 | M08b | 跟踪委托 | T-13 第三个 tab | M08 | 第 15 讲（引擎 + 迁移 + 接口） | ⬜ |
@@ -265,7 +265,7 @@ M13 整体验收：最后
 
 **功能点**
 
-- [ ] 订单类型：限价、市价、止损限价、止损市价、止盈限价、止盈市价
+- [x] 订单类型：限价、市价、条件委托（触发价方向 + 触发后限价 / 市价 → 自动选 STOP / TAKE_PROFIT 四种之一）
 - [ ] 输入：
   - 价格（限价类）：失焦时按 tickSize 向下截到合法值；"最新价"快捷填入；和盘口点击联动
   - 触发价（止盈止损类）+ 触发依据（标记价 / 最新价）
@@ -282,18 +282,20 @@ M13 整体验收：最后
   | 平空 | BUY | SHORT |
 
   单向模式一律 `positionSide: BOTH`
-- [ ] **前端即时校验**（只为即时反馈，服务端的校验链才是标准）：价格对齐 tickSize、价格在 minPrice～maxPrice 内、数量对齐 stepSize、不低于 minQty、名义价值不低于 minNotional、市价单数量用 marketMinQty / marketStepSize；价格偏离标记价超过 percentPrice 时给警告但不拦
-- [ ] **预估区**（买、卖各一份）：
+- [x] **前端即时校验**（只为即时反馈，服务端的校验链才是标准）：价格对齐 tickSize、价格在 minPrice～maxPrice 内、数量对齐 stepSize、不低于 minQty、名义价值不低于 minNotional、市价单数量用 marketMinQty / marketStepSize；价格偏离标记价超过 percentPrice 时给警告但不拦
+- [x] **预估区**（按设计稿只显示一份，跟着当前买 / 卖方向走）：
   - 成本 = 价格 × 数量 ÷ 杠杆 + 预估手续费（前端用 bigint 算）
   - 可开最大 = 服务端可用余额换算，再受当前杠杆所在分层的 notionalCap 限制（缺口 #44）
   - 预估强平价：调 `POST /orders/preview`，输入停止 300ms 后请求
-- [ ] **杠杆调整**：1～该币对最高；显示当前杠杆下的最大可开仓位（按分层表）；提交 `POST /positions/leverage`
-- [ ] **保证金模式切换**（全仓 / 逐仓）：有持仓或挂单时不能切（`MARGIN_MODE_LOCKED`）；提交 `POST /positions/margin-mode`
-- [ ] **提交**：
+- [x] **杠杆调整**：1～该币对最高；显示当前杠杆下的最大可开仓位（按分层表）；提交 `POST /positions/leverage`
+- [x] **保证金模式切换**（全仓 / 逐仓）+ 持仓模式切换（G-07，顺手做了）：锁定原因由服务端给，原样显示
+- [x] **提交**：
   - 按钮状态：未登录 → "登录"；行情降级 → 禁用；校验不过 → 禁用 + 原因；提交中 → 禁用
   - `clientOrderId` 前端生成（`c-时间戳-序号`），失败重试用同一个，服务端保证幂等
   - 成功 Toast；失败显示服务端原因
   - 成功后不手动改 store，等 WS `order` 推送
+
+**待用户验收**：需要登录后才能测的部分（真下单、改杠杆 / 保证金模式、可开最大、预估强平价）我这边没有可用账号，界面和接口都接好了，请你登录后过一遍。
 
 **数据**：`POST /orders`、`POST /positions/leverage`、`POST /positions/margin-mode`、`account-store.account.availableBalance`、`/market/symbols` 的规格和分层表
 
@@ -446,8 +448,8 @@ M13 整体验收：最后
 
 | 缺口 | 影响模块 | 必需？ | 说明 |
 | --- | --- | --- | --- |
-| `GET /account/symbol-config` | M07 | **必需** | 没有持仓时读不到币对当前的杠杆和保证金模式 |
-| `POST /orders/preview` | M07 | 建议 | 预估强平价，没有时显示 `--` |
+| ~~`GET /account/symbol-config`~~ | M07 | ✅ 2026-09-20 已做 | 引擎 `symbolConfigView` + 接口 |
+| ~~`POST /orders/preview`~~ | M07 | ✅ 2026-09-20 已做 | 引擎 `previewOrder`：开仓成本、可开最大、成交后的强平价；顺带把手续费率加进 `GET /market/symbols`（前端算预估手续费要用） |
 | 缺口 #47：24h 统计实时推送 | M02 | 可选 | 不做就只在进页面时取一次 |
 | 仓位 `breakEvenPrice`、保证金比率 | M08 | **必需** | Figma 仓位表有「损益两平」「保证金比率」两列；口径先查币安 |
 | `TRAILING_STOP_MARKET` | M08b | **必需** | 用户 2026-09-19 定做，第 15 讲 |

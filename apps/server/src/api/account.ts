@@ -8,7 +8,7 @@ import { INITIAL_WALLET_BALANCE } from "../engine-host/register-account";
 import { toDecimal } from "../http/decimal";
 import { pageQuery, paginate } from "../http/pagination";
 import { ok, parseBody, parseQuery } from "../http/respond";
-import { submitOrThrow, type ApiDeps } from "./context";
+import { requireKnownSymbol, submitOrThrow, type ApiDeps } from "./context";
 import { accountJson, fillJson, fundingJson, ledgerJson, liquidationJson, orderFromDb, orderFromEngine, positionJson } from "./serialize";
 
 /**
@@ -52,6 +52,22 @@ export function createAccountRoutes(deps: ApiDeps, middleware: { auth: Middlewar
       nickname: row.nickname,
       canReset: availableAt === null,
       resetAvailableAt: availableAt,
+    });
+  });
+
+  /** 这个币对当前的杠杆和保证金模式（对应币安 GET /fapi/v1/symbolConfig）。没有持仓时仓位列表里读不到 */
+  routes.get("/symbol-config", async (c) => {
+    const accountId = c.var.accountId;
+    const query = parseQuery(c, z.object({ symbol: z.string({ error: "缺少 symbol" }).min(1, "缺少 symbol") }));
+    requireKnownSymbol(deps.symbols, query.symbol);
+    const view = await host.read((engine) => engine.symbolConfigView(accountId, query.symbol));
+    if (!view) throw new AppError("UNAUTHORIZED", "账户不存在，请重新登录");
+    return ok(c, {
+      symbol: view.symbol,
+      leverage: view.leverageNum,
+      marginMode: view.marginMode,
+      maxLeverage: view.maxLeverageNum,
+      maxNotional: toDecimal(view.maxNotional),
     });
   });
 

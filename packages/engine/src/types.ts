@@ -432,6 +432,8 @@ export interface MarketView {
  *
  * 每次 apply 之后必须恰好调一次 commit() 或 rollback()，否则下一次 apply 直接抛错。
  */
+import type { PreviewInput, PreviewView, SymbolConfigView } from "./preview";
+
 export interface Engine {
   /**
    * 同步、确定性：同样的状态 + 同样的输入，永远得到同样的事件。
@@ -460,4 +462,8 @@ export interface Engine {
   allAccountViews(): AccountView[];
   /** 未知币对返回 null */
   marketView(symbol: string): MarketView | null;
+  /** 这个账户在该币对上的杠杆 / 保证金模式（下单面板用，preview.ts）。账户不存在返回 null */
+  symbolConfigView(accountId: string, symbol: string): SymbolConfigView | null;
+  /** 下单前的预估：成本、可开最大、成交后的强平价（preview.ts）。算不出来的项为 null，原因在 warnings */
+  previewOrder(input: PreviewInput): PreviewView;
 }

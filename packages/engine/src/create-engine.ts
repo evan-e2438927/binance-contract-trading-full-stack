@@ -2,6 +2,7 @@ import { applyInput } from "./apply";
 import { beginJournal, commitJournal, rollbackJournal } from "./journal";
 import { createState, loadSnapshot, toSnapshot } from "./state";
 import type { Engine, EngineConfig, EngineSnapshot } from "./types";
+import { previewOrder, symbolConfigView } from "./preview";
 import { accountView, allAccountViews, marketView, openOrders, positionViews } from "./views";
 
 export function createEngine(config: EngineConfig, initial?: EngineSnapshot): Engine {
@@ -31,5 +32,7 @@ export function createEngine(config: EngineConfig, initial?: EngineSnapshot): En
     openOrders: (accountId) => openOrders(state, accountId),
     allAccountViews: () => allAccountViews(state),
     marketView: (symbol) => marketView(state, symbol),
+    symbolConfigView: (accountId, symbol) => symbolConfigView(state, accountId, symbol),
+    previewOrder: (input) => previewOrder(state, input),
   };
 }

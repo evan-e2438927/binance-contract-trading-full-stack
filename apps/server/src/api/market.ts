@@ -6,6 +6,7 @@ import { asc, eq } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { toDecimal, toDecimalOrNull } from "../http/decimal";
+import { FEES } from "../persistence/load";
 import { ok, parseQuery } from "../http/respond";
 import { stats24hJson } from "./serialize";
 import { KLINE_INTERVALS, type BinanceRest, type Ticker24h } from "../market/binance-rest";
@@ -73,6 +74,10 @@ export function createMarketRoutes(deps: MarketDeps, middleware: { rateLimit: Mi
           percentPriceDown: toDecimalOrNull(s.percentPriceDown),
           maxNumOrders: s.maxNumOrders,
           liquidationFeeRate: toDecimalOrNull(s.liquidationFeeRate),
+          // 手续费率来自引擎配置（persistence/load.ts 的 FEES，全站一个费率档）。放在币对里是为了前端
+          // 算预估手续费时不用再单独请求一次；币安是按币对 + 用户等级给的，以后要分档就改这里
+          makerFeeRate: toDecimal(FEES.makerFeeRate),
+          takerFeeRate: toDecimal(FEES.takerFeeRate),
           maxLeverage: mine[0]?.maxLeverage ?? null,
           // 前端算"当前杠杆下最多能开多大"：所有 maxLeverage ≥ 当前杠杆的档位里，notionalCap 最大的那个（缺口 #44）
           brackets: mine.map((b) => ({

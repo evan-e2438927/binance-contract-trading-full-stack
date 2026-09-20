@@ -1,5 +1,6 @@
 import type {
   Decimal,
+  MarginMode,
   OrderSide,
   OrderStatus,
   OrderType,
@@ -95,4 +96,40 @@ export interface PlaceOrderBody {
   reduceOnly?: boolean;
   /** 触发后全部平仓（只用于 STOP_MARKET / TAKE_PROFIT_MARKET） */
   closePosition?: boolean;
+}
+
+/**
+ * POST /orders/preview 请求体：还没下单时的预估，只读，不产生订单。
+ * 杠杆和保证金模式用账户在这个币对上的当前设置（先调 POST /positions/leverage 改），这里不传。
+ */
+export interface PreviewOrderBody {
+  /** 币对名 */
+  symbol: string;
+  /** 买 / 卖 */
+  side: OrderSide;
+  /** 单向模式不传（默认 BOTH）；双向模式传 LONG / SHORT */
+  positionSide?: PositionSide;
+  /** 委托价；市价类不传，服务端用标记价估 */
+  price?: Decimal;
+  /** 数量；不传就只要 maxQty */
+  qty?: Decimal;
+}
+
+/** POST /orders/preview 响应。算不出来的项为 null，原因在 warnings 里 */
+export interface OrderPreview {
+  symbol: string;
+  /** 该币对当前杠杆 */
+  leverage: number;
+  /** 该币对当前保证金模式 */
+  marginMode: MarginMode;
+  /** 估算用的价格：限价是委托价，市价是标记价 */
+  price: Decimal | null;
+  /** 开仓成本 = 起始保证金 + 开仓亏损 + 预留 Taker 手续费，和下单校验用的是同一个函数 */
+  cost: Decimal | null;
+  /** 可开最大数量（可用余额、分层上限、币对上限取小，已对齐 stepSize） */
+  maxQty: Decimal | null;
+  /** 这一单成交后的强平价；仓位小到钱包能扛住价格归零时为 null */
+  liquidationPrice: Decimal | null;
+  /** 某项算不出来的原因，可以原样显示 */
+  warnings: string[];
 }

@@ -10,6 +10,7 @@ import type { SymbolSpec } from "@/server-api-module/market/types";
 
 import { ChartPanel } from "./chart/chart-panel";
 import { OrderBook } from "./order-book/order-book";
+import { OrderPanel } from "./order-panel/order-panel";
 import { RecentTrades } from "./recent-trades/recent-trades";
 import { SymbolBar } from "./symbol-bar/symbol-bar";
 import { usePriceTitle } from "./symbol-bar/use-price-title";
@@ -49,12 +50,9 @@ function TradeLayout({ spec }: { spec: SymbolSpec }) {
         <ChartPanel spec={spec} />
       </div>
       <OrderBook spec={spec} />
-      <ModulePlaceholder
-        id="T-06"
-        name="下单面板"
-        note="保证金模式 · 杠杆 · 限价 / 市价 / 止盈止损 · 价格 / 数量 · 百分比滑块 · 只减仓 / TIF · 预估成本 · 买入做多 / 卖出做空"
-        className="row-span-2"
-      />
+      <div className="row-span-2 min-h-0">
+        <OrderPanel spec={spec} />
+      </div>
       <RecentTrades spec={spec} />
       <ModulePlaceholder
         id="T-07"

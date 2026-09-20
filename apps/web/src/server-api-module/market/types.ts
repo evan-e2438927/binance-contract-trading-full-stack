@@ -65,6 +65,10 @@ export interface SymbolSpec {
   maxNumOrders: number;
   /** 强平清算费率，比例；null = 币安没给 */
   liquidationFeeRate: Decimal | null;
+  /** 挂单方手续费率，比例（0.0002 = 0.02%）。来自服务端引擎配置，全站一个档 */
+  makerFeeRate: Decimal;
+  /** 吃单方手续费率，比例（0.0005 = 0.05%）。下单面板算预估手续费用它 */
+  takerFeeRate: Decimal;
   /** 该币对最大杠杆（分层表第 1 档）；分层表还没同步时为 null */
   maxLeverage: number | null;
   /** 杠杆分层表，按档位升序。"当前杠杆下最多能开多大" = 所有 maxLeverage ≥ 当前杠杆的档位里最大的 notionalCap */
