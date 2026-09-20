@@ -195,6 +195,67 @@ describe("快照限速（S01，2026-09-20 踩坑）", () => {
     expect(waits).toEqual([1000, 2000]);
     vi.restoreAllMocks();
   });
+
+  it("★ 退避期间来的增量不会把快照重新排队（否则被封期间队列一直满，解封瞬间满速冲出去二次被封）", async () => {
+    const timers: (() => void)[] = [];
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void) => {
+      timers.push(fn);
+      return timers.length as unknown as NodeJS.Timeout;
+    }) as typeof setTimeout);
+
+    let calls = 0;
+    const { conn, openBoth } = setup(["BTCUSDT"], {
+      snapshotGapMs: 0,
+      fetchDepthSnapshot: async () => {
+        calls++;
+        throw new Error("被限流");
+      },
+    });
+    openBoth();
+    conn("public").onMessage(depthDiff("btcusdt"));
+    await flush();
+    expect(calls).toBe(1);
+
+    // 盘口没对齐，增量每 100ms 还在来：退避没到期之前一次都不许再发
+    for (let i = 0; i < 20; i++) conn("public").onMessage(depthDiff("btcusdt"));
+    await flush();
+    expect(calls).toBe(1);
+
+    // 退避到期才轮到下一次
+    timers[0]!();
+    await flush();
+    expect(calls).toBe(2);
+    vi.restoreAllMocks();
+  });
+
+  it("★ 盘口连接重连之后立刻重拉，不被断线前的退避挡住（退避状态跟着本地盘口一起作废）", async () => {
+    const timers: (() => void)[] = [];
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void) => {
+      timers.push(fn);
+      return timers.length as unknown as NodeJS.Timeout;
+    }) as typeof setTimeout);
+
+    let calls = 0;
+    const { conn, openBoth } = setup(["BTCUSDT"], {
+      snapshotGapMs: 0,
+      fetchDepthSnapshot: async () => {
+        calls++;
+        throw new Error("被限流");
+      },
+    });
+    openBoth();
+    conn("public").onMessage(depthDiff("btcusdt"));
+    await flush();
+    expect(calls).toBe(1); // 进入退避
+
+    // 盘口那条断了又接上：本地盘口已作废，新的增量必须立刻触发一次新快照
+    conn("public").onStateChange!("closed");
+    conn("public").onStateChange!("open");
+    conn("public").onMessage(depthDiff("btcusdt"));
+    await flush();
+    expect(calls).toBe(2);
+    vi.restoreAllMocks();
+  });
 });
 
 describe("24 小时统计流（缺口 #47）", () => {

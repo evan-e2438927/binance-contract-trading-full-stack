@@ -2,6 +2,7 @@ import type { Level } from "@binance-contract-trading-full-stack/engine";
 import { AppError, parse, type Fixed } from "@binance-contract-trading-full-stack/shared";
 
 import type { DepthSnapshot } from "./local-book";
+import { createRateLimitGate, type RateLimitGate } from "./rate-limit";
 
 /**
  * 币安公开行情 REST 的代理（第 13b 讲；04-backend-design.md 第 1 节规划的 `binance-rest.ts`）。
@@ -65,6 +66,12 @@ export interface Ticker24h {
 }
 
 export interface BinanceRestOptions {
+  /**
+   * 限流闸门。**生产环境必须传**，而且整个进程共用同一个：exchangeInfo、分层表同步
+   * 也要走同一道闸门，因为币安的限额是按 IP 算的（见 rate-limit.ts）。不传就自己建一个，只给测试用。
+   */
+  gate?: RateLimitGate;
+  /** 测试注入。传了 gate 就以 gate 里的 fetch 为准 */
   fetch?: typeof fetch;
   now?: () => number;
   base?: string;
@@ -102,34 +109,28 @@ const INTERVAL_MS: Record<KlineInterval, number> = {
 };
 
 export function createBinanceRest(options: BinanceRestOptions = {}): BinanceRest {
-  const fetchImpl = options.fetch ?? fetch;
+  const gate = options.gate ?? createRateLimitGate({ fetch: options.fetch, now: options.now, logger: options.logger });
+  const fetchImpl = gate.fetch;
   const now = options.now ?? Date.now;
   const base = options.base ?? BINANCE_REST_BASE;
   const timeoutMs = options.timeoutMs ?? 5_000;
   const logger = options.logger ?? console;
   const maxEntries = options.maxCacheEntries ?? 500;
 
-  let pausedUntil = 0;
   const cache = new Map<string, { expiresAt: number; value: Promise<unknown> }>();
 
   const unavailable = () => new AppError("SERVICE_UNAVAILABLE", "行情数据暂时拿不到，请稍后再试");
 
   async function getJson(path: string, params: Record<string, string | number | undefined>): Promise<unknown> {
-    if (now() < pausedUntil) throw unavailable();
     const query = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v !== undefined) query.set(k, String(v));
     let response: Response;
     try {
       response = await fetchImpl(`${base}${path}?${query}`, { signal: AbortSignal.timeout(timeoutMs) });
     } catch (error) {
+      // 限流是闸门抛的 AppError，已经记过日志，原样往上抛，别混进"请求失败"
+      if (error instanceof AppError) throw error;
       logger.error(`[binance-rest] ${path} 请求失败`, error);
-      throw unavailable();
-    }
-    if (response.status === 429 || response.status === 418) {
-      const retryAfter = Number(response.headers.get("Retry-After"));
-      const pauseMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 60_000;
-      pausedUntil = now() + pauseMs;
-      logger.error(`[binance-rest] ${path} 被币安限流（HTTP ${response.status}），暂停 ${pauseMs / 1000} 秒`);
       throw unavailable();
     }
     if (!response.ok) {

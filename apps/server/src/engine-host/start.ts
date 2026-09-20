@@ -2,7 +2,8 @@ import { leverageBrackets, type DbExecutor } from "@binance-contract-trading-ful
 import { createEngine, type Engine, type EngineEvent, type EngineInput, type LeverageBracket, type SymbolSpec } from "@binance-contract-trading-full-stack/engine";
 import type { PositionMode } from "@binance-contract-trading-full-stack/shared";
 import { asc, inArray } from "drizzle-orm";
-import { createBinanceRest } from "../market/binance-rest";
+import { createBinanceRest, type BinanceRest } from "../market/binance-rest";
+import { createRateLimitGate, type RateLimitGate } from "../market/rate-limit";
 import { startMarketFeed, type FeedStatus, type MarketFeed, type MarketFeedOptions } from "../market/market-feed";
 import { createMarketState, type MarketState } from "../market/market-state";
 import type { FeedEvent } from "../market/market-feed";
@@ -36,6 +37,17 @@ export interface TradingCore {
   symbols: readonly SymbolSpec[];
   /** 行情层收到的最新标记价 / 指数价格 / 成交（第 13b 讲 ticker、status 接口） */
   marketState: MarketState;
+  /**
+   * 币安 REST 代理。**整个进程只能有这一个实例**：限流退避（429 / 418 之后暂停到 Retry-After）
+   * 记在实例的闭包里，再 new 一个就等于把退避状态清零，被封期间还会继续撞上去，越封越久。
+   * 币安的限额也是按 IP 算的，不是按实例。HTTP 层（第 13b 讲）复用这一个。
+   */
+  binanceRest: BinanceRest;
+  /**
+   * 币安限流闸门，全进程唯一。任何要直连币安的地方都得用 `rateLimit.fetch`，
+   * 包括分层表同步、exchangeInfo——限额是按 IP 算的，绕过去就等于没装（见 market/rate-limit.ts）。
+   */
+  rateLimit: RateLimitGate;
   /** 账户当前的持仓模式（仓位表示法转换用，第 14 讲推送也要） */
   positionModeOf: (accountId: string) => PositionMode;
   /** 分层表每日同步发现变化后调用：从数据库读这些币对的新表，喂进引擎并立刻扫风控 */
@@ -107,6 +119,12 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
     },
   });
 
+  // ⚠️ 2026-09-20：这里原来写成 `(symbol, limit) => createBinanceRest({ logger }).depthSnapshot(...)`，
+  // 每拉一次快照就 new 一个实例 → pausedUntil 永远是 0 → 被币安封 IP（418）之后照样每次都发请求，
+  // 每撞一次币安就把封禁时间往后延（实测 508 → 868 → 1244 秒）。实例必须建在外面、全进程共用。
+  const rateLimit = createRateLimitGate({ logger });
+  const binanceRest = createBinanceRest({ gate: rateLimit, logger });
+
   const marketState = createMarketState();
   const tradable = config.symbols.filter((s) => s.enabled && s.status === "TRADING").map((s) => s.symbol);
   let resolveReady: () => void = () => {};
@@ -115,7 +133,7 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
     symbols: tradable,
     logger,
     fetchDepthSnapshot:
-      options.fetchDepthSnapshot ?? ((symbol, limit) => createBinanceRest({ logger }).depthSnapshot({ symbol, limit })),
+      options.fetchDepthSnapshot ?? ((symbol, limit) => binanceRest.depthSnapshot({ symbol, limit })),
     onEvent(event) {
       marketState.onEvent(event);
       options.onMarketEvent?.(event); // 第 14 讲：公共频道推送
@@ -149,6 +167,8 @@ export async function startTradingCore(options: TradingCoreOptions): Promise<Tra
     accounts: registrar,
     symbols: config.symbols,
     marketState,
+    binanceRest,
+    rateLimit,
     positionModeOf,
     async reloadBrackets(symbols) {
       const known = symbols.filter((s) => config.symbols.some((spec) => spec.symbol === s));

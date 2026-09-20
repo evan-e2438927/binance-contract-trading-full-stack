@@ -105,6 +105,47 @@ describe("本地盘口", () => {
     expect(result.asks.map((l) => l.price)).toEqual([parse("101"), parse("102")]);
   });
 
+  it("★ 快照比流还新（REST 跑在 WS 前面）：下一条增量按跨越规则接，不判断档、不白拉一次快照", () => {
+    const book = createLocalBook({ levels: 10 });
+    // 流先到 u=120；覆盖 121..130 的那条还在路上
+    expect(book.applyDiff(diff({ firstUpdateId: 111, finalUpdateId: 120, prevFinalUpdateId: 110 })).t).toBe("buffered");
+    // 快照回来 lastUpdateId=130，比缓冲区里所有的 u 都新 → 缓冲区一条都接不上
+    expect(book.applySnapshot(snapshot(130), 1).t).toBe("book");
+    // 那条推送到了：U=121 <= 130 <= u=130，正好跨过快照，应该直接接上
+    expect(book.applyDiff(diff({ firstUpdateId: 121, finalUpdateId: 130, prevFinalUpdateId: 120 })).t).toBe("book");
+    // 接上之后回到 pu 规则
+    expect(book.applyDiff(diff({ firstUpdateId: 131, finalUpdateId: 140, prevFinalUpdateId: 130 })).t).toBe("book");
+  });
+
+  it("★ 快照比流还新时，整条都比快照旧的增量丢掉就行（第 4 条），不触发重拉", () => {
+    const book = createLocalBook({ levels: 10 });
+    expect(book.applyDiff(diff({ firstUpdateId: 111, finalUpdateId: 120, prevFinalUpdateId: 110 })).t).toBe("buffered");
+    expect(book.applySnapshot(snapshot(130), 1).t).toBe("book");
+    // 迟到的旧推送（u=125 < 130）：丢掉，不是断档
+    expect(book.applyDiff(diff({ firstUpdateId: 121, finalUpdateId: 125, prevFinalUpdateId: 120 }))).toEqual({ t: "skipped" });
+    expect(book.live).toBe(true);
+  });
+
+  it("★ 快照之后第一条真的断了（U 已经越过快照）才重拉", () => {
+    const book = createLocalBook({ levels: 10 });
+    expect(book.applyDiff(diff({ firstUpdateId: 111, finalUpdateId: 120, prevFinalUpdateId: 110 })).t).toBe("buffered");
+    expect(book.applySnapshot(snapshot(130), 1).t).toBe("book");
+    // U=140 > 130：131..139 那段永远看不到了，这才是真断档
+    const result = book.applyDiff(diff({ firstUpdateId: 140, finalUpdateId: 150, prevFinalUpdateId: 139 }));
+    expect(result.t).toBe("resync");
+  });
+
+  it("★ 断档日志里的 lastUpdateId 是断档时的真实值，不是 clear() 之后的 -1", () => {
+    const book = createLocalBook({ levels: 10 });
+    book.applySnapshot(snapshot(10), 1);
+    // 先正常接上一条，离开 awaitingFirst，后面才走第 6 条的 pu 规则
+    expect(book.applyDiff(diff({ firstUpdateId: 11, finalUpdateId: 15, prevFinalUpdateId: 10 })).t).toBe("book");
+    const result = book.applyDiff(diff({ firstUpdateId: 20, finalUpdateId: 25, prevFinalUpdateId: 19 }));
+    if (result.t !== "resync") throw new Error("应该是 resync");
+    expect(result.reason).toContain("本地 lastUpdateId=15");
+    expect(result.reason).not.toContain("-1");
+  });
+
   it("reset 之后回到等快照状态", () => {
     const book = createLocalBook({ levels: 10 });
     book.applySnapshot(snapshot(10), 1);

@@ -11,7 +11,6 @@ import { createApp } from "./app";
 import { startTradingCore } from "./engine-host/start";
 import { startBracketSyncJob } from "./jobs/bracket-sync";
 import { startEquitySnapshotJob, takeEquitySnapshot } from "./jobs/equity-snapshot";
-import { createBinanceRest } from "./market/binance-rest";
 import { createWsHub } from "./ws/hub";
 import { createWsPublisher, type WsPublisher } from "./ws/publisher";
 import { attachWsServer } from "./ws/server";
@@ -64,7 +63,7 @@ const app = createApp({
   symbols: trading.symbols,
   feed: trading.feed,
   marketState: trading.marketState,
-  binanceRest: createBinanceRest(),
+  binanceRest: trading.binanceRest, // 和行情层共用一个：限流退避状态要全进程共享（见 start.ts）
   jwtSecret: env.JWT_SECRET,
   webOrigin: env.CORS_ORIGIN,
   mailer,
@@ -86,6 +85,7 @@ const wsServer = attachWsServer({ server: server as import("node:http").Server, 
 
 // 杠杆分层表每日同步：启动时跑一次，之后每天 UTC 00:05。只读 Key，只在服务端使用。
 const fetchBrackets = createBracketFetcher({
+  fetch: trading.rateLimit.fetch, // 和行情共用限流闸门：币安按 IP 限额，绕过去就等于没装
   apiKey: env.BINANCE_API_KEY,
   secretKey: env.BINANCE_SECRET_KEY,
 });

@@ -96,6 +96,8 @@ export function startMarketFeed(options: MarketFeedOptions): MarketFeed {
   const queuedSnapshots = new Set<string>();
   const snapshotQueue: string[] = [];
   const snapshotBackoff = new Map<string, number>();
+  /** 正在退避等待重试的币对：退避期间来的增量不该把它重新排进队列（见 requestSnapshot） */
+  const snapshotRetrying = new Set<string>();
   const snapshotTimers = new Set<ReturnType<typeof setTimeout>>();
   let draining = false;
 
@@ -128,6 +130,10 @@ export function startMarketFeed(options: MarketFeedOptions): MarketFeed {
     // 盘口那条断了：本地盘口全部作废，重连后每个币对都要重新拉快照
     if (name === "public") {
       for (const book of books.values()) book.reset();
+      // 断线前排的重试是陈的（盘口都已作废），留着只会让重连后的新增量被 snapshotRetrying 挡住，
+      // 最多白等 60 秒才重新就绪。挡限流是 binance-rest 那道 pausedUntil 闸门的事，不是靠这里拖时间。
+      snapshotRetrying.clear();
+      snapshotBackoff.clear();
     }
   }
 
@@ -148,6 +154,10 @@ export function startMarketFeed(options: MarketFeedOptions): MarketFeed {
    */
   function requestSnapshot(symbol: string): void {
     if (stopped || fetchingSnapshot.has(symbol) || queuedSnapshots.has(symbol)) return;
+    // ⚠️ 2026-09-20：退避期间也要拦。盘口没对齐时每 100ms 就来一条增量，每条都调这里；
+    // 不看退避状态的话 19 个币对会把队列一直填满，被封期间空转、解封瞬间又以 250ms 一发的满速冲出去
+    // （权重 10 × 4 次/秒 = 2400/分钟，正好顶满 IP 限额），一撞就是二次封禁。
+    if (snapshotRetrying.has(symbol)) return;
     queuedSnapshots.add(symbol);
     snapshotQueue.push(symbol);
     void drainSnapshots();
@@ -208,8 +218,10 @@ export function startMarketFeed(options: MarketFeedOptions): MarketFeed {
     const previous = snapshotBackoff.get(symbol) ?? 0;
     const wait = previous === 0 ? SNAPSHOT_BACKOFF_START_MS : Math.min(previous * 2, SNAPSHOT_BACKOFF_MAX_MS);
     snapshotBackoff.set(symbol, wait);
+    snapshotRetrying.add(symbol);
     const timer = setTimeout(() => {
       snapshotTimers.delete(timer);
+      snapshotRetrying.delete(symbol);
       requestSnapshot(symbol);
     }, wait);
     snapshotTimers.add(timer);
@@ -224,6 +236,8 @@ export function startMarketFeed(options: MarketFeedOptions): MarketFeed {
       options.onEvent({ t: "book", symbol: event.symbol, bids: result.bids, asks: result.asks, ts: result.ts });
       return;
     }
+    // 整条都比快照旧，丢掉就行：盘口是好的，不用重拉（local-book 的 skipped）
+    if (result.t === "skipped") return;
     if (result.t === "resync") {
       logger.error(`[market] ${event.symbol} 盘口要重新对齐：${result.reason}`);
       sawBook.delete(event.symbol);
@@ -286,6 +300,7 @@ export function startMarketFeed(options: MarketFeedOptions): MarketFeed {
       stopped = true;
       for (const timer of snapshotTimers) clearTimeout(timer);
       snapshotTimers.clear();
+      snapshotRetrying.clear();
       for (const connection of connections) connection.stop();
     },
   };

@@ -289,6 +289,7 @@
 ## 12. 公开行情 REST（第 13b 讲）
 
 **出处**：网页版 Market Data REST API（Kline/Candlestick Data、Get Funding Rate History、24hr Ticker Price Change Statistics）+ 2026-09-17 实际请求｜核对：2026-09-17
+封禁规则出处：`docs/vendor/binance/usds-futures.txt` Limits 一节（"IP bans are tracked and scale in duration for repeat offenders, from 2 minutes to 3 days"）｜核对：2026-09-20
 
 | 接口 | 币安规则 | 我们 |
 | --- | --- | --- |
@@ -296,7 +297,8 @@
 | `GET /fapi/v1/fundingRate` | limit 默认 100、最大 1000；和 fundingInfo 共享 500 次 / 5 分钟 / IP；文档说不带时间范围返回最近 200 条，按时间升序；响应带 `markPrice` `rateType`（Regular / Special） | `/market/funding-history`，60 秒缓存。**实测** `limit=1000` 返回 500 条（缺口 #46） |
 | `GET /fapi/v1/ticker/24hr` | 单币对权重 1，不带 symbol 40；`priceChangePercent` 形如 `-95.960`（百分数） | ticker 的 `stats24h`，单币对 3 秒缓存；`/market/tickers` 用不带 symbol 的全量，10 秒缓存（权重 40 × 6 次 / 分钟 = 240，IP 限额 `REQUEST_WEIGHT` 2400 / 分钟，出处 `docs/vendor/binance/usds-futures.txt` exchangeInfo 示例） |
 | 标记价推送 `<symbol>@markPrice@1s` | 字段 `i` 是指数价格（真实推送 fixtures 里有） | 行情层解析出 `indexPrice`，只给展示 |
-| 限流响应 | HTTP 429 / 418，带 `Retry-After` | 按 `Retry-After` 暂停请求（没有就 60 秒），期间直接 `SERVICE_UNAVAILABLE` |
+| 限流响应 | HTTP 429 = 超限警告；**收到 429 之后继续发**才会被自动封 IP（418）。带 `Retry-After` | 按 `Retry-After` 暂停请求（没有就 60 秒），期间直接 `SERVICE_UNAVAILABLE`，一个请求都不发 |
+| 封禁时长 | IP 封禁**按累犯次数递增，2 分钟到 3 天**；限额按 **IP** 算，不按 API Key。被封期间继续撞会继续累加 | 全进程共用一个 `binanceRest` 实例（退避状态在实例闭包里），快照排队限速 + 指数退避 |
 
 ---
 

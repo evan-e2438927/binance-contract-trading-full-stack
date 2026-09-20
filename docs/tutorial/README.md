@@ -53,6 +53,18 @@
 | 14 | WebSocket 网关 | `apps/server/src/ws` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[14-websocket.md](14-websocket.md) |
 | — | 前端 | `apps/web` | 由 AI 直接实现 |
 
+### 计划外的补充讲（S 系列）
+
+主线讲完之后，因为真实环境暴露的问题临时补的。**按日期读，不影响主线顺序。**
+
+| # | 内容 | 位置 | 日期 |
+| --- | --- | --- | --- |
+| S01 | 行情层升级：盘口从 20 档换成完整盘口（增量流 + REST 快照） | `apps/server/src/market` | 2026-09-20 |
+| S02 | 事故复盘：被币安封了 IP。限流闸门、盘口对齐的两个 bug、日志失真 | `apps/server/src/market` | 2026-09-20 |
+
+- [S01-full-order-book.md](S01-full-order-book.md)
+- [S02-rate-limit-incident.md](S02-rate-limit-incident.md) ← **S01 上线当天出的事故，接着 S01 读**
+
 ---
 
 ## 依赖关系与顺序

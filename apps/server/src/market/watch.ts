@@ -2,6 +2,7 @@ import { OPEN_SYMBOLS } from "@binance-contract-trading-full-stack/db/brackets/o
 import { format, type Fixed } from "@binance-contract-trading-full-stack/shared";
 import { fetchSymbolStatuses } from "./exchange-info";
 import { createBinanceRest } from "./binance-rest";
+import { createRateLimitGate } from "./rate-limit";
 import { startMarketFeed } from "./market-feed";
 
 /**
@@ -10,7 +11,9 @@ import { startMarketFeed } from "./market-feed";
  * 启动时先查 exchangeInfo，只订阅 status = TRADING 的币对（下架结算中的币对盘口为空，订阅了永远 ready 不了）。
  */
 
-const statuses = await fetchSymbolStatuses(OPEN_SYMBOLS);
+// 闸门在最前面建：exchangeInfo 和后面拉快照共用一道，币安按 IP 限额（见 rate-limit.ts）
+const gate = createRateLimitGate();
+const statuses = await fetchSymbolStatuses(OPEN_SYMBOLS, gate.fetch);
 const skipped = statuses.filter((s) => s.status !== "TRADING");
 if (skipped.length > 0) {
   console.log(`跳过不在交易状态的币对：${skipped.map((s) => `${s.symbol}(${s.status})`).join("、")}`);
@@ -25,12 +28,15 @@ interface Row {
   rate?: Fixed;
 }
 
+// 只建一个：每次调用都 new 就等于没有限流保护（见 engine-host/start.ts）
+const rest = createBinanceRest({ gate });
+
 const rows = new Map<string, Row>(symbols.map((s) => [s, {}]));
 const show = (value: Fixed | undefined, precision = 4) => (value === undefined ? "—" : format(value, precision));
 
 const feed = startMarketFeed({
   symbols,
-  fetchDepthSnapshot: (symbol, limit) => createBinanceRest().depthSnapshot({ symbol, limit }),
+  fetchDepthSnapshot: (symbol, limit) => rest.depthSnapshot({ symbol, limit }),
   logger: { log: () => {}, error: (...args: unknown[]) => console.error(...args) },
   onEvent(event) {
     const row = rows.get(event.symbol);

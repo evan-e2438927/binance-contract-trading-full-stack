@@ -44,7 +44,9 @@ export type LocalBookResult =
   /** 还没有快照，这条增量先缓冲着 */
   | { t: "buffered" }
   /** 序列号对不上，要重新拉快照 */
-  | { t: "resync"; reason: string };
+  | { t: "resync"; reason: string }
+  /** 整条都比快照旧，按币安文档第 4 条丢掉。盘口是好的，什么都不用做 */
+  | { t: "skipped" };
 
 export interface LocalBook {
   applyDiff(diff: DepthDiff): LocalBookResult;
@@ -64,6 +66,16 @@ export function createLocalBook(options: { levels: number }): LocalBook {
   let lastUpdateId = -1;
   let buffer: DepthDiff[] = [];
   let live = false;
+  /**
+   * 快照已装上、但还没应用过第一条增量。
+   *
+   * ⚠️ 2026-09-20：只在缓冲区里挑「跨过 lastUpdateId 的第一条」是不够的。REST 快照经常比 WS 流**更新**
+   * （覆盖那一段的推送还在路上），这时缓冲区里一条 u >= lastUpdateId 的都没有，下一条推送的
+   * pu 必然小于 lastUpdateId——按 pu 规则判就是「断档」，于是白白重拉一次快照（权重 10）。
+   * 19 个币对各来这么一下，就是把自己往 418 上送。所以快照之后的**第一条**要按第 5 条的跨越规则判，
+   * 不按第 6 条的 pu 规则。
+   */
+  let awaitingFirst = false;
 
   function put(side: Map<Fixed, Fixed>, levels: Level[]): void {
     for (const level of levels) {
@@ -99,6 +111,7 @@ export function createLocalBook(options: { levels: number }): LocalBook {
     lastUpdateId = -1;
     buffer = [];
     live = false;
+    awaitingFirst = false;
   }
 
   return {
@@ -114,11 +127,31 @@ export function createLocalBook(options: { levels: number }): LocalBook {
         if (buffer.length > MAX_BUFFERED) buffer = buffer.slice(-MAX_BUFFERED);
         return { t: "buffered" };
       }
+      if (awaitingFirst) {
+        // 第 4 条：整条都比快照旧，丢掉。盘口没问题，别去重拉快照
+        if (diff.finalUpdateId < lastUpdateId) return { t: "skipped" };
+        // 快照之后的第一条，两种接法都算数：
+        // - 跨过快照点（第 5 条：U <= lastUpdateId <= u）——快照落在这条推送中间
+        // - 紧挨着快照点（pu == lastUpdateId）——快照正好落在上一条推送的 u 上
+        // 两个都不满足，中间那段才是真的看不到了。
+        if (diff.firstUpdateId > lastUpdateId && diff.prevFinalUpdateId !== lastUpdateId) {
+          const local = lastUpdateId;
+          clear();
+          buffer.push(diff);
+          return { t: "resync", reason: `快照之后第一条就断了：U=${diff.firstUpdateId}，pu=${diff.prevFinalUpdateId}，快照 lastUpdateId=${local}` };
+        }
+        apply(diff);
+        awaitingFirst = false;
+        return snapshotOf(diff.ts);
+      }
       // 第 6 条：每条的 pu 必须接上上一条的 u，对不上说明中间掉了包
       if (diff.prevFinalUpdateId !== lastUpdateId) {
+        // ⚠️ reason 里的 lastUpdateId 要在 clear() 之前取：clear() 会把它抹成 -1，
+        // 日志里永远印 -1 的话，这行日志就失去了排查价值
+        const local = lastUpdateId;
         clear();
         buffer.push(diff);
-        return { t: "resync", reason: `序列号断了：pu=${diff.prevFinalUpdateId}，本地 lastUpdateId=${lastUpdateId}` };
+        return { t: "resync", reason: `序列号断了：pu=${diff.prevFinalUpdateId}，本地 lastUpdateId=${local}` };
       }
       apply(diff);
       return snapshotOf(diff.ts);
@@ -152,6 +185,8 @@ export function createLocalBook(options: { levels: number }): LocalBook {
       }
 
       live = true;
+      // 缓冲区里一条都接不上：快照比流还新，第一条增量按跨越规则判（见 awaitingFirst）
+      awaitingFirst = pending.length === 0;
       return snapshotOf(ts);
     },
   };
