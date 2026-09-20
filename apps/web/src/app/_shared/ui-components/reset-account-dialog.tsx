@@ -21,9 +21,9 @@ export function ResetAccountDialog({ open, onOpenChange }: { open: boolean; onOp
   const hydrate = useAccountStore((s) => s.hydrate);
   const [pending, setPending] = useState(false);
 
-  // canReset / resetAvailableAt 只有 REST 的 GET /account 才给，WS 推送里没有
-  const availableAt = account && "resetAvailableAt" in account ? (account.resetAvailableAt as number | null) : null;
-  const cooling = availableAt !== null && availableAt > Date.now();
+  // canReset / resetAvailableAt 来自 REST 的 GET /account（WS 推送里没有，store 会沿用）
+  const availableAt = account?.resetAvailableAt ?? null;
+  const cooling = account ? !account.canReset : false;
 
   const confirm = async () => {
     setPending(true);

@@ -17,13 +17,13 @@ import { useAccountStore } from "@/stores/account-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useMarketStore } from "@/stores/market-store";
 import { useUiStore } from "@/stores/ui-store";
-
+import { PositionModeDialog } from "../../../_shared/ui-components/position-mode-dialog";
 import { buildPlaceOrderBody, type OrderTab, positionSideOf } from "../../_lib/order-body";
 import { estimateOrder, qtyFromPercent } from "../../_lib/order-estimate";
 import { floorToTick, hasBlockingIssue, lotOf, validateOrderForm } from "../../_lib/order-validate";
 import { convertQtyInput, type QtyUnit, toBaseQty, toQuoteQty } from "../../_lib/qty-unit";
 import { useOrderFormStore } from "../../_stores/order-form-store";
-import { LeverageDialog, MarginModeDialog, PositionModeDialog } from "../dialogs/config-dialogs";
+import { LeverageDialog, MarginModeDialog } from "../dialogs/config-dialogs";
 import { ConfirmOrderDialog } from "../dialogs/confirm-order-dialog";
 import { ConfigButton, FieldAction, NumberField, PercentSlider } from "./fields";
 
@@ -420,7 +420,6 @@ export function OrderPanel({ spec }: { spec: SymbolSpec }) {
           <PositionModeDialog
             open={dialog === "position"}
             onOpenChange={(open) => setDialog(open ? "position" : null)}
-            symbol={spec.symbol}
             current={positionMode}
           />
         </>

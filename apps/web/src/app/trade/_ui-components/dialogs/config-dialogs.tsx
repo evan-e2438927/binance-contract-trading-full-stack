@@ -2,19 +2,18 @@
 
 import { Button } from "@binance-contract-trading-full-stack/ui/components/button";
 import { Dialog, DialogContent, DialogTitle } from "@binance-contract-trading-full-stack/ui/components/dialog";
-import { cn } from "@binance-contract-trading-full-stack/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { formatUsdt } from "@/lib/format/number";
 import { notify } from "@/lib/toast/notify";
-import { setPositionMode } from "@/server-api-module/account/mutations";
 import { accountKeys } from "@/server-api-module/account/queries";
 import type { SymbolConfig } from "@/server-api-module/account/types";
-import type { MarginMode, PositionMode } from "@/server-api-module/common/types";
+import type { MarginMode } from "@/server-api-module/common/types";
 import type { SymbolSpec } from "@/server-api-module/market/types";
 import { setLeverage, setMarginMode } from "@/server-api-module/position/mutations";
-import { useAccountStore } from "@/stores/account-store";
+
+import { ChoiceList } from "../../../_shared/ui-components/choice-list";
 
 /**
  * T-09 调整杠杆 / T-10 保证金模式 / G-07 持仓模式（设计稿没画这三个，先用基础样式，功能按 08 做）。
@@ -131,7 +130,7 @@ export function MarginModeDialog({
 
   return (
     <DialogShell open={open} onOpenChange={onOpenChange} title="保证金模式">
-      <Choice
+      <ChoiceList
         options={[
           {
             value: "CROSS" as const,
@@ -151,81 +150,5 @@ export function MarginModeDialog({
         确认
       </Button>
     </DialogShell>
-  );
-}
-
-/** G-07 持仓模式：单向 / 双向（账户级，不分币对） */
-export function PositionModeDialog({
-  open,
-  onOpenChange,
-  symbol,
-  current,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  symbol: string;
-  current: PositionMode;
-}) {
-  const [value, setValue] = useState<PositionMode>(current);
-  const { pending, apply } = useApply(symbol, () => onOpenChange(false));
-  const hydrate = useAccountStore((s) => s.hydrate);
-
-  return (
-    <DialogShell open={open} onOpenChange={onOpenChange} title="持仓模式">
-      <Choice
-        options={[
-          { value: "ONE_WAY" as const, label: "单向持仓", hint: "一个币对只有一个方向的仓位，反向下单会先平后开" },
-          { value: "HEDGE" as const, label: "双向持仓", hint: "多头、空头各一个仓位，可以同时持有" },
-        ]}
-        value={value}
-        onChange={setValue}
-      />
-      <p className="text-[11px] text-muted-foreground">
-        账户有任何持仓或挂单时不能切换（账户级设置，对所有币对生效）。
-      </p>
-      <Button
-        disabled={pending || value === current}
-        onClick={() =>
-          apply(
-            async () => {
-              await setPositionMode(value);
-              await hydrate();
-            },
-            `已切换为${value === "ONE_WAY" ? "单向持仓" : "双向持仓"}`,
-          )
-        }
-      >
-        确认
-      </Button>
-    </DialogShell>
-  );
-}
-
-function Choice<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { value: T; label: string; hint: string }[];
-  value: T;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onChange(option.value)}
-          className={cn(
-            "rounded-[6px] border p-3 text-left transition-colors",
-            option.value === value ? "border-brand bg-surface" : "hover:border-brand/50",
-          )}
-        >
-          <div className="font-semibold text-[13px] text-foreground">{option.label}</div>
-          <div className="pt-1 text-[11px] text-muted-foreground leading-[16px]">{option.hint}</div>
-        </button>
-      ))}
-    </div>
   );
 }

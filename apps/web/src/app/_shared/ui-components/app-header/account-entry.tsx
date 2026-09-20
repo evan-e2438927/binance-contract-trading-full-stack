@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@binance-contract-trading-full-stack/ui/components/dropdown-menu";
 import { Skeleton } from "@binance-contract-trading-full-stack/ui/components/skeleton";
-
+import { useState } from "react";
 import { LetterAvatar } from "@/components/letter-avatar";
 import { formatUsdt } from "@/lib/format/number";
 import { useAccountStore } from "@/stores/account-store";
@@ -19,6 +19,9 @@ import { useAuthStore } from "@/stores/auth-store";
 import { useUiStore } from "@/stores/ui-store";
 
 import { LoginDialog } from "../login-dialog/login-dialog";
+import { NicknameDialog } from "../nickname-dialog";
+import { PositionModeDialog } from "../position-mode-dialog";
+import { ResetAccountDialog } from "../reset-account-dialog";
 import { avatarInitial, displayName, shortId } from "./account-display";
 
 const PROVIDER_LABEL = {
@@ -37,6 +40,8 @@ export function AccountEntry() {
   const me = useAuthStore((s) => s.me);
   const logout = useAuthStore((s) => s.logout);
   const walletBalance = useAccountStore((s) => s.account?.walletBalance);
+  const positionMode = useAccountStore((s) => s.account?.positionMode) ?? "ONE_WAY";
+  const [dialog, setDialog] = useState<"nickname" | "positionMode" | "reset" | null>(null);
   const setLoginOpen = useUiStore((s) => s.setLoginOpen);
 
   // 登录态还在校验：占位，不要闪一下「登录」按钮再变成账户名
@@ -84,13 +89,22 @@ export function AccountEntry() {
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {/* 下面三项等 M06：改昵称（G-06）、持仓模式（G-07）、重置账户（G-08） */}
-        <DropdownMenuItem disabled>修改昵称</DropdownMenuItem>
-        <DropdownMenuItem disabled>持仓模式</DropdownMenuItem>
-        <DropdownMenuItem disabled>重置模拟账户</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setDialog("nickname")}>修改昵称</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setDialog("positionMode")}>
+          持仓模式（{positionMode === "ONE_WAY" ? "单向" : "双向"}）
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setDialog("reset")}>重置模拟账户</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={logout}>退出登录</DropdownMenuItem>
       </DropdownMenuContent>
+
+      <NicknameDialog open={dialog === "nickname"} onOpenChange={(open) => setDialog(open ? "nickname" : null)} />
+      <PositionModeDialog
+        open={dialog === "positionMode"}
+        onOpenChange={(open) => setDialog(open ? "positionMode" : null)}
+        current={positionMode}
+      />
+      <ResetAccountDialog open={dialog === "reset"} onOpenChange={(open) => setDialog(open ? "reset" : null)} />
     </DropdownMenu>
   );
 }

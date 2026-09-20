@@ -10,7 +10,7 @@ import { useAccountStore } from "@/stores/account-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useUiStore } from "@/stores/ui-store";
 
-import { ResetAccountDialog } from "../dialogs/reset-account-dialog";
+import { ResetAccountDialog } from "../../../_shared/ui-components/reset-account-dialog";
 
 /**
  * T-08 账户概览（Figma 4:5824）。
