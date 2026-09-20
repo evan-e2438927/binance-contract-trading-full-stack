@@ -13,6 +13,7 @@ import { useAccountStore } from "@/stores/account-store";
 import { useMarketStore } from "@/stores/market-store";
 
 import { ClosePositionDialog, IsolatedMarginDialog } from "../dialogs/position-dialogs";
+import { PositionTpslDialog } from "../dialogs/position-tpsl/position-tpsl-dialog";
 
 /**
  * T-07 仓位表（设计稿 4:5628 的列）：数量 · 开仓均价 · 损益两平 · 标记价 · 强平价 · 保证金比率 ·
@@ -61,7 +62,7 @@ export function PositionsTable({
 }
 
 function PositionRow({ position, spec }: { position: Position; spec: SymbolSpec | undefined }) {
-  const [dialog, setDialog] = useState<"close" | "margin" | null>(null);
+  const [dialog, setDialog] = useState<"close" | "margin" | "tpsl" | null>(null);
   const fundingRate = useMarketStore((s) => s.tickers[position.symbol]?.fundingRate) ?? null;
   if (!spec) return null;
 
@@ -139,12 +140,27 @@ function PositionRow({ position, spec }: { position: Position; spec: SymbolSpec 
         >
           平仓
         </button>
+        <button
+          type="button"
+          onClick={() => setDialog("tpsl")}
+          className="rounded-[4px] border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-brand/60 hover:text-foreground"
+        >
+          止盈/损
+        </button>
       </div>
 
       {dialog === "close" && (
         <ClosePositionDialog
           open
           onOpenChange={(open) => setDialog(open ? "close" : null)}
+          position={position}
+          spec={spec}
+        />
+      )}
+      {dialog === "tpsl" && (
+        <PositionTpslDialog
+          open
+          onOpenChange={(open) => setDialog(open ? "tpsl" : null)}
           position={position}
           spec={spec}
         />
