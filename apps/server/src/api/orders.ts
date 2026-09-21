@@ -21,7 +21,15 @@ import { orderFromDb, orderFromEngine } from "./serialize";
  */
 
 /** 用户能下的订单类型：LIQUIDATION 只有强平时系统能下 */
-const USER_ORDER_TYPES = ["LIMIT", "MARKET", "STOP", "STOP_MARKET", "TAKE_PROFIT", "TAKE_PROFIT_MARKET"] as const;
+const USER_ORDER_TYPES = [
+  "LIMIT",
+  "MARKET",
+  "STOP",
+  "STOP_MARKET",
+  "TAKE_PROFIT",
+  "TAKE_PROFIT_MARKET",
+  "TRAILING_STOP_MARKET",
+] as const;
 
 /** 币安 newClientOrderId 的规则（New Order 参数说明，2026-09-17 核对） */
 const CLIENT_ORDER_ID = /^[.A-Z:/a-z0-9_-]{1,36}$/;
@@ -38,12 +46,15 @@ const placeOrderSchema = z.strictObject(
     price: decimalInput("price").optional(),
     stopPrice: decimalInput("stopPrice").optional(),
     workingType: z.enum(WORKING_TYPE, { error: "workingType 只能是 MARK_PRICE 或 CONTRACT_PRICE" }).optional(),
+    // 跟踪委托（第 15 讲）。callbackRate 是**百分数**，和币安一个口径："1" = 1%，范围 0.1 ~ 10
+    activationPrice: decimalInput("activationPrice").optional(),
+    callbackRate: decimalInput("callbackRate").optional(),
     qty: decimalInput("qty").optional(),
     reduceOnly: z.boolean({ error: "reduceOnly 要传布尔值" }).optional(),
     closePosition: z.boolean({ error: "closePosition 要传布尔值" }).optional(),
   },
   {
-    // 缺口 #28：priceProtect、goodTillDate、activationPrice（跟踪止损）等没实现的参数，直接拒，不假装支持
+    // 缺口 #28：priceProtect、goodTillDate 等没实现的参数，直接拒，不假装支持
     error: (issue) => (issue.code === "unrecognized_keys" ? `不支持的参数：${issue.keys.join(", ")}` : undefined),
   },
 );

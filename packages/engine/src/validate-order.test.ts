@@ -123,7 +123,7 @@ describe("③ INVALID_PARAMS", () => {
       { type: "STOP_MARKET", price: undefined, timeInForce: undefined },
       "STOP_MARKET 单必须填触发价",
     ],
-    ["非触发单指定 workingType", { workingType: "CONTRACT_PRICE" }, "只有触发单才能指定 workingType"],
+    ["非条件单指定 workingType", { workingType: "CONTRACT_PRICE" }, "只有条件单才能指定 workingType"],
     ["限价单用 closePosition", { closePosition: true, qty: undefined }, "closePosition 只能用于"],
     [
       "closePosition 同时设 reduceOnly",

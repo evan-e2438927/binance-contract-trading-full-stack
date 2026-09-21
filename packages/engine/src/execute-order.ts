@@ -31,7 +31,10 @@ interface Take {
  * 触发单触发时（第 09 讲）用来保留原订单身份的字段：订单类型仍是 STOP / TAKE_PROFIT…、触发价、
  * triggered = true、下单时间、closePosition。成交机制只看 req.type（已经转成 MARKET 或 LIMIT）。
  */
-export type OrderOrigin = Pick<Order, "type" | "stopPrice" | "workingType" | "createdAt" | "closePosition">;
+export type OrderOrigin = Pick<
+  Order,
+  "type" | "stopPrice" | "workingType" | "createdAt" | "closePosition" | "activationPrice" | "callbackRate" | "trackedPrice"
+>;
 
 export function executeOrder(
   state: EngineState,
@@ -60,6 +63,10 @@ export function executeOrder(
     price: limitPrice,
     stopPrice: origin?.stopPrice ?? null,
     workingType: origin?.workingType ?? validated.workingType,
+    activationPrice: origin?.activationPrice ?? null,
+    callbackRate: origin?.callbackRate ?? null,
+    // 触发那一刻跟到哪，就留在订单上——事后看这张单是在什么价位被打掉的，靠它
+    trackedPrice: origin?.trackedPrice ?? null,
     qty: validated.qty,
     executedQty: 0n,
     avgPrice: 0n,

@@ -67,7 +67,16 @@ export type OrderValidation =
   | { ok: true; order: ValidatedOrder }
   | { ok: false; code: ErrorCode; message: string };
 
+/** 有固定触发价的条件单（第 09 讲） */
 const TRIGGER_TYPES: readonly OrderType[] = ["STOP", "STOP_MARKET", "TAKE_PROFIT", "TAKE_PROFIT_MARKET"];
+/**
+ * 所有"挂着等条件、未触发时不冻结保证金"的单：上面四种 + 跟踪委托（第 15 讲）。
+ * 币安把它们一起算进 algo 单的数量上限，我们跟着一起算。
+ */
+const CONDITIONAL_TYPES: readonly OrderType[] = [...TRIGGER_TYPES, "TRAILING_STOP_MARKET"];
+/** 跟踪委托的回调率范围，百分数。币安接口 min 0.1 / max 10（07 第 14 节） */
+const CALLBACK_RATE_MIN = parse("0.1");
+const CALLBACK_RATE_MAX = parse("10");
 /** 需要委托价 price 的类型：限价单，以及触发后挂限价单的两种触发单。 */
 const PRICED_TYPES: readonly OrderType[] = ["LIMIT", "STOP", "TAKE_PROFIT"];
 const CLOSE_POSITION_TYPES: readonly OrderType[] = ["STOP_MARKET", "TAKE_PROFIT_MARKET"];
@@ -102,6 +111,8 @@ export function validateOrder(
   const paramsError = checkParams(req, account.positionMode);
   if (paramsError) return reject("INVALID_PARAMS", paramsError);
   const isTrigger = TRIGGER_TYPES.includes(req.type);
+  const isTrailing = req.type === "TRAILING_STOP_MARKET";
+  const isConditional = isTrigger || isTrailing;
   const closePosition = req.closePosition === true;
   const reduceOnly = req.reduceOnly === true;
   const qty = req.qty ?? 0n; // 第 3 步保证了：只有 closePosition 单才会没有 qty
@@ -120,6 +131,7 @@ export function validateOrder(
   for (const [label, value] of [
     ["委托价", req.price],
     ["触发价", req.stopPrice],
+    ["激活价", req.activationPrice],
   ] as const) {
     if (value === undefined) continue;
     if (value < spec.minPrice || value > spec.maxPrice) {
@@ -219,8 +231,8 @@ export function validateOrder(
   const oppositeLevels = req.side === "BUY" ? book.asks : book.bids;
   let requiredMargin = 0n;
 
-  // ⑨ ⑩ 只对"会开仓"的部分做。未触发的触发单不占保证金，触发那一刻再走一遍（第 09 讲）
-  if (openQty > 0n && !isTrigger) {
+  // ⑨ ⑩ 只对"会开仓"的部分做。未触发的条件单（含跟踪委托）不占保证金，触发那一刻再走一遍（第 09、15 讲）
+  if (openQty > 0n && !isConditional) {
     // 开仓部分的成本（缺口 #14，按币安"开仓成本 = 起始保证金 + 开仓亏损"，外加我们预留的 Taker 手续费）：
     // 市价单按盘口逐档算真实成交价（先被平仓部分吃掉的档位跳过），限价单按委托价
     const costInput = {
@@ -305,7 +317,7 @@ export function validateOrder(
   //    只有"会留在挂单簿里"的订单才受限——市价、IOC、FOK 下完就结束，不占挂单位；
   //    要是它们也被拦，挂满的用户连市价平仓都做不了（币安文档没写这一点，是我们的判断）
   const timeInForce = req.timeInForce ?? "GTC";
-  const rests = isTrigger || (req.type === "LIMIT" && (timeInForce === "GTC" || timeInForce === "GTX"));
+  const rests = isConditional || (req.type === "LIMIT" && (timeInForce === "GTC" || timeInForce === "GTX"));
   if (rests) {
     const maxOrders = spec.maxNumOrdersNum;
     const openOrders = countOpenOrders(state, accountId, req.symbol);
@@ -321,7 +333,7 @@ export function validateOrder(
   //    条件单总数上限——所有币对合计（币安 -4045 MAX_STOP_ORDER_EXCEEDED；上限 200 见 LimitConfig）
   //    触发价下单时就已经被穿过 → 拒单（缺口 #15，币安 -2021 "Order would immediately trigger"）。
   //    "现在的价格"按 workingType 取：MARK_PRICE 用标记价，CONTRACT_PRICE（默认）用最新成交价
-  if (isTrigger) {
+  if (isConditional) {
     const maxConditional = state.config.limits.maxConditionalOrdersNum;
     const conditional = countConditionalOrders(state, accountId);
     if (conditional >= maxConditional) {
@@ -332,12 +344,35 @@ export function validateOrder(
     if (current === undefined) {
       return reject("MARKET_NOT_READY", `${req.symbol} 还没有最新成交价，暂时无法判断触发价`);
     }
-    if (triggerReached(req.type, req.side, req.stopPrice!, current)) {
-      const priceName = workingType === "MARK_PRICE" ? "标记价" : "最新价";
+    const priceName = workingType === "MARK_PRICE" ? "标记价" : "最新价";
+
+    if (isTrigger && triggerReached(req.type, req.side, req.stopPrice!, current)) {
       return reject(
         "WOULD_IMMEDIATELY_TRIGGER",
         `触发价 ${show(req.stopPrice!)} 已经被穿过（当前${priceName} ${show(current)}），下单会立刻触发`,
       );
+    }
+
+    // 跟踪委托（第 15 讲）：回调率在币安接口允许的范围内；
+    // 显式传了激活价的，方向必须还没被穿过——币安 -2021：买单激活价要低于现价、卖单要高于现价。
+    // 不传激活价就是"从现在开始跟"，没有这个限制（币安默认取下单那一刻的价）
+    if (isTrailing) {
+      const rate = req.callbackRate!;
+      if (rate < CALLBACK_RATE_MIN || rate > CALLBACK_RATE_MAX) {
+        return reject(
+          "INVALID_PARAMS",
+          `回调率 ${show(rate)}% 超出允许范围 ${show(CALLBACK_RATE_MIN)}% ~ ${show(CALLBACK_RATE_MAX)}%`,
+        );
+      }
+      if (req.activationPrice !== undefined) {
+        const wrongWay = req.side === "BUY" ? req.activationPrice >= current : req.activationPrice <= current;
+        if (wrongWay) {
+          return reject(
+            "WOULD_IMMEDIATELY_TRIGGER",
+            `激活价 ${show(req.activationPrice)} 必须${req.side === "BUY" ? "低" : "高"}于当前${priceName} ${show(current)}`,
+          );
+        }
+      }
     }
   }
 
@@ -373,6 +408,7 @@ export function validateOrder(
 function checkParams(req: PlaceOrderRequest, positionMode: PositionMode): string | null {
   if (req.type === "LIQUIDATION") return "LIQUIDATION 是系统强平单，不能手动下单";
   const isTrigger = TRIGGER_TYPES.includes(req.type);
+  const isTrailing = req.type === "TRAILING_STOP_MARKET";
   const isPriced = PRICED_TYPES.includes(req.type);
 
   if (isPriced && req.price === undefined) return `${req.type} 单必须填委托价 price`;
@@ -380,12 +416,19 @@ function checkParams(req: PlaceOrderRequest, positionMode: PositionMode): string
   if (req.price !== undefined && req.price <= 0n) return "委托价必须大于 0";
 
   if (isTrigger && req.stopPrice === undefined) return `${req.type} 单必须填触发价 stopPrice`;
+  // 跟踪委托的止损线是跟着价格挪的，没有固定触发价（币安：这个字段对它无意义）
   if (!isTrigger && req.stopPrice !== undefined) return `${req.type} 单不接受触发价 stopPrice`;
   if (req.stopPrice !== undefined && req.stopPrice <= 0n) return "触发价必须大于 0";
 
+  // 跟踪委托独有的两个参数
+  if (isTrailing && req.callbackRate === undefined) return "跟踪委托必须填回调率 callbackRate";
+  if (!isTrailing && req.callbackRate !== undefined) return `${req.type} 单不接受回调率 callbackRate`;
+  if (!isTrailing && req.activationPrice !== undefined) return `${req.type} 单不接受激活价 activationPrice`;
+  if (req.activationPrice !== undefined && req.activationPrice <= 0n) return "激活价必须大于 0";
+
   // TIF 描述的是"挂到盘口上之后怎么处理"，市价类订单不挂盘口，传了说明调用方理解错了
   if (!isPriced && req.timeInForce !== undefined) return `${req.type} 单不接受 timeInForce`;
-  if (!isTrigger && req.workingType !== undefined) return "只有触发单才能指定 workingType";
+  if (!isTrigger && !isTrailing && req.workingType !== undefined) return "只有条件单才能指定 workingType";
 
   if (positionMode === "HEDGE") {
     // 币安："reduceOnly — Cannot be sent in Hedge Mode"。双向模式下 SELL + LONG、BUY + SHORT 本身就是减仓，
@@ -403,7 +446,7 @@ function checkParams(req: PlaceOrderRequest, positionMode: PositionMode): string
 
   if (req.closePosition) {
     if (!CLOSE_POSITION_TYPES.includes(req.type)) {
-      return "closePosition 只能用于 STOP_MARKET / TAKE_PROFIT_MARKET";
+      return "closePosition 只能用于 STOP_MARKET / TAKE_PROFIT_MARKET（币安：跟踪委托也不支持）";
     }
     if (req.reduceOnly) return "closePosition 已经隐含只减仓，不要同时设置 reduceOnly";
     if (req.qty !== undefined) return "closePosition 单在触发时按全部仓位平仓，不要填数量 qty";
@@ -639,7 +682,7 @@ export function triggerReached(type: OrderType, side: "BUY" | "SELL", stopPrice:
 function countConditionalOrders(state: EngineState, accountId: string): number {
   let count = 0;
   for (const order of state.orders.values()) {
-    if (order.accountId === accountId && TRIGGER_TYPES.includes(order.type) && !order.triggered) count++;
+    if (order.accountId === accountId && CONDITIONAL_TYPES.includes(order.type) && !order.triggered) count++;
   }
   return count;
 }

@@ -2,6 +2,7 @@ import type {
   Fixed,
   MarginMode,
   PositionSide,
+  WorkingType,
 } from "@binance-contract-trading-full-stack/shared";
 import type {
   Account,
@@ -221,4 +222,13 @@ export function loadSnapshot(
       Object.freeze(p),
     );
   for (const o of copy.orders) orders.set(o.id, Object.freeze(o));
+}
+
+/**
+ * `workingType` 对应的参照价：MARK_PRICE 看标记价，CONTRACT_PRICE（默认）看最新成交价。
+ * 取不到返回 null——条件单的触发判断和跟踪委托的激活价默认值都用它，取不到就说明行情还没就绪。
+ */
+export function referencePrice(state: EngineState, symbol: string, workingType: WorkingType): Fixed | null {
+  if (workingType === "MARK_PRICE") return state.marks.get(symbol)?.markPrice ?? null;
+  return state.lastPrices.get(symbol) ?? null;
 }

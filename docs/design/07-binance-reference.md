@@ -302,6 +302,31 @@
 
 ---
 
+## 14. 跟踪委托 TRAILING_STOP_MARKET（第 15 讲）
+
+**出处**：New Algo Order（`POST /fapi/v1/algoOrder`）网页版接口说明（请求体 + 下方备注）、`GET /fapi/v1/allOrders` 响应字段、`MAX_NUM_ALGO_ORDERS` filter 说明、用户数据流 `ORDER_TRADE_UPDATE` 的 `AP` / `cr` 字段、FAQ「What Is a Trailing Stop Order?」（360042299292）｜核对：2026-09-21
+
+> ⚠️ **币安接口说明这一段本身是坏的**：网页版和它背后的页面数据里，两个 `<=` 被当成 HTML 标签吃掉了，
+> 触发条件只剩半句（"BUY: the lowest price after order placed = the lowest price * (1 + callbackRate)"）。
+> 缺掉的那半句按 FAQ 360042299292 的表格补全（该页写的是「激活价 ≤ 最高价」「回调幅度 ≥ 回调率」），
+> 两边其余部分互相吻合。**这一条是全文唯一一处靠两个来源拼出来的规则，以后币安把文档修好了要回来核对。**
+
+| 规则 | 币安 | 我们（第 15 讲） |
+| --- | --- | --- |
+| 参数 | `activatePrice`（可选，不传默认为下单那一刻的 latest price，按 `workingType` 取）、`callbackRate`；`stopPrice` 对这个类型无意义（allOrders 响应写明 "please ignore when order type is TRAILING_STOP_MARKET"） | 同左。`activationPrice` 可选，不传取下单那一刻的参照价 |
+| `callbackRate` 范围 | **接口**：min 0.1、max 10（百分数，即 0.1% ～ 10%）。**FAQ 页面**写的是 0.01% ～ 20%（网页端口径），两边不一致 | 按**接口**的 0.1% ～ 10%——我们对外是 API，以接口口径为准 |
+| 触发条件（SELL，护多头） | 下单后的**最高价** ≥ `activatePrice`，且 latest price ≤ 最高价 × (1 − `callbackRate`) | 同左 |
+| 触发条件（BUY，护空头） | 下单后的**最低价** ≤ `activatePrice`，且 latest price ≥ 最低价 × (1 + `callbackRate`) | 同左 |
+| 最高 / 最低价从什么时候算 | "after order placed" —— 从下单那一刻起 | 同左。追踪的是 `workingType` 对应的那个价（标记价或最新成交价），不混用 |
+| 下单时已满足 | -2021 ORDER_WOULD_IMMEDIATELY_TRIGGER。BUY：`activatePrice` 必须小于 latest price；SELL：必须大于 | 同左，复用校验链第 14 步的 `WOULD_IMMEDIATELY_TRIGGER` |
+| 触发后 | 按市价单成交 | 同左：转成 MARKET 重走校验链（和第 09 讲的条件单一个路径） |
+| `closePosition` | 接口说明写「Close-All，used with STOP_MARKET or TAKE_PROFIT_MARKET」——**不配跟踪委托** | 不支持，传了拒单 |
+| `reduceOnly` | 可以传（双向持仓模式下不能传） | 同左 |
+| 数量限制 | 算 algo 单：`MAX_NUM_ALGO_ORDERS` 把 `STOP` / `STOP_MARKET` / `TAKE_PROFIT` / `TAKE_PROFIT_MARKET` / `TRAILING_STOP_MARKET` 一起数；2025-12-29 后的口径是所有币对合计 200 | 和第 09 讲的条件单共用同一个计数（合计 ≤ 200） |
+| 展示字段 | allOrders 返回 `activatePrice` + `priceRate`（回调率）；推送里是 `AP` / `cr` | 我们的订单对外给 `activationPrice` + `callbackRate`，另外多给一个**币安没有的** `trackedPrice`（当前追踪到的最高 / 最低价），理由见第 15 讲讲义 |
+
+---
+
 ## 13. 还没核对、写到时要查的
 
 | 讲 | 要查的币安规则 |
@@ -310,3 +335,4 @@
 | 08 | ✅ 已核对，见第 9 节 |
 | 09 | ✅ 已核对，见第 10 节。**还没查**：`priceProtect` 触发时怎么判（`triggerProtect` 的含义）、止损限价单委托价上下限用的是哪个字段（缺口 #28，要做时再查） |
 | 13a | ✅ 账户 / 仓位字段、强平价公式、ROI% 已查，见第 11 节。**还没查**：`availableBalance` 的全仓起始保证金按开仓价还是标记价（缺口 #43）；`totalOpenOrderInitialMargin` 含不含手续费（缺口 #40） |
+| 15 | ✅ 已核对，见第 14 节。**注意**：币安那段接口说明本身有渲染 bug，触发条件是拿 FAQ 补全的；**还没查**：跟踪委托触发后被拒是什么状态（按第 09 讲同样处理）、激活前算不算进 `MAX_NUM_ORDERS`（我们算） |

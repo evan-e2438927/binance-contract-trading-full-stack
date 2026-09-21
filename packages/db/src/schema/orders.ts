@@ -58,7 +58,11 @@ export const orders = pgTable(
     stopPrice: bigint("stop_price", { mode: "bigint" }), // 触发单的触发价，非触发单为 null
     workingType: workingTypeEnum("working_type")
       .notNull()
-      .default("CONTRACT_PRICE"), // 触发单用什么价格判断触发
+      .default("CONTRACT_PRICE"), // 条件单用什么价格判断触发 / 跟踪
+    // ── 跟踪委托 TRAILING_STOP_MARKET（第 15 讲）。其它类型三列都是 null ──
+    activationPrice: bigint("activation_price", { mode: "bigint" }), // 激活价：最有利价穿过它，这张单才开始算回撤
+    callbackRate: bigint("callback_rate", { mode: "bigint" }), // 回调率，百分数定标（1% 存 1e8），币安允许 0.1 ~ 10
+    trackedPrice: bigint("tracked_price", { mode: "bigint" }), // 下单以来追到的最有利价：卖单记最高、买单记最低
     qty: bigint("qty", { mode: "bigint" }).notNull(), // 委托数量
     executedQty: bigint("executed_qty", { mode: "bigint" })
       .notNull()

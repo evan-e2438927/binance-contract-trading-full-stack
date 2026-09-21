@@ -202,3 +202,159 @@ describe("条件单总数上限（币安：所有币对合计 200，-4045）", (
     expect(only(s.place(trigger("STOP_MARKET", "BUY", "50300")), "orderUpdate")).toHaveLength(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────
+// 跟踪委托 TRAILING_STOP_MARKET（第 15 讲，规则见 07-binance-reference.md 第 14 节）
+// ─────────────────────────────────────────────────────────────
+
+/** 一张跟踪委托。默认按最新成交价（CONTRACT_PRICE）跟 */
+function trailing(side: OrderSide, callbackRate: string, extra: Partial<PlaceOrderRequest> = {}): Partial<PlaceOrderRequest> {
+  return {
+    type: "TRAILING_STOP_MARKET",
+    side,
+    price: undefined,
+    timeInForce: undefined,
+    stopPrice: undefined,
+    callbackRate: parse(callbackRate),
+    qty: parse("1"),
+    ...extra,
+  };
+}
+
+describe("跟踪委托：追踪与触发", () => {
+  it("卖单跟最高价：价格一路涨，跟踪价跟着涨，中途不触发", () => {
+    const s = setup();
+    s.place(trailing("SELL", "1")); // 回调率 1%
+    s.trade("51000");
+    s.trade("52000");
+    expect(s.order("o-1")?.trackedPrice).toBe(parse("52000"));
+    expect(s.order("o-1")?.triggered).toBe(false);
+  });
+
+  it("卖单：从最高价回撤到 1% 就触发，按市价成交", () => {
+    const s = setup();
+    s.place(trailing("SELL", "1"));
+    s.trade("52000"); // 最高价 52,000 → 止损线 51,480
+    const events = s.trade("51480");
+    // 全部成交的单会离开挂单簿，状态看事件
+    expect(only(events, "orderUpdate")[0]!.order).toMatchObject({
+      id: "o-1",
+      type: "TRAILING_STOP_MARKET",
+      triggered: true,
+      status: "FILLED",
+      trackedPrice: parse("52000"), // 在哪个价位被打掉的，留在单子上
+    });
+    expect(only(events, "fill").length).toBeGreaterThan(0);
+  });
+
+  it("卖单：回撤不够就不触发（差一个最小单位也不行）", () => {
+    const s = setup();
+    s.place(trailing("SELL", "1"));
+    s.trade("52000");
+    s.trade("51480.1");
+    expect(s.order("o-1")?.triggered).toBe(false);
+  });
+
+  it("买单跟最低价：跌到最低后反弹 1% 触发", () => {
+    const s = setup();
+    s.place(trailing("BUY", "1"));
+    s.trade("48000"); // 最低价 48,000 → 触发线 48,480
+    expect(s.order("o-1")?.trackedPrice).toBe(parse("48000"));
+    const events = s.trade("48480");
+    expect(only(events, "orderUpdate")[0]!.order).toMatchObject({ id: "o-1", triggered: true, status: "FILLED" });
+  });
+
+  it("不传激活价 = 从下单那一刻开始跟：跟踪价初始就是当时的最新价", () => {
+    const s = setup();
+    s.place(trailing("SELL", "2"));
+    const order = s.order("o-1");
+    expect(order?.trackedPrice).toBe(parse("50000"));
+    expect(order?.activationPrice).toBe(parse("50000"));
+  });
+
+  it("传了激活价：没到激活价之前，跌再多也不触发", () => {
+    const s = setup();
+    // 卖单激活价 52,000（高于现价 50,000）
+    s.place(trailing("SELL", "1", { activationPrice: parse("52000") }));
+    s.trade("51000"); // 还没到激活价
+    s.trade("49000"); // 跌了 4%，但没激活，不该触发
+    expect(s.order("o-1")?.triggered).toBe(false);
+    expect(s.order("o-1")?.trackedPrice).toBe(parse("51000")); // 最高价仍在跟
+  });
+
+  it("到了激活价之后，回撤够了才触发", () => {
+    const s = setup();
+    s.place(trailing("SELL", "1", { activationPrice: parse("52000") }));
+    s.trade("53000"); // 激活，最高价 53,000 → 止损线 52,470
+    expect(s.order("o-1")?.triggered).toBe(false);
+    const events = s.trade("52470");
+    expect(only(events, "orderUpdate")[0]!.order).toMatchObject({ id: "o-1", triggered: true, status: "FILLED" });
+  });
+
+  it("按标记价跟的单，不理会成交价推送", () => {
+    const s = setup();
+    s.place(trailing("SELL", "1", { workingType: "MARK_PRICE" }));
+    s.trade("52000"); // 成交价涨了，标记价没动
+    expect(s.order("o-1")?.trackedPrice).toBe(parse("50000"));
+    s.mark("52000");
+    expect(s.order("o-1")?.trackedPrice).toBe(parse("52000"));
+  });
+
+  it("未触发时不冻结保证金（和别的条件单一样）", () => {
+    const s = setup();
+    s.place(trailing("SELL", "1"));
+    expect(s.order("o-1")?.frozenMargin).toBe(0n);
+  });
+});
+
+describe("跟踪委托：下单校验", () => {
+  const rejected = (events: EngineEvent[]) => only(events, "rejected")[0];
+
+  it("不填回调率：拒", () => {
+    const s = setup();
+    const events = s.place(trailing("SELL", "1", { callbackRate: undefined }));
+    expect(rejected(events)?.code).toBe("INVALID_PARAMS");
+    expect(rejected(events)?.message).toMatch("必须填回调率");
+  });
+
+  it("回调率超出币安允许的 0.1% ~ 10%：拒", () => {
+    const s = setup();
+    expect(rejected(s.place(trailing("SELL", "0.05")))?.code).toBe("INVALID_PARAMS");
+    expect(rejected(s.place(trailing("SELL", "10.5")))?.message).toMatch("超出允许范围");
+  });
+
+  it("边界上的回调率可以下单", () => {
+    const s = setup();
+    expect(only(s.place(trailing("SELL", "0.1")), "rejected")).toHaveLength(0);
+    expect(only(s.place(trailing("SELL", "10")), "rejected")).toHaveLength(0);
+  });
+
+  it("激活价方向反了：拒（币安 -2021，卖单激活价必须高于现价）", () => {
+    const s = setup();
+    const events = s.place(trailing("SELL", "1", { activationPrice: parse("49000") }));
+    expect(rejected(events)?.code).toBe("WOULD_IMMEDIATELY_TRIGGER");
+    expect(rejected(events)?.message).toMatch("必须高于");
+  });
+
+  it("买单激活价必须低于现价", () => {
+    const s = setup();
+    expect(rejected(s.place(trailing("BUY", "1", { activationPrice: parse("51000") })))?.code).toBe(
+      "WOULD_IMMEDIATELY_TRIGGER",
+    );
+  });
+
+  it("跟踪委托不接受触发价、委托价、closePosition", () => {
+    const s = setup();
+    expect(rejected(s.place(trailing("SELL", "1", { stopPrice: parse("49000") })))?.message).toMatch("不接受触发价");
+    expect(rejected(s.place(trailing("SELL", "1", { price: parse("49000") })))?.message).toMatch("不接受委托价");
+    expect(rejected(s.place(trailing("SELL", "1", { closePosition: true, qty: undefined })))?.message).toMatch(
+      "closePosition 只能用于",
+    );
+  });
+
+  it("别的类型不能传回调率 / 激活价", () => {
+    const s = setup();
+    expect(rejected(s.place({ callbackRate: parse("1") }))?.message).toMatch("不接受回调率");
+    expect(rejected(s.place({ activationPrice: parse("52000") }))?.message).toMatch("不接受激活价");
+  });
+});

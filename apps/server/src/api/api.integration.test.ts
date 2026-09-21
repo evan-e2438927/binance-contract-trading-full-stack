@@ -188,6 +188,75 @@ describe("REST 接口（第 13 讲验收，真数据库）", () => {
     });
   });
 
+  it("跟踪委托（第 15 讲）：跟高 → 回撤触发 → 市价平仓，三个字段都落库", async () => {
+    await inRollback(async (tx) => {
+      const { api, newAccount, market, now } = await setup(tx);
+      const a = await newAccount();
+      let tradeId = 0;
+      const trade = (price: string) =>
+        market({ t: "trade", symbol: "BTCUSDT", tradeId: ++tradeId, price: parse(price), qty: parse("0.001"), buyerIsMaker: false, ts: now() });
+
+      // 先开一个多头，再挂一张跟踪委托来保护它。跟踪委托默认按最新成交价跟，所以先喂一笔成交
+      await api("POST", "/orders", { token: a.token, body: marketOrder("BUY", "0.1") });
+      await trade("50000");
+
+      const placed = await api("POST", "/orders", {
+        token: a.token,
+        body: { symbol: "BTCUSDT", side: "SELL", type: "TRAILING_STOP_MARKET", callbackRate: "1", qty: "0.1", reduceOnly: true },
+      });
+      // 没传激活价 = 从下单那一刻开始跟；未触发不冻结保证金；stopPrice 对这个类型无意义
+      expect(placed.json.data).toMatchObject({
+        type: "TRAILING_STOP_MARKET",
+        status: "NEW",
+        triggered: false,
+        stopPrice: null,
+        callbackRate: "1",
+        activationPrice: "50000",
+        trackedPrice: "50000",
+        frozenMargin: "0",
+      });
+
+      // 价格往上走，跟踪价跟着走，不触发
+      await trade("52000");
+      const open = await api("GET", "/account/orders?status=open", { token: a.token });
+      expect(open.json.data.items[0]).toMatchObject({ trackedPrice: "52000", triggered: false });
+
+      // 从 52,000 回撤 1% 到 51,480：触发，按市价平掉多头
+      await trade("51480");
+      expect((await api("GET", "/account/orders?status=open", { token: a.token })).json.data.items).toEqual([]);
+      expect((await api("GET", "/account/positions", { token: a.token })).json.data).toEqual([]);
+
+      const history = await api("GET", "/account/orders?status=history", { token: a.token });
+      const done = history.json.data.items.find((o: any) => o.type === "TRAILING_STOP_MARKET");
+      expect(done).toMatchObject({ status: "FILLED", triggered: true, executedQty: "0.1", trackedPrice: "52000" });
+
+      // 三列真的落库了（不是只活在内存里）
+      const [row] = await tx.select().from(orders).where(eq(orders.id, done.id));
+      expect(row).toMatchObject({ callbackRate: parse("1"), activationPrice: parse("50000"), trackedPrice: parse("52000") });
+      expect(await ledgerMismatches(tx, a.id)).toBe(0n);
+    });
+  });
+
+  it("跟踪委托的参数校验：回调率超范围、激活价方向反了、不传回调率", async () => {
+    await inRollback(async (tx) => {
+      const { api, newAccount, market, now } = await setup(tx);
+      const a = await newAccount();
+      await market({ t: "trade", symbol: "BTCUSDT", tradeId: 1, price: parse("50000"), qty: parse("0.001"), buyerIsMaker: false, ts: now() });
+      const place = (body: Record<string, unknown>) =>
+        api("POST", "/orders", { token: a.token, body: { symbol: "BTCUSDT", side: "SELL", type: "TRAILING_STOP_MARKET", qty: "0.01", ...body } });
+
+      expect((await place({ callbackRate: "0.05" })).json.error.code).toBe("INVALID_PARAMS");
+      expect((await place({ callbackRate: "10.5" })).json.error.message).toMatch("超出允许范围");
+      expect((await place({})).json.error.message).toMatch("必须填回调率");
+      // 币安 -2021：卖单的激活价必须高于现价
+      expect((await place({ callbackRate: "1", activationPrice: "49000" })).json.error.code).toBe("WOULD_IMMEDIATELY_TRIGGER");
+      // 不是跟踪委托就不能传这两个参数
+      expect((await api("POST", "/orders", { token: a.token, body: { ...marketOrder("BUY", "0.01"), callbackRate: "1" } })).json.error.message).toMatch(
+        "不接受回调率",
+      );
+    });
+  });
+
   it("仓位设置：调杠杆、切保证金模式（有仓位锁定）、调逐仓保证金、切持仓模式（有仓位锁定）", async () => {
     await inRollback(async (tx) => {
       const { api, newAccount } = await setup(tx);

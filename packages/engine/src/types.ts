@@ -145,8 +145,14 @@ export interface Order {
   type: OrderType;
   timeInForce: TimeInForce;
   price: Fixed | null; // 市价单为 null
-  stopPrice: Fixed | null; // 非触发单为 null
+  stopPrice: Fixed | null; // 非触发单为 null；跟踪委托也是 null（币安：这个字段对它无意义）
   workingType: WorkingType;
+  /** 跟踪委托：激活价。下单时不传就取当时的参照价，所以入簿后一定有值；其它类型为 null */
+  activationPrice: Fixed | null;
+  /** 跟踪委托：回调率，**百分数**（1n * ONE = 1%），范围 0.1 ~ 10，和币安 callbackRate 一个口径；其它类型为 null */
+  callbackRate: Fixed | null;
+  /** 跟踪委托：下单以来追踪到的最有利价（买单记最低、卖单记最高）。还没收到过行情时为 null；其它类型为 null */
+  trackedPrice: Fixed | null;
   qty: Fixed;
   executedQty: Fixed;
   avgPrice: Fixed;
@@ -223,6 +229,10 @@ export interface PlaceOrderRequest {
   price?: Fixed;
   stopPrice?: Fixed;
   workingType?: WorkingType;
+  /** 跟踪委托：激活价，可选。不传取下单那一刻的参照价（币安 activatePrice 的默认行为） */
+  activationPrice?: Fixed;
+  /** 跟踪委托：回调率，百分数（1 = 1%），0.1 ~ 10 */
+  callbackRate?: Fixed;
   qty?: Fixed; // closePosition 时可以不传
   reduceOnly?: boolean;
   closePosition?: boolean;

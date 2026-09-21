@@ -5,7 +5,7 @@ import { cancelAllOrders, cancelOrder, matchTrade, reconcileBook } from "./resti
 import { accountsHolding, riskScan } from "./risk";
 import { adjustIsolatedMargin, resetAccount, setLeverage, setMarginMode, setPositionMode } from "./account-ops";
 import { settleFunding } from "./funding";
-import { checkTriggers, placeTriggerOrder } from "./triggers";
+import { checkTriggers, placeTriggerOrder, trackTrailing } from "./triggers";
 import { validateOrder } from "./validate-order";
 import type { EngineEvent, EngineInput } from "./types";
 
@@ -75,7 +75,10 @@ function applyMarkPrice(state: EngineState, input: InputOf<"markPrice">): Engine
   });
   // 5.2 节：① 更新标记价 ② 未实现盈亏是现算的，不用存 ③ 按标记价触发的触发单 ④ 风控扫描：这个币对上有仓位的账户
   //   触发必须在风控之前：止损单触发平掉仓位，本来就是为了不被强平
-  const events = checkTriggers(state, input.symbol, "MARK_PRICE", input.markPrice, input.ts);
+  const events = [
+    ...checkTriggers(state, input.symbol, "MARK_PRICE", input.markPrice, input.ts),
+    ...trackTrailing(state, input.symbol, "MARK_PRICE", input.markPrice, input.ts),
+  ];
   return [...events, ...riskScan(state, [...accountsHolding(state, input.symbol), ...filledAccounts(events)], input.ts)];
 }
 
@@ -84,7 +87,11 @@ function applyTrade(state: EngineState, input: InputOf<"trade">): EngineEvent[] 
   // 5.2 节：① 更新最新价 ② 消耗挂单队列、轮到的按挂单价成交并落账 ④ 有成交的账户跑风控扫描
   state.lastPrices.set(input.symbol, input.price);
   // ③ 按最新成交价触发的触发单（放在挂单撮合之后：触发出来的单是在这笔行情成交之后才进盘口的）
-  const events = [...matchTrade(state, input), ...checkTriggers(state, input.symbol, "CONTRACT_PRICE", input.price, input.ts)];
+  const events = [
+    ...matchTrade(state, input),
+    ...checkTriggers(state, input.symbol, "CONTRACT_PRICE", input.price, input.ts),
+    ...trackTrailing(state, input.symbol, "CONTRACT_PRICE", input.price, input.ts),
+  ];
   return [...events, ...riskScan(state, filledAccounts(events), input.ts)];
 }
 
@@ -159,9 +166,11 @@ function placeOrder(state: EngineState, input: InputOf<"placeOrder">): EngineEve
     ];
   }
 
-  // 第 05 讲：市价单逐档成交、限价单穿透部分成交；第 06 讲：不穿透的挂单估算排队位置后入簿；第 09 讲：触发单入簿
-  // 触发单入簿等触发（第 09 讲），其它订单当场成交或挂单
-  const events = ["STOP", "STOP_MARKET", "TAKE_PROFIT", "TAKE_PROFIT_MARKET"].includes(input.req.type)
+  // 第 05 讲：市价单逐档成交、限价单穿透部分成交；第 06 讲：不穿透的挂单估算排队位置后入簿；
+  // 第 09 讲：触发单入簿等触发；第 15 讲：跟踪委托入簿等回撤触发（同一条路径，多两个字段）
+  const events = ["STOP", "STOP_MARKET", "TAKE_PROFIT", "TAKE_PROFIT_MARKET", "TRAILING_STOP_MARKET"].includes(
+    input.req.type,
+  )
     ? placeTriggerOrder(state, input, result.order)
     : executeOrder(state, input, result.order);
   // 成交之后跑风控扫描（04-backend-design.md 第 8 节"检测时机"）

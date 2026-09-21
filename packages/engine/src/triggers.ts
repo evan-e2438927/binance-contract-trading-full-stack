@@ -1,7 +1,7 @@
-import type { Fixed, WorkingType } from "@binance-contract-trading-full-stack/shared";
+import { divRound, mulCeil, parse, type Fixed, type WorkingType } from "@binance-contract-trading-full-stack/shared";
 import { executeOrder, orderSides } from "./execute-order";
 import { putOrder, removeOrder } from "./journal";
-import { positionKey, sortedOrders, type EngineState } from "./state";
+import { positionKey, referencePrice, sortedOrders, type EngineState } from "./state";
 import type { EngineEvent, EngineInput, Order, PlaceOrderRequest } from "./types";
 import { triggerReached, type ValidatedOrder, validateOrder } from "./validate-order";
 
@@ -22,13 +22,39 @@ import { triggerReached, type ValidatedOrder, validateOrder } from "./validate-o
  *
  * 和币安刻意不同：币安触发后是新下一张普通单（新的 orderId），我们沿用同一张订单、triggered 置 true，
  * 数据库 orders 表本来就有 triggered 列，少一层 algoId ↔ orderId 映射。
+ *
+ * ── 跟踪委托 TRAILING_STOP_MARKET（第 15 讲，规则见 07-binance-reference.md 第 14 节）──
+ *
+ * 它没有固定触发价，止损线跟着价格走：
+ *
+ * 1. 下单起就开始记 `trackedPrice`——卖单记**最高价**、买单记**最低价**（币安："after order placed"）
+ * 2. 激活：卖单要最高价 ≥ 激活价、买单要最低价 ≤ 激活价。不传激活价时取下单那一刻的参照价，
+ *    等于"从现在开始跟"，一下单就是激活状态
+ * 3. 触发：激活之后，价格从最有利处回撤够了就触发——
+ *      卖单：最新价 ≤ 最高价 × (1 − 回调率)
+ *      买单：最新价 ≥ 最低价 × (1 + 回调率)
+ *    触发后按市价单走，和 *_MARKET 触发单同一条路
+ *
+ * 参照价用哪个（标记价 / 最新成交价）由 workingType 定，**追踪和触发用同一个**，不混用。
+ *
+ * 缺口 #53：`trackedPrice` 每跳一次价都在变，但**不发 orderUpdate 事件**——
+ * 一秒几十条推送没人看得过来，也会把 WS 打满。前端要看当前跟到哪，走 REST 拉挂单列表
+ * （和"排队位置变化不发事件"缺口 #21 同一个取舍）。
  */
 
 type PlaceOrderInput = Extract<EngineInput, { t: "placeOrder" }>;
 
-/** 触发单下单：入簿，不冻结保证金、不排队。校验链已经通过。 */
+/**
+ * 条件单下单（触发单 + 跟踪委托）：入簿，不冻结保证金、不排队。校验链已经通过。
+ *
+ * 跟踪委托没传激活价时，取下单那一刻的参照价——币安 activatePrice 的默认行为
+ * （"default as the latest price(supporting different workingType)"）。
+ * 取不到参照价这一步不会走到：校验链第 14 步已经 MARKET_NOT_READY 拒了。
+ */
 export function placeTriggerOrder(state: EngineState, input: PlaceOrderInput, validated: ValidatedOrder): EngineEvent[] {
   const { req } = input;
+  const isTrailing = req.type === "TRAILING_STOP_MARKET";
+  const reference = isTrailing ? referencePrice(state, req.symbol, validated.workingType) : null;
   const order: Order = {
     id: input.orderId,
     clientOrderId: req.clientOrderId,
@@ -39,8 +65,12 @@ export function placeTriggerOrder(state: EngineState, input: PlaceOrderInput, va
     type: req.type,
     timeInForce: validated.timeInForce,
     price: req.price ?? null,
-    stopPrice: req.stopPrice!,
+    stopPrice: req.stopPrice ?? null,
     workingType: validated.workingType,
+    activationPrice: isTrailing ? (req.activationPrice ?? reference) : null,
+    callbackRate: isTrailing ? req.callbackRate! : null,
+    // 下单那一刻的参照价就是第一个追踪点：从此刻开始记最高 / 最低
+    trackedPrice: isTrailing ? reference : null,
     qty: validated.qty, // closePosition 单为 0，触发时按仓位现算
     executedQty: 0n,
     avgPrice: 0n,
@@ -81,12 +111,76 @@ export function checkTriggers(
   return events;
 }
 
+/**
+ * 跟踪委托：把这个币对上的跟踪委托往前推一格——先更新追踪价，再看要不要触发。
+ *
+ * 顺序很重要：**先更新再判断**。价格一路往有利方向走的那一跳，止损线要跟着挪到新位置，
+ * 不能拿旧的最高价去判回撤，否则一路上涨反而会把单子打掉。
+ */
+export function trackTrailing(
+  state: EngineState,
+  symbol: string,
+  workingType: WorkingType,
+  price: Fixed,
+  ts: number,
+): EngineEvent[] {
+  const events: EngineEvent[] = [];
+  const candidates = sortedOrders(
+    state,
+    (o) => o.symbol === symbol && o.type === "TRAILING_STOP_MARKET" && !o.triggered && o.workingType === workingType,
+  );
+  for (const { id } of candidates) {
+    // 重新取：前面触发的单成交后可能平掉仓位，把这张只减仓单连带撤了
+    const order = state.orders.get(id);
+    if (!order) continue;
+
+    const tracked = nextTracked(order.side, order.trackedPrice, price);
+    if (tracked !== order.trackedPrice) {
+      // 只改内存，不发事件（缺口 #53）。仍然走 putOrder：宿主落库失败要能回滚
+      putOrder(state, { ...order, trackedPrice: tracked, updatedAt: ts });
+    }
+    if (trailingReached(order.side, tracked, order.activationPrice, order.callbackRate, price)) {
+      events.push(...fireTrigger(state, state.orders.get(id) ?? order, ts));
+    }
+  }
+  return events;
+}
+
+/** 卖单跟最高价、买单跟最低价。第一次收到行情时直接采用 */
+export function nextTracked(side: "BUY" | "SELL", tracked: Fixed | null, price: Fixed): Fixed {
+  if (tracked === null) return price;
+  return side === "SELL" ? (price > tracked ? price : tracked) : price < tracked ? price : tracked;
+}
+
+/**
+ * 跟踪委托触发了没有。两个条件都要满足（币安 FAQ 360042299292 的两行表格）：
+ * 激活（最有利价穿过激活价）+ 回撤够（从最有利价回撤 ≥ 回调率）。
+ *
+ * 回调率是百分数（1 = 1%），所以要除以 100。这里用 `mulFloor` / `mulCeil` 把舍入定死在
+ * **对用户不利的反方向**：止损线算得晚一点点，不会因为舍入提前把单子打掉。
+ */
+export function trailingReached(
+  side: "BUY" | "SELL",
+  tracked: Fixed | null,
+  activationPrice: Fixed | null,
+  callbackRate: Fixed | null,
+  price: Fixed,
+): boolean {
+  if (tracked === null || activationPrice === null || callbackRate === null) return false;
+  const activated = side === "SELL" ? tracked >= activationPrice : tracked <= activationPrice;
+  if (!activated) return false;
+  const ratio = divRound(callbackRate, parse("100"));
+  const gap = mulCeil(tracked, ratio);
+  return side === "SELL" ? price <= tracked - gap : price >= tracked + gap;
+}
+
 function fireTrigger(state: EngineState, order: Readonly<Order>, ts: number): EngineEvent[] {
   const account = state.accounts.get(order.accountId)!;
   // 先移出挂单簿：重新校验时，第 13、14 步的挂单数、第 9 步的同方向挂单名义价值都不该把它自己算进去
   removeOrder(state, order.id);
 
-  const isMarket = order.type === "STOP_MARKET" || order.type === "TAKE_PROFIT_MARKET";
+  const isMarket =
+    order.type === "STOP_MARKET" || order.type === "TAKE_PROFIT_MARKET" || order.type === "TRAILING_STOP_MARKET";
   const hedge = account.positionMode === "HEDGE";
   let qty = order.qty;
   if (order.closePosition) {
@@ -124,6 +218,9 @@ function fireTrigger(state: EngineState, order: Readonly<Order>, ts: number): En
       workingType: order.workingType,
       createdAt: order.createdAt,
       closePosition: order.closePosition,
+      activationPrice: order.activationPrice,
+      callbackRate: order.callbackRate,
+      trackedPrice: order.trackedPrice,
     },
   );
 }

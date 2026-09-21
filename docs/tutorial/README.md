@@ -51,6 +51,7 @@
 | 13a | REST 接口（上）：HTTP 基础设施、交易、账户 | `apps/server/src/api` `apps/server/src/http` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[13a-rest-trading-account.md](13a-rest-trading-account.md) |
 | 13b | REST 接口（下）：行情、权益快照、排行榜 | `apps/server/src/api` `apps/server/src/jobs` `apps/server/src/market` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[13b-rest-market-leaderboard.md](13b-rest-market-leaderboard.md) |
 | 14 | WebSocket 网关 | `apps/server/src/ws` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[14-websocket.md](14-websocket.md) |
+| 15 | 跟踪委托 TRAILING_STOP_MARKET：引擎 + 迁移 + 接口 | `packages/engine` `packages/db` `apps/server` | ✅ 代码已实现（AI 编写，讲义对照阅读）：[15-trailing-stop.md](15-trailing-stop.md) |
 | — | 前端 | `apps/web` | 由 AI 直接实现 |
 
 ### 计划外的补充讲（S 系列）
@@ -174,6 +175,12 @@
 - **验收**：两个账户同时在线互不串号；断线重连后状态一致
 - **实际完成**：`ws/protocol.ts`（消息与频道名解析，补 ack / error，缺口 #49）、`ws/hub.ts`（订阅、auth 后自动订私有频道、token 过期降级、30 秒心跳 / 60 秒断开）、`ws/publisher.ts`（行情事件 → 公共频道，宿主 `onCommitted` → 私有频道，账户快照按 apply 去重）、`ws/server.ts`（直接用 `ws` 库接 upgrade，缺口 #51）；交易内核加 `onMarketEvent` / `onFeedStatus` / `onCommitted` 三个钩子；缺口 #49～#52；server 138 条测试（新增 17：协议 2、hub 8、推送 4、端到端 3）；真 server 实测 9 秒内收到盘口 81 / 成交 32 / ticker 9 / K 线 18 条，下单撤单各推一条 order
 
+### 15 · 跟踪委托（TRAILING_STOP_MARKET）
+
+- **做什么**：止损线跟着价格走的条件单。引擎追踪最有利价 + 激活 + 回撤触发；数据库加三列；下单接口加两个参数
+- **验收**：四个方向（买 / 卖 × 有 / 无激活价）都有测试；回撤差一个最小单位不触发；三列真的落库
+- **实际完成**：币安那段接口说明**本身是坏的**（两个 `<=` 被当成 HTML 标签吃掉了），触发条件拿 FAQ 补全并在 `07` 第 14 节写明出处；`packages/shared` 加订单类型；`packages/engine` 的 `triggers.ts` 加 `trackTrailing` / `nextTracked` / `trailingReached`，校验链把条件单和跟踪委托统一成 `CONDITIONAL_TYPES`（共用 200 张上限、都不冻结保证金）；迁移 0008 加 `activation_price` / `callback_rate` / `tracked_price` 三列并应用到本地库；服务端下单参数加 `activationPrice` / `callbackRate`（百分数，和币安一个口径）；新记缺口 #53；引擎 335 条、server 176 条测试；前端 M08b 把 T-13 第三个 tab 从占位换成真表单
+
 ---
 
 ## 设计缺口清单
@@ -235,6 +242,7 @@
 | 49 | WebSocket 协议只写了数据推送 `{ ch, ts, d }` 和四种客户端 op，没写"订阅成功 / 出错怎么回" | ✅ 14：补两种服务端消息，形状和数据推送一致——`ch: "ack"`（回执：哪个 op、接受和拒绝了哪些频道）、`ch: "error"`（用 REST 同一套错误码）。`04` 第 12 节已加注 |
 | 50 | `ticker` 频道设计里要推"涨跌幅"，那是 24 小时统计，来自币安 REST（13b），推送里没有 | 14：推送只带实时价格（最新价 / 标记价 / 指数价 / 资金费率），涨跌幅前端首屏拉 `/market/ticker`。要实时涨跌幅就得订阅币安 `<symbol>@ticker` 流（缺口 #47） |
 | 51 | Hono 的 Node WebSocket 适配 `@hono/node-ws` 只兼容 `@hono/node-server` v1，我们用的是 v2 | ✅ 14：不用适配层，直接用 `ws` 库接在 HTTP server 的 upgrade 事件上（`ws/server.ts`）。协议本来就是消息驱动的，路由层面只认一个路径 |
+| 53 | 跟踪委托的 `trackedPrice` 每跳一次价都在变，要不要推给前端 | ✅ 15：**不推**。一秒几十条 orderUpdate 没人看得过来，还会把 WS 打满；前端要看当前跟到哪就走 REST 拉挂单列表，列表里的值可能略旧，界面上写明了。和"排队位置变化不发事件"（#21）同一个取舍 |
 | 52 | 设计文档没写"token 在长连接期间过期怎么办" | ✅ 14：按 token 的 exp 排定时器，到点取消这条连接的私有订阅并推一条 `TOKEN_EXPIRED`，客户端重新 auth 即可。不然一条长连接能绕过 7 天有效期 |
 
 ---
