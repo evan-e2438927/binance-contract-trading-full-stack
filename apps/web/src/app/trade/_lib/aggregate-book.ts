@@ -4,10 +4,10 @@
  */
 export {
   aggregateSide,
-  bucketPrice,
-  stepOptions,
-  isValidStep,
   type BookLevel,
   type BookRow,
   type BookSide,
+  bucketPrice,
+  isValidStep,
+  stepOptions,
 } from "@binance-contract-trading-full-stack/shared";

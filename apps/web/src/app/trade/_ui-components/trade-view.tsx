@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-
-import { useUiStore } from "@/stores/ui-store";
 import { useSymbolMarket } from "@/hooks/use-symbol-market";
 import { useSymbols } from "@/hooks/use-symbols";
 import { DEFAULT_SYMBOL } from "@/lib/config/constants";
 import type { SymbolSpec } from "@/server-api-module/market/types";
+import { useUiStore } from "@/stores/ui-store";
 
 import { AccountPanel } from "./account-panel/account-panel";
 import { ChartPanel } from "./chart/chart-panel";

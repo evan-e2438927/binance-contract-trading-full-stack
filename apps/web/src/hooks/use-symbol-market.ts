@@ -1,6 +1,5 @@
-import { useEffect } from "react";
-
 import { aggregateSide } from "@binance-contract-trading-full-stack/shared";
+import { useEffect } from "react";
 
 /** 和服务端 ws/publisher.ts 的 WS_DEPTH_ROWS 一致：每侧最多 20 行 */
 const WS_DEPTH_ROWS = 20;
@@ -47,7 +46,11 @@ export function useSymbolMarket(symbol: string, step?: string) {
       onDepth(symbol, step, (book) => queueBook(symbol, book)),
       onTrade(symbol, (trade) => queueTrade(symbol, trade)),
       onTicker(symbol, (ticker) => store.applyTickerPush(symbol, ticker)),
-      wsClient.subscribe([marketChannels.depth(symbol, step), marketChannels.trade(symbol), marketChannels.ticker(symbol)]),
+      wsClient.subscribe([
+        marketChannels.depth(symbol, step),
+        marketChannels.trade(symbol),
+        marketChannels.ticker(symbol),
+      ]),
     ];
 
     return () => {

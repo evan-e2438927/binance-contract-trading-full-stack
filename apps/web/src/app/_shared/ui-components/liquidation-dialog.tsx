@@ -10,17 +10,17 @@ import {
   DialogTitle,
 } from "@binance-contract-trading-full-stack/ui/components/dialog";
 import { TriangleAlert } from "lucide-react";
+import Link from "next/link";
 
+import { POSITION_SIDE_LABEL } from "@/app/_shared/labels";
 import { useSymbolSpec } from "@/hooks/use-symbols";
 import { formatDecimal, formatPrice, formatQty, formatUsdt } from "@/lib/format/number";
 import { useAccountStore } from "@/stores/account-store";
 
-const SIDE_LABEL = { LONG: "多头", SHORT: "空头", BOTH: "" } as const;
-
 /**
  * G-09 强平通知（05 第 13 节）：收到 WS liquidation 推送弹 Dialog，不是 Toast——
  * 这是用户最需要理解的一件事，不能一闪而过。多条强平排队，一条一条确认。
- * 设计稿出来后按稿调整；"查看详情"跳订单历史的强平记录 tab（第 5 阶段）。
+ * "查看详情"跳历史记录页的强平记录 tab（M10）——弹窗只摆得下这一次，完整取证在那边。
  */
 export function LiquidationDialog() {
   const current = useAccountStore((s) => s.liquidationQueue[0]);
@@ -49,7 +49,7 @@ export function LiquidationDialog() {
         <dl className="num grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
           <dt className="text-muted-foreground">仓位</dt>
           <dd>
-            {current.symbol} {SIDE_LABEL[current.positionSide]} {qty(current.qty)}
+            {current.symbol} {POSITION_SIDE_LABEL[current.positionSide]} {qty(current.qty)}
           </dd>
           <dt className="text-muted-foreground">开仓价 → 强平标记价</dt>
           <dd>
@@ -61,6 +61,13 @@ export function LiquidationDialog() {
           <dd className="text-down">-{formatUsdt(current.liquidationFee)} USDT</dd>
         </dl>
         <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => dismiss(current.id)}
+            render={<Link href={{ pathname: "/orders", query: { tab: "liquidations" } }} />}
+          >
+            查看详情
+          </Button>
           <Button onClick={() => dismiss(current.id)}>我知道了</Button>
         </DialogFooter>
       </DialogContent>

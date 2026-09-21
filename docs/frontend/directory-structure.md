@@ -230,9 +230,10 @@ app/
 │  └─ _ui-components/          /trade 和 /trade/[symbol] 共用
 │     └─ trade-view.tsx          原 components/trade/
 │
-├─ orders/                     历史记录（M10）
+├─ orders/                     历史记录（M10，2026-09-21 做完）
 │  ├─ page.tsx
-│  └─ _ui-components/          （以后）
+│  ├─ _lib/                     URL 参数解析、价格显示兜底（纯函数，带测试）
+│  └─ _ui-components/           tab 外壳 + 表格外壳 + 五个 tab 各一份列定义
 ├─ leaderboard/                排行榜（M11）
 │  ├─ page.tsx
 │  └─ _ui-components/          （以后）

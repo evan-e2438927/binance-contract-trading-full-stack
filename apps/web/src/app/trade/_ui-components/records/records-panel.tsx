@@ -4,6 +4,7 @@ import { cn } from "@binance-contract-trading-full-stack/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
+import { ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, SIDE_LABEL } from "@/app/_shared/labels";
 import { useSymbols } from "@/hooks/use-symbols";
 import { formatPrice, formatQty, formatUsdt, PLACEHOLDER } from "@/lib/format/number";
 import { formatDateTime } from "@/lib/format/time";
@@ -141,7 +142,7 @@ function RecentOrderHistory({ symbol, specOf }: { symbol?: string; specOf: (s: s
             <span className="font-mono text-[11px] text-muted-foreground">{formatDateTime(order.createdAt)}</span>
             <span className="text-foreground">{order.symbol}</span>
             <span className={order.side === "BUY" ? "text-up" : "text-down"}>
-              {order.type} {order.side === "BUY" ? "买入" : "卖出"}
+              {ORDER_TYPE_LABEL[order.type] ?? order.type} {SIDE_LABEL[order.side]}
             </span>
             <span className="text-right font-mono">
               {spec && order.price !== "0" ? formatPrice(order.price, spec) : "市价"}
@@ -153,7 +154,7 @@ function RecentOrderHistory({ symbol, specOf }: { symbol?: string; specOf: (s: s
               {spec ? `${formatQty(order.qty, spec)} / ${formatQty(order.executedQty, spec)}` : PLACEHOLDER}
             </span>
             <span className="text-right text-muted-foreground" title={order.rejectReason ?? undefined}>
-              {STATUS_LABEL[order.status] ?? order.status}
+              {ORDER_STATUS_LABEL[order.status] ?? order.status}
             </span>
           </div>
         );
@@ -179,7 +180,7 @@ function RecentFills({ symbol, specOf }: { symbol?: string; specOf: (s: string) 
             <span className="font-mono text-[11px] text-muted-foreground">{formatDateTime(fill.createdAt)}</span>
             <span className="text-foreground">{fill.symbol}</span>
             <span className={fill.side === "BUY" ? "text-up" : "text-down"}>
-              {fill.side === "BUY" ? "买入" : "卖出"}
+              {SIDE_LABEL[fill.side]}
               {fill.isLiquidation && <span className="ml-1 text-[10px] text-down">强平</span>}
             </span>
             <span className="text-right font-mono">{spec ? formatPrice(fill.price, spec) : PLACEHOLDER}</span>
@@ -195,15 +196,6 @@ function RecentFills({ symbol, specOf }: { symbol?: string; specOf: (s: string) 
 }
 
 const HISTORY_COLS = "grid grid-cols-[150px_110px_130px_repeat(4,minmax(90px,1fr))] items-center gap-x-3 px-3";
-
-const STATUS_LABEL: Record<string, string> = {
-  FILLED: "已成交",
-  CANCELED: "已撤销",
-  EXPIRED: "已过期",
-  REJECTED: "已拒绝",
-  PARTIALLY_FILLED: "部分成交",
-  NEW: "挂单中",
-};
 
 function HistoryHead({ columns }: { columns: string[] }) {
   return (

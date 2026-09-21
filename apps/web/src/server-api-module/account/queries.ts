@@ -1,8 +1,8 @@
-import { queryOptions } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 
 import { request } from "@/lib/axios-client/client";
 
-import type { Page, PageQuery } from "../common/types";
+import type { LedgerType, Page, PageQuery } from "../common/types";
 import type { Order } from "../order/types";
 import type { Position } from "../position/types";
 import type {
@@ -95,3 +95,51 @@ export const fetchEquityCurve = (days = 30) => request.get<EquityCurve>("/accoun
 /** 权益曲线 */
 export const equityCurveQuery = (days = 30) =>
   queryOptions({ queryKey: accountKeys.equityCurve(days), queryFn: () => fetchEquityCurve(days) });
+
+// ——— 历史记录页（M10）的无限列表 ———
+
+/**
+ * 「加载更多」式列表的 queryKey。
+ * 前缀刻意保持在各自的 `xxxRoot` 下：ws-bridge 收到成交 / 资金费 / 强平推送时按 Root 前缀失效，
+ * 这些列表跟着一起刷新，不用再加一套失效逻辑。
+ */
+export const historyPageKeys = {
+  orderHistory: (symbol?: string) => [...accountKeys.orderHistoryRoot, "page", symbol ?? "all"] as const,
+  fills: (symbol?: string) => [...accountKeys.fillsRoot, "page", symbol ?? "all"] as const,
+  ledger: (symbol?: string, type?: string) =>
+    [...accountKeys.ledgerRoot, "page", symbol ?? "all", type ?? "all"] as const,
+  funding: (symbol?: string) => [...accountKeys.fundingRoot, "page", symbol ?? "all"] as const,
+  liquidations: (symbol?: string) => [...accountKeys.liquidations, "page", symbol ?? "all"] as const,
+};
+
+/**
+ * 游标分页接成无限列表：`pageParam` 就是上一页的 `nextCursor`，为 null 表示到底了。
+ * 每页 50 条（服务端默认值，08 第 5 节 O-00），不传 limit。
+ */
+const pageOptions = <T>(queryKey: readonly unknown[], fetchPage: (cursor?: string) => Promise<Page<T>>) =>
+  infiniteQueryOptions({
+    queryKey,
+    queryFn: ({ pageParam }) => fetchPage(pageParam ?? undefined),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  });
+
+/** 历史委托，按币对筛 */
+export const orderHistoryPages = (symbol?: string) =>
+  pageOptions(historyPageKeys.orderHistory(symbol), (cursor) => fetchOrderHistory({ symbol, cursor }));
+
+/** 成交记录，按币对筛 */
+export const fillsPages = (symbol?: string) =>
+  pageOptions(historyPageKeys.fills(symbol), (cursor) => fetchFills({ symbol, cursor }));
+
+/** 资金流水，按币对 + 流水类型筛 */
+export const ledgerPages = (symbol?: string, type?: LedgerType) =>
+  pageOptions(historyPageKeys.ledger(symbol, type), (cursor) => fetchLedger({ symbol, type, cursor }));
+
+/** 资金费结算记录，按币对筛 */
+export const fundingPages = (symbol?: string) =>
+  pageOptions(historyPageKeys.funding(symbol), (cursor) => fetchFundingPayments({ symbol, cursor }));
+
+/** 强平记录，按币对筛 */
+export const liquidationPages = (symbol?: string) =>
+  pageOptions(historyPageKeys.liquidations(symbol), (cursor) => fetchLiquidations({ symbol, cursor }));
