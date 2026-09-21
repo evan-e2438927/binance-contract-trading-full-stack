@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { ORDER_TYPE_LABEL } from "@/app/_shared/labels";
 import { RuleLink } from "@/components/rule-link";
-import { formatPrice, formatQty, formatUsdt, PLACEHOLDER } from "@/lib/format/number";
+import { formatPrice, formatQty, formatUsdt, PLACEHOLDER, trimDecimal } from "@/lib/format/number";
 import { formatDateTime } from "@/lib/format/time";
 import { notify } from "@/lib/toast/notify";
 import type { SymbolSpec } from "@/server-api-module/market/types";
@@ -72,9 +72,14 @@ function OrderRow({ order, spec }: { order: Order; spec: SymbolSpec | undefined 
   };
 
   const isBuy = order.side === "BUY";
+  const priceName = order.workingType === "MARK_PRICE" ? "标记价" : "最新价";
+  // 跟踪委托没有固定触发价，这一列显示"回调多少 + 现在跟到哪"（trackedPrice 来自最近一次 REST，
+  // 服务端不推它，可能略旧，缺口 #53）
   const trigger = order.stopPrice
-    ? `${order.workingType === "MARK_PRICE" ? "标记价" : "最新价"} ${formatPrice(order.stopPrice, spec)}`
-    : PLACEHOLDER;
+    ? `${priceName} ${formatPrice(order.stopPrice, spec)}`
+    : order.callbackRate
+      ? `回调 ${trimDecimal(order.callbackRate)}%${order.trackedPrice ? ` · 跟到 ${formatPrice(order.trackedPrice, spec)}` : ""}`
+      : PLACEHOLDER;
 
   return (
     <div className={cn(COLS, "border-b py-2.5 text-[12px] last:border-b-0 hover:bg-elevated/50")}>
@@ -106,7 +111,13 @@ function OrderRow({ order, spec }: { order: Order; spec: SymbolSpec | undefined 
       <span className="text-right font-mono text-muted-foreground">{trigger}</span>
       <span className="text-right font-mono text-muted-foreground">{formatUsdt(order.frozenMargin)}</span>
       <span className="text-right text-muted-foreground">
-        {order.status === "NEW" ? (order.stopPrice ? "等待触发" : "挂单中") : "部分成交"}
+        {order.status !== "NEW"
+          ? "部分成交"
+          : order.type === "TRAILING_STOP_MARKET"
+            ? "跟踪中"
+            : order.stopPrice
+              ? "等待触发"
+              : "挂单中"}
       </span>
       <div className="flex justify-end">
         <button

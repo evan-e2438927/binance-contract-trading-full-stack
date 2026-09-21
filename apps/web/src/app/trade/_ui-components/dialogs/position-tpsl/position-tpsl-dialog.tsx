@@ -13,13 +13,14 @@ import { useMarketStore } from "@/stores/market-store";
 import type { PositionBasis } from "../../../_lib/tpsl-math";
 import { PositionTpslTab } from "./position-tpsl-tab";
 import { TpslOrdersTab } from "./tpsl-orders-tab";
+import { TrailingTab } from "./trailing-tab";
 
 /**
  * T-13 止盈止损弹窗（Figma 4:369 / 4:1812 / 4:3213），一个弹窗三个 tab：
  *
  * 1. 止盈/止损：给仓位挂**部分**止盈止损单（带数量），可以挂多条 → tpsl-orders-tab
  * 2. 仓位止盈止损：整仓的止盈 / 止损各一条（closePosition） → position-tpsl-tab
- * 3. 跟踪委托：引擎还不支持 TRAILING_STOP_MARKET，等第 15 讲（按钮禁用并说明）
+ * 3. 跟踪委托：止损线跟着价格走，从最有利处回撤够了才触发 → trailing-tab（第 15 讲做完了引擎侧）
  */
 
 type Tab = "orders" | "position" | "trailing";
@@ -119,11 +120,7 @@ export function PositionTpslDialog({
           )}
           {tab === "orders" && <TpslOrdersTab position={position} spec={spec} basis={basis} />}
           {tab === "trailing" && (
-            <p className="py-10 text-center text-[12px] text-muted-foreground leading-[18px]">
-              跟踪委托还没做：引擎暂不支持这种订单类型，正在单独一讲里补（第 15 讲）。
-              <br />
-              现在可以先用「仓位止盈止损」设固定触发价。
-            </p>
+            <TrailingTab position={position} spec={spec} isLong={isLong} onDone={() => onOpenChange(false)} />
           )}
         </div>
       </DialogContent>

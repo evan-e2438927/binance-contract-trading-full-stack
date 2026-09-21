@@ -35,8 +35,15 @@ export interface Order {
   timeInForce: TimeInForce | null;
   /** 委托价；市价单为 null */
   price: Decimal | null;
-  /** 触发价；非条件单为 null */
+  /** 触发价；非条件单为 null。**跟踪委托也是 null**（币安：这个字段对它无意义） */
   stopPrice: Decimal | null;
+  /** 跟踪委托的激活价：最有利价穿过它才开始算回撤。下单没传时是下单那一刻的参照价；其它类型为 null */
+  activationPrice: Decimal | null;
+  /** 跟踪委托的回调率，**百分数**（"1" = 1%），范围 0.1 ~ 10，和币安 callbackRate 一个口径；其它类型为 null */
+  callbackRate: Decimal | null;
+  /** 跟踪委托下单以来追到的最有利价（卖单最高、买单最低）。还没收到行情时为 null；其它类型为 null。
+   *  ⚠️ 它每跳一次价都在变，但服务端**不推**（缺口 #53）——列表里的值来自最近一次 REST，可能略旧 */
+  trackedPrice: Decimal | null;
   /** 触发价参照：标记价 / 最新价，只对条件单有意义 */
   workingType: WorkingType | null;
   /** 委托数量；closePosition 单为 0（触发那一刻按仓位现算） */
@@ -86,8 +93,12 @@ export interface PlaceOrderBody {
   timeInForce?: TimeInForce;
   /** 委托价；限价类需要 */
   price?: Decimal;
-  /** 触发价；条件单需要 */
+  /** 触发价；条件单需要（跟踪委托不要传） */
   stopPrice?: Decimal;
+  /** 跟踪委托的激活价，可选。不传 = 从下单那一刻开始跟 */
+  activationPrice?: Decimal;
+  /** 跟踪委托的回调率，百分数（"1" = 1%），0.1 ~ 10。跟踪委托必填 */
+  callbackRate?: Decimal;
   /** 触发价参照；条件单可选 */
   workingType?: WorkingType;
   /** 数量；closePosition 单不传 */

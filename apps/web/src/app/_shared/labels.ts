@@ -23,6 +23,7 @@ export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
   STOP_MARKET: "止损市价",
   TAKE_PROFIT: "止盈限价",
   TAKE_PROFIT_MARKET: "止盈市价",
+  TRAILING_STOP_MARKET: "跟踪委托",
   LIQUIDATION: "强平",
 };
 
