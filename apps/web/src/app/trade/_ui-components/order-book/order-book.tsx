@@ -9,10 +9,10 @@ import {
 import { cn } from "@binance-contract-trading-full-stack/ui/lib/utils";
 import { ChevronDownIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-
+import { RuleLink } from "@/components/rule-link";
+import { useVisibleRows } from "@/hooks/use-visible-rows";
 import { decimalsOf, formatDecimal } from "@/lib/format/number";
 import type { SymbolSpec } from "@/server-api-module/market/types";
-import { useVisibleRows } from "@/hooks/use-visible-rows";
 import { useMarketStore } from "@/stores/market-store";
 import { useUiStore } from "@/stores/ui-store";
 
@@ -81,6 +81,7 @@ export function OrderBook({ spec }: { spec: SymbolSpec }) {
       {merged && (
         <p className="shrink-0 border-t px-3 py-1 text-[10px] text-muted-foreground leading-[15px]">
           撮合用币安 1,000 档真实盘口，服务端按所选精度合并后推前 20 行；这个精度下盘口深度不够，只能合出这几行
+          <RuleLink anchor="depth" label="盘口深度与市价单拒单" />
         </p>
       )}
     </div>

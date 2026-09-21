@@ -9,3 +9,10 @@ export const RETURN_TO_KEY = "bct.returnTo";
  * 这里只是文案，不参与任何计算。
  */
 export const INITIAL_BALANCE_DISPLAY = "10,000";
+
+/**
+ * 重置模拟账户的冷却时间（小时，展示用）。服务端的准绳是 `apps/server/src/api/account.ts`
+ * 的 `RESET_COOLDOWN_MS`；界面上「还要等多久」用的是服务端返回的 `resetAvailableAt`，
+ * 这个常量只出现在文案里，不参与任何判断。
+ */
+export const RESET_COOLDOWN_HOURS = 24;

@@ -1,6 +1,7 @@
 "use client";
 
 import { Countdown } from "@/components/countdown";
+import { RuleLink } from "@/components/rule-link";
 import { StatItem } from "@/components/stat-item";
 import { formatCompact, formatDecimal, formatPrice, formatRatioAsPercent } from "@/lib/format/number";
 import type { SymbolSpec } from "@/server-api-module/market/types";
@@ -20,7 +21,7 @@ export function TickerStats({ spec }: { spec: SymbolSpec }) {
         {formatPrice(ticker?.markPrice, spec)}
       </StatItem>
       <StatItem label="指数价格">{formatPrice(ticker?.indexPrice, spec)}</StatItem>
-      <StatItem label="资金费率/倒计时">
+      <StatItem label="资金费率/倒计时" after={<RuleLink anchor="funding" label="资金费怎么结算" />}>
         {formatRatioAsPercent(ticker?.fundingRate, { precision: 4 })} <Countdown to={ticker?.nextFundingTime} />
       </StatItem>
       <StatItem label="24h最高">{formatPrice(stats?.highPrice, spec)}</StatItem>

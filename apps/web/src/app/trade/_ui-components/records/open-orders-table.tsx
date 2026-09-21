@@ -3,6 +3,8 @@
 import { cn } from "@binance-contract-trading-full-stack/ui/lib/utils";
 import { useState } from "react";
 
+import { ORDER_TYPE_LABEL } from "@/app/_shared/labels";
+import { RuleLink } from "@/components/rule-link";
 import { formatPrice, formatQty, formatUsdt, PLACEHOLDER } from "@/lib/format/number";
 import { formatDateTime } from "@/lib/format/time";
 import { notify } from "@/lib/toast/notify";
@@ -18,16 +20,6 @@ import type { Order } from "@/server-api-module/order/types";
  */
 
 const COLS = "grid grid-cols-[minmax(140px,1.2fr)_repeat(7,minmax(86px,1fr))_80px] items-center gap-x-3 px-3";
-
-const TYPE_LABEL: Record<string, string> = {
-  LIMIT: "限价",
-  MARKET: "市价",
-  STOP: "止损限价",
-  STOP_MARKET: "止损市价",
-  TAKE_PROFIT: "止盈限价",
-  TAKE_PROFIT_MARKET: "止盈市价",
-  LIQUIDATION: "强平",
-};
 
 export function OpenOrdersTable({
   orders,
@@ -46,7 +38,10 @@ export function OpenOrdersTable({
         <span>类型 / 方向</span>
         <span className="text-right">价格</span>
         <span className="text-right">数量 / 已成交</span>
-        <span className="text-right">前方排队</span>
+        <span className="text-right">
+          前方排队
+          <RuleLink anchor="queue" label="前方排队是怎么估的" />
+        </span>
         <span className="text-right">触发条件</span>
         <span className="text-right">冻结保证金</span>
         <span className="text-right">状态</span>
@@ -88,7 +83,7 @@ function OrderRow({ order, spec }: { order: Order; spec: SymbolSpec | undefined 
         <div className="font-semibold text-foreground">{order.symbol}</div>
       </div>
       <div>
-        <span className="text-foreground">{TYPE_LABEL[order.type] ?? order.type}</span>
+        <span className="text-foreground">{ORDER_TYPE_LABEL[order.type] ?? order.type}</span>
         <span className={cn("ml-1.5", isBuy ? "text-up" : "text-down")}>{isBuy ? "买入" : "卖出"}</span>
         {order.reduceOnly && (
           <span className="ml-1.5 rounded-[3px] bg-elevated px-1 text-[10px] text-muted-foreground">只减仓</span>

@@ -3,8 +3,8 @@
 import { parse } from "@binance-contract-trading-full-stack/shared";
 import { cn } from "@binance-contract-trading-full-stack/ui/lib/utils";
 import { useState } from "react";
-
 import { DirectionText } from "@/components/direction-text";
+import { RuleLink } from "@/components/rule-link";
 import { formatRatioAsPercent, formatUsdt, PLACEHOLDER } from "@/lib/format/number";
 import { useAccountStore } from "@/stores/account-store";
 import { useAuthStore } from "@/stores/auth-store";
@@ -106,7 +106,10 @@ function MarginRatio({ ratio }: { ratio: string | null }) {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-muted-foreground leading-[16.5px]">保证金比率</span>
+        <span className="text-[11px] text-muted-foreground leading-[16.5px]">
+          保证金比率
+          <RuleLink anchor="liquidation" label="保证金比率与强平" />
+        </span>
         <span
           className={cn("num font-mono text-[12px] leading-[18px]", danger ? "text-down" : "text-up")}
           title="维持保证金 ÷ 保证金余额，达到 100% 触发强平"

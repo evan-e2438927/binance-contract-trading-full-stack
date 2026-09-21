@@ -1,13 +1,19 @@
 # 会话交接说明
 
 > 给接手这个项目的 Claude Code（或任何人）。
-> 生成时间：2026-09-15 ｜ 最后更新：2026-09-18（第 14 讲完成，服务端全部完成）｜ 来源：Claude 桌面端 Cowork 会话
+> 生成时间：2026-09-15 ｜ 最后更新：2026-09-21（M10 历史记录完成，前端 14 个模块做完 10 个）｜ 来源：Claude 桌面端 Cowork 会话
 
 ---
 
 ## 一、目前走到哪了
 
-**数据库层已完成，引擎内核（第 02–09 讲）全部完成，服务端 01～14 讲全部完成（数据库、引擎、行情、仓储、鉴权、REST、WebSocket）。下一步：前端 `apps/web`（AI 直接实现，不出教程）。服务端 10–14 讲由 AI 写代码 + 讲义；第 11 讲起数据库 schema / 迁移也由 AI 写并应用到本地库（用户 2026-09-17 定）。总览和进度见 `docs/tutorial/README.md`。**
+**后端全部完成**：数据库、引擎内核（02–09）、服务端（10–14），外加真实环境逼出来的 S01～S03（完整盘口、限流事故、盘口精度）。
+**现在在做前端 `apps/web`**，按功能拆成 M00～M13 共 14 个模块（见 `docs/frontend/README.md`），已做完 11 个：M00～M08 + S01 + M10 + M12。
+**下一个**：M08b 跟踪委托（要先开第 15 讲：引擎 + 迁移 + 接口）、M09 图上交易线、M11 排行榜、M13 整体验收。
+
+分工：服务端 10–14 讲由 AI 写代码 + 讲义；第 11 讲起数据库 schema / 迁移也由 AI 写并应用到本地库（用户 2026-09-17 定）；
+**2026-09-20 起用户只做决策不读代码，每次改动一律附一份人话讲义**。前端不出正式教程，但每个模块有讲义。
+服务端进度见 `docs/tutorial/README.md`，前端进度见 `docs/frontend/README.md`。
 
 | 阶段 | 状态 |
 | --- | --- |
@@ -31,7 +37,11 @@
 | 第 14 讲 · WebSocket 网关 | ✅ 2026-09-18 AI 实现 + 讲义：`ws/`（protocol / hub / publisher / server），公共频道 depth·trade·ticker·kline·market + 私有频道 account·position·order·fill·liquidation·funding，auth 后自动订私有、token 过期降级、30 秒心跳；交易内核加三个事件钩子；缺口 #49～#52；server 138 条测试；真 server 实测五个频道都在推；讲义 `docs/tutorial/14-websocket.md`；已 commit |
 | 前端 `apps/web` · 第 1 阶段 地基 | ✅ 2026-09-19 AI 实现，已 commit：技术选型定稿（`05` 第 0 节：axios / TanStack Query 只管 REST / Zustand / partysocket / TradingView Charting Library v31 / Reown AppKit / Biome）；`lib/`（api、endpoints、types、format、ws-client、session）、四个 store、`providers/ws-bridge`（重连后 hydrate、切回前台 hydrate、私有推送分发）；全站暗色 token；所有路由骨架，模块用带编号的占位块；页面模块清单 `docs/design/08-frontend-pages.md`（给 Figma 用）；web 26 条测试；实测首页 19 个币对实时跳价、交易页盘口 / 成交 / 标记价推送到 store。K 线库放 `apps/web/public/charting_library/`，不进 git |
 | 前端 · 首页 / 顶栏 / 登录弹窗 | 🟡 2026-09-19 AI 按 Figma 还原：顶栏（2:6 / 5:8055）、首页四个区块（2:2）、登录弹窗三个 tab（钱包只做样式，等 Reown Project ID）；邮箱验证码登录已实现，收码登录待用户验收。顺带：服务端加 `GET /market/tickers`（首页 1 个请求代替 19 个，修限流）、订币安 `@ticker` 流让 24h 统计实时（缺口 #47 解决，解析失败不影响撮合）；`packages/ui` Tabs 切换时旧面板立即隐藏。设计 `docs/superpowers/specs/2026-09-19-home-header-login-design.md`，计划 `docs/superpowers/plans/2026-09-19-home-header-login.md`；web 52、server 149 条测试；已 commit（邮箱收码登录待用户验收） |
-| 前端 · 模块化推进 | 📖 2026-09-19 按功能拆成 M00～M13，见 `docs/frontend/README.md`（功能点、数据、规则、后端缺口、验收）。UI 由用户找设计师做，这份只管功能。M00 基础设施 ✅，建议下一个 M01 → M02 → M04。后端必需补 `GET /account/symbol-config`（M07） |
+| 前端 · 模块化推进 | 📖 2026-09-19 按功能拆成 M00～M13，见 `docs/frontend/README.md`（功能点、数据、规则、后端缺口、验收）。UI 由用户找设计师做，这份只管功能 |
+| 前端 · M01～M08 交易页全链路 | ✅ 2026-09-20 一路做完并 commit：M01 应用外壳（顶栏 / 连接状态 / 行情降级横幅 / 强平弹窗 / Toast / 错误边界）、M02 币对与行情、M03 K 线图、M04 盘口与最新成交、M05 登录与会话、M06 账户设置三件套、M07 下单（预估接口 + 下单面板 + 确认弹窗 + 杠杆 / 保证金模式）、M08 仓位 / 委托 / 账户表格 + 止盈止损弹窗。后端顺带补了 `GET /account/symbol-config`、`POST /orders/preview`、`GET /market/tickers` |
+| 行情层 S01～S03（计划外补讲） | ✅ 2026-09-20：S01 盘口从 20 档换成完整盘口（增量流 + REST 快照）；**S02 是 S01 上线当天被币安封 IP 的事故复盘**（限流闸门全进程唯一、盘口对齐两个 bug、日志失真）；S03 盘口精度（聚合挪到服务端、砍掉喂不起的精度、页面撑满屏幕）。讲义 `docs/tutorial/S01`～`S03`，**接着 S01 读 S02** |
+| 前端 · M12 模拟规则页 | ✅ 2026-09-21 AI 实现：`/rules` 左目录右正文，四节（失真点 9 条 / 撮合与排队 / 保证金·强平·资金费 / 账户与重置）；内容按设计文档写，不按 Figma 文案（用户 2026-09-19 定）；费率和清算费率从 `GET /market/symbols` 现取不写死；锚点定义在 `lib/config/rule-anchors.ts`，**有测试盯着「每个锚点都有对应段落」**；界面四处 `?` 已接上。web 149 条测试；讲义 `docs/frontend/M12-rules-page.md`；**未 commit** |
+| 前端 · M10 历史记录 | 🟡 2026-09-21 AI 实现：`/orders` 五个 tab（历史委托 / 成交 / 资金流水 / 资金费 / 强平）+ 币对与流水类型筛选 + 游标分页「加载更多」；tab 和筛选写进 URL；已下架币对按数值自己的小数位显示（不显示 `--`）；顺带接上强平弹窗的「查看详情」（**M01 至此全部完成**）、中文标签收到 `app/_shared/labels.ts` 一份。web 145 条测试；讲义 `docs/frontend/M10-history-page.md`；**未 commit，且需要用户登录后验收表里的真实数据** |
 | 前端 · 第 2～6 阶段（旧说法，已被上面的模块表取代） | ⬜ 2 只读交易页（K 线 / 盘口 / 成交 / 行情条）→ 3 登录（邮箱、Google、钱包）→ 4 下单与账户（含补 `POST /orders/preview`）→ 5 历史 / 排行榜 / 规则 → 6 按 `05` 第 15 节验收。UI 等用户的 Figma 稿 |
 | 前端 | 不出教程——`apps/web` 由 AI 直接实现 |
 | 表结构 12 → 14 张（`identities` / `email_verification_codes`） | ✅ 2026-09-17 迁移 0005：`accounts` 删 `address` / `chain`，登录身份在 `identities`；集成测试改为插账户 + 身份两行 |
@@ -69,7 +79,7 @@ docs/design/
 
 ## 三、仓库现状
 
-分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 commit，最近一次是第 13b + 14 讲（行情接口、排行榜、WebSocket）。
+分支 `main`。books 练手链路已在 `ecf1016` 单独 commit；本项目代码按讲 / 按模块 commit，最近一次是 S03（盘口精度，`bd731d9`）。M10 历史记录、M12 规则页已实现但**还没 commit**（用户说提交才提交）。
 
 技术栈：Better-T-Stack 脚手架 —— Next.js 16 + React 19 + Hono + Drizzle + Supabase Postgres + Turborepo + pnpm 11 catalog。Node v22.23.2。脚手架的 `api` 和 `auth` 都是 `none`，所以前后端走 Hono 接口 + fetch，鉴权要自己实现。
 
@@ -96,9 +106,22 @@ docs/design/
 
 ## 五、下一步
 
-**M0 地基已经全部完成**（下面这节是历史记录，留着方便对照）。当前进度是引擎内核在做，引擎内核已经完成，服务端已全部完成，下一步是**前端 `apps/web`**，见 `docs/tutorial/README.md` 的进度表和各讲大纲。
+后端全部完成，**现在在做前端**。剩下的 4 个模块，按 `docs/frontend/README.md` 的建议顺序：
 
-按 `数据库 → 后端 → 前端` 的顺序搭。前两层用户想自己一步步做，前端交给 AI。
+| 下一步 | 要做什么 | 前置 |
+| --- | --- | --- |
+| M08b 跟踪委托 | T-13 第三个 tab。**要先开第 15 讲**：引擎加跟踪委托 + 数据库迁移 + 接口，是剩下的活里最大的一块 | 第 15 讲 |
+| M09 图上交易线 | K 线图上画开仓均价线 / 强平价线 / 挂单线，线上带平仓和撤单按钮 | 改单接口（可选） |
+| M11 排行榜与权益曲线 | 日 / 周 / 总榜 + 我的排名 + 权益曲线；口径按缺口 #48 | 无 |
+| M13 整体验收 | `05` 第 15 节清单 + Playwright E2E 主链路 + 故障演练 | 前面都做完 |
+
+**还压在用户手上的三件事**（AI 做不了，需要用户本人）：
+
+1. **邮箱收码登录验收**——本地 Resend 是测试发件地址，只能发给账户本人
+2. **钱包登录**——等用户申请 Reown Project ID，拿到后一次做完（2026-09-20 用户定）
+3. **登录后验收 M07 / M10 / M12**——真下单、改杠杆、可开最大、预估强平价，历史记录五个 tab 的真实数据和翻页，以及规则页里需要登录才看得到的两个 `?`
+
+下面这节是 M0 地基的历史记录，留着方便对照。
 
 ### M0 地基（第一步，已完成）
 
