@@ -6,6 +6,7 @@ import { PencilIcon } from "lucide-react";
 import { useState } from "react";
 
 import { DirectionText } from "@/components/direction-text";
+import { RuleLink } from "@/components/rule-link";
 import { formatPrice, formatQty, formatRatioAsPercent, formatUsdt, fromFixed, PLACEHOLDER } from "@/lib/format/number";
 import type { SymbolSpec } from "@/server-api-module/market/types";
 import type { Position } from "@/server-api-module/position/types";
@@ -44,7 +45,10 @@ export function PositionsTable({
         <span className="text-right">开仓均价</span>
         <span className="text-right">损益两平</span>
         <span className="text-right">标记价</span>
-        <span className="text-right">强平价</span>
+        <span className="text-right">
+          强平价
+          <RuleLink anchor="liquidation" label="强平价怎么算" />
+        </span>
         <span className="text-right">保证金比率</span>
         <span className="text-right">保证金</span>
         <span className="text-right">盈亏 / ROE</span>
@@ -95,7 +99,10 @@ function PositionRow({ position, spec }: { position: Position; spec: SymbolSpec 
       <span className="text-right font-mono text-foreground">
         {position.markPrice ? formatPrice(position.markPrice, spec) : PLACEHOLDER}
       </span>
-      <span className="text-right font-mono text-down">
+      <span
+        className="text-right font-mono text-down"
+        title={position.liquidationPrice ? undefined : "保证金相对仓位充足，或全仓行情还没到齐时算不出强平价，不是故障"}
+      >
         {position.liquidationPrice ? formatPrice(position.liquidationPrice, spec) : PLACEHOLDER}
       </span>
       <span className="text-right font-mono text-muted-foreground">

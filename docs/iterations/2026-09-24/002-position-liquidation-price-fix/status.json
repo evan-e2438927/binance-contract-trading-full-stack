@@ -1,0 +1,12 @@
+{
+  "iteration": "002-position-liquidation-price-fix",
+  "date": "2026-09-24",
+  "type": "fix",
+  "change_size": "micro",
+  "mode": "mini",
+  "phase": "applied",
+  "flags": {
+    "review": false,
+    "qa": false
+  }
+}
