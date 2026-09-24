@@ -4,7 +4,7 @@
   "type": "fix",
   "change_size": "micro",
   "mode": "mini",
-  "phase": "applied",
+  "phase": "accepted",
   "flags": {
     "review": false,
     "qa": false
