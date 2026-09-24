@@ -67,6 +67,29 @@ export interface TvDatafeed {
   unsubscribeBars(listenerGuid: string): void;
 }
 
+/**
+ * 图表上的一条画线（`createShape` 建出来的水平线）。
+ *
+ * ⚠️ 本来该用 `createOrderLine` / `createPositionLine`（线上自带撤单 / 平仓按钮），
+ * 但它们属于 **Trading Platform 版**，我们这份 Charting Library 授权包调了会直接抛
+ * `createOrderLine is only available on Trading Platform`。所以退回到水平线，只画不点。
+ */
+export interface TvShape {
+  setPoints(points: { price: number }[]): void;
+  setProperties(properties: Record<string, unknown>): void;
+}
+
+/** `createShape` 的参数，只声明我们用到的 */
+export interface TvCreateShapeOptions {
+  shape: "horizontal_line";
+  text: string;
+  lock: boolean;
+  disableSelection: boolean;
+  disableSave: boolean;
+  disableUndo: boolean;
+  overrides: Record<string, string | number | boolean>;
+}
+
 export interface TvChart {
   setSymbol(symbol: string): void;
   setResolution(resolution: string): void;
@@ -78,6 +101,8 @@ export interface TvChart {
     overrides?: Record<string, unknown>,
   ): Promise<string | null>;
   removeEntity(id: string): void;
+  createShape(point: { price: number }, options: TvCreateShapeOptions): Promise<string | null>;
+  getShapeById(id: string): TvShape;
 }
 
 export interface TvWidget {

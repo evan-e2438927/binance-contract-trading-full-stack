@@ -5,6 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { CHARTING_LIBRARY_PATH } from "@/lib/config/env";
 import type { SymbolSpec } from "@/server-api-module/market/types";
 
+import { useChartLines } from "../../_hooks/use-chart-lines";
+import type { ChartLine } from "../../_lib/chart-lines";
+import { themeColor } from "../../_lib/theme-color";
 import { createDatafeed } from "../../_lib/tv-datafeed";
 import type { TvChart as TvChartApi, TvWidget } from "../../_lib/tv-types";
 import { MA_COLORS } from "./ma-options";
@@ -14,6 +17,7 @@ import { MA_COLORS } from "./ma-options";
  *
  * 库自带的顶栏关掉，周期和均线用我们自己的工具栏（设计稿 4:4714），通过 activeChart() 的接口驱动。
  * 切币对、切周期都调接口，不重建图表；只在客户端加载，卸载时 remove()。
+ * 图上的交易线（M09）交给 `use-chart-lines`，这里只负责把就绪后的 chart 交给它。
  */
 
 type Status = "loading" | "ready" | "missing";
@@ -37,20 +41,17 @@ function loadLibrary(): Promise<void> {
   return libraryPromise;
 }
 
-/** 主题色从全站 token 读，不在这里再写一份十六进制 */
-function themeColor(name: string, fallback: string): string {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
-}
-
 export function TvChart({
   spec,
   resolution,
   maLengths,
+  lines,
 }: {
   spec: SymbolSpec;
   resolution: string;
   maLengths: number[];
+  /** M09 图上交易线：开仓均价、强平价、挂单 */
+  lines: ChartLine[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<TvWidget | null>(null);
@@ -174,6 +175,9 @@ export function TvChart({
       cancelled = true;
     };
   }, [maLengths, status]);
+
+  // M09：图表就绪后才画线；切币对时 hook 会自己把旧线清掉
+  useChartLines(status === "ready" ? chartRef.current : null, spec.symbol, lines);
 
   return (
     <div className="relative min-h-0 flex-1 bg-surface">
