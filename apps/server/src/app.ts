@@ -10,6 +10,7 @@ import { createLeaderboardRoutes } from "./api/leaderboard";
 import { createMarketRoutes } from "./api/market";
 import { createOrderRoutes } from "./api/orders";
 import { createPositionRoutes } from "./api/positions";
+import { createSystemRoutes } from "./api/system";
 import type { MailSender } from "./auth/email";
 import type { GoogleOAuth } from "./auth/google";
 import { createAuthRoutes, requireAuth, type AuthEnv } from "./auth/routes";
@@ -120,6 +121,7 @@ export function createApp(deps: AppDeps) {
     ),
   );
   app.route("/leaderboard", createLeaderboardRoutes({ db: deps.db, jwtSecret: deps.jwtSecret }, { rateLimit: publicRateLimit }));
+  app.route("/system", createSystemRoutes({ now }, { rateLimit: publicRateLimit }));
 
   return app;
 }

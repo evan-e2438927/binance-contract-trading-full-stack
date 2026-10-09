@@ -46,6 +46,7 @@ const position = (symbol: string, positionAmt: string, openedAt = 1): Position =
   maintMargin: "200",
   isolatedMargin: "0",
   liquidationPrice: null,
+  liquidationUnavailableReason: "MARGIN_SUFFICIENT",
   roe: "0",
   breakEvenPrice: null,
   marginRatio: null,

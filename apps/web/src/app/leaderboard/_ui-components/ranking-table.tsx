@@ -1,17 +1,15 @@
 import { cn } from "@binance-contract-trading-full-stack/ui/lib/utils";
 
+import { avatarInitial } from "@/app/_shared/ui-components/app-header/account-display";
 import { DirectionText } from "@/components/direction-text";
+import { LetterAvatar } from "@/components/letter-avatar";
 import { formatRatioAsPercent, formatUsdt, PLACEHOLDER } from "@/lib/format/number";
 import type { LeaderboardItem } from "@/server-api-module/leaderboard/types";
 
 import { isMyRow } from "../_lib/my-row";
 
-/** B-02 收益率榜。前三名给个奖牌色的名次，我自己那一行高亮 */
-const MEDAL: Record<number, string> = {
-  1: "bg-brand/20 text-brand",
-  2: "bg-muted-foreground/20 text-foreground",
-  3: "bg-down/15 text-down",
-};
+/** B-02 收益率榜。前三名给奖牌 emoji，我自己那一行高亮 */
+const MEDAL: Record<number, string> = { 1: "🥇", 2: "🥈", 3: "🥉" };
 
 const COLS = "grid grid-cols-[52px_minmax(90px,1.4fr)_repeat(4,minmax(74px,1fr))] items-center gap-x-3 px-4";
 
@@ -30,13 +28,14 @@ export function RankingTable({ items, myRank }: { items: LeaderboardItem[]; myRa
         <div className={cn(COLS, "border-b py-2.5 text-[11px] text-muted-foreground")}>
           <span>排名</span>
           <span>昵称</span>
-          <span className="text-right">收益率</span>
-          <span className="text-right">权益</span>
+          <span className="text-right">总收益率</span>
+          <span className="text-right">账户权益</span>
           <span className="text-right">胜率</span>
-          <span className="text-right">成交笔数</span>
+          <span className="text-right">交易次数</span>
         </div>
         {items.map((item, index) => {
           const mine = isMyRow(item, myRank);
+          const medal = MEDAL[item.rank];
           return (
             <div
               // 名次会并列（收益率相同就同名次），单独拿它当 key 会重复；这份列表每次整体替换、
@@ -49,19 +48,13 @@ export function RankingTable({ items, myRank }: { items: LeaderboardItem[]; myRa
                 mine ? "bg-brand/8" : "hover:bg-elevated/50",
               )}
             >
-              <span>
-                <span
-                  className={cn(
-                    "inline-flex size-5 items-center justify-center rounded-full text-[11px]",
-                    MEDAL[item.rank] ?? "text-muted-foreground",
-                  )}
-                >
-                  {item.rank}
+              <span className="font-mono text-[14px] text-muted-foreground">{medal ?? `#${item.rank}`}</span>
+              <span className="flex items-center gap-2.5 truncate">
+                <LetterAvatar text={avatarInitial(item.nickname ?? "")} tone={mine ? "brand" : "flat"} size="sm" />
+                <span className="truncate">
+                  {item.nickname ?? <span className="text-muted-foreground">未设置昵称</span>}
+                  {mine && <span className="ml-1.5 rounded-[3px] bg-brand/20 px-1 text-[10px] text-brand">我</span>}
                 </span>
-              </span>
-              <span className="truncate">
-                {item.nickname ?? <span className="text-muted-foreground">未设置昵称</span>}
-                {mine && <span className="ml-1.5 rounded-[3px] bg-brand/20 px-1 text-[10px] text-brand">我</span>}
               </span>
               <DirectionText value={item.roi} className="text-right font-mono">
                 {formatRatioAsPercent(item.roi)}

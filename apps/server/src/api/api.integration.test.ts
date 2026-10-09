@@ -301,6 +301,28 @@ describe("REST 接口（第 13 讲验收，真数据库）", () => {
     });
   });
 
+  it("持仓表强平价算不出来时点名具体原因（AC-001c）：逐仓保证金过于充足 → MARGIN_SUFFICIENT", async () => {
+    await inRollback(async (tx) => {
+      const { api, newAccount } = await setup(tx);
+      const a = await newAccount();
+
+      expect((await api("POST", "/positions/margin-mode", { token: a.token, body: { symbol: "BTCUSDT", marginMode: "ISOLATED" } })).status).toBe(200);
+      await api("POST", "/orders", { token: a.token, body: marketOrder("BUY", "0.001") });
+
+      const before = (await api("GET", "/account/positions", { token: a.token })).json.data[0];
+      expect(before.liquidationPrice).not.toBeNull();
+      expect(before.liquidationUnavailableReason).toBeNull(); // 刚开仓，保证金没那么充足，还能算出强平价
+
+      // 把逐仓保证金堆到远超这个仓位名义价值的量级：价格跌到 0 也不会强平
+      const added = await api("POST", "/positions/isolated-margin", { token: a.token, body: { symbol: "BTCUSDT", amount: "9000", type: "ADD" } });
+      expect(added.status).toBe(200);
+      const after = added.json.data[0];
+      expect(after.liquidationPrice).toBeNull();
+      expect(after.liquidationUnavailableReason).toBe("MARGIN_SUFFICIENT");
+      expect(await ledgerMismatches(tx, a.id)).toBe(0n);
+    });
+  });
+
   it("账户重置：平仓撤单、余额回到 10,000、写 RESET 流水；24 小时冷却（并发两次只成功一次）", async () => {
     await inRollback(async (tx) => {
       const { api, newAccount, clock } = await setup(tx);

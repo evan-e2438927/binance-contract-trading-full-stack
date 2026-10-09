@@ -1,0 +1,6 @@
+packages/engine/src/liquidation.test.ts
+packages/engine/src/views.test.ts
+apps/web/src/app/trade/_lib/liquidation-reason.test.ts
+tests/unit/**
+tests/reports/liquidation-price-null-reason-fix-coverage.md
+docs/iterations/2026-09-25/003-liquidation-price-null-reason-fix/tracks/test.md

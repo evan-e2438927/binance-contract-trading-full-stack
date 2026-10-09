@@ -26,7 +26,7 @@ for w in $(pgrep -f "tsx/dist/cli.mjs watch src/index.ts" 2>/dev/null); do
   # 自己所在的进程组也不能杀——predev 本身就跑在将要启动的那套里
   [ "$pgid" = "$(ps -o pgid= -p $$ | tr -d ' ')" ] && continue
   started=$(ps -o lstart= -p "$w" 2>/dev/null | xargs)
-  echo "[predev] 清理上次残留的开发服务器：进程组 $pgid（启动于 $started）"
+  echo "[predev] 清理上次残留的开发服务器：进程组 ${pgid}（启动于 ${started}）"
   kill -TERM -"$pgid" 2>/dev/null || kill -TERM "$w" 2>/dev/null
   killed=$((killed + 1))
 done

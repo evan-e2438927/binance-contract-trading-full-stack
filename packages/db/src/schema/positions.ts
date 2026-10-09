@@ -41,8 +41,8 @@ export const positions = pgTable(
     symbol: text("symbol")
       .notNull()
       .references(() => symbols.symbol),
-    positionSide: positionSideEnum("position_side").notNull(),
-    marginMode: marginModeEnum("margin_mode").notNull(),
+    positionSide: positionSideEnum("position_side").notNull(), // 仓位方向 模式
+    marginMode: marginModeEnum("margin_mode").notNull(),       // 保证金模式
     leverage: integer("leverage").notNull(), // 开仓时锁定的杠杆倍数，后续调杠杆不影响已开的仓位
     positionAmt: bigint("position_amt", { mode: "bigint" }).notNull().default(sql`0`), // 带符号：多头正、空头负（币安 positionAmt）
     entryPrice: bigint("entry_price", { mode: "bigint" }).notNull().default(sql`0`), // 加权平均开仓价

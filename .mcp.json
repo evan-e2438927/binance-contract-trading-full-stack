@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "lark": {
+      "command": "npx",
+      "args": ["-y", "@silkweave/lark-mcp", "mcp"],
+      "env": {
+        "XDG_CONFIG_HOME": "/Users/panda/Documents/work-spaces/binance-contract-trading/binance-contract-trading-full-stack/.lark-config"
+      }
+    },
+    "shadcn": {
+      "command": "npx",
+      "args": ["-y", "shadcn@latest", "mcp"]
+    }
+  }
+}

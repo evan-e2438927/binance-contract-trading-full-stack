@@ -164,8 +164,21 @@ export function OrderPanel({ spec }: { spec: SymbolSpec }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-surface p-3.5">
+      {/* 杠杆 · 保证金模式 · 持仓模式 */}
+      <div className="flex shrink-0 gap-2">
+        <ConfigButton active title="调整杠杆" disabled={!loggedIn} onClick={() => setDialog("leverage")}>
+          {leverageNum ? `${leverageNum}x` : PLACEHOLDER}
+        </ConfigButton>
+        <ConfigButton title="保证金模式" disabled={!loggedIn} onClick={() => setDialog("margin")}>
+          {config ? (config.marginMode === "CROSS" ? "全仓" : "逐仓") : PLACEHOLDER}
+        </ConfigButton>
+        <ConfigButton title="持仓模式" disabled={!loggedIn} onClick={() => setDialog("position")}>
+          {positionMode === "ONE_WAY" ? "单向持仓" : "双向持仓"}
+        </ConfigButton>
+      </div>
+
       {/* 订单类型 */}
-      <div className="flex h-[34px] shrink-0 border-b">
+      <div className="flex h-[34px] shrink-0 border-b mt-3.5">
         {TABS.map((tab) => (
           <button
             key={tab.value}
@@ -181,19 +194,6 @@ export function OrderPanel({ spec }: { spec: SymbolSpec }) {
             {tab.label}
           </button>
         ))}
-      </div>
-
-      {/* 杠杆 · 保证金模式 · 持仓模式 */}
-      <div className="flex shrink-0 gap-2 pt-3.5">
-        <ConfigButton active title="调整杠杆" disabled={!loggedIn} onClick={() => setDialog("leverage")}>
-          {leverageNum ? `${leverageNum}x` : PLACEHOLDER}
-        </ConfigButton>
-        <ConfigButton title="保证金模式" disabled={!loggedIn} onClick={() => setDialog("margin")}>
-          {config ? (config.marginMode === "CROSS" ? "全仓" : "逐仓") : PLACEHOLDER}
-        </ConfigButton>
-        <ConfigButton title="持仓模式" disabled={!loggedIn} onClick={() => setDialog("position")}>
-          {positionMode === "ONE_WAY" ? "单向持仓" : "双向持仓"}
-        </ConfigButton>
       </div>
 
       {/* 双向持仓模式才有开 / 平切换 */}

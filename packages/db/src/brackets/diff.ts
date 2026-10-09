@@ -5,12 +5,18 @@ const COMPARED_FIELDS = ["notionalFloor", "notionalCap", "maxLeverage", "mmr", "
 
 export type BracketField = (typeof COMPARED_FIELDS)[number];
 
+export enum BRACKET_CHANGE_KIND {
+  ADDED = 'added',      
+  REMOVED = 'removed', 
+  CHANGED = 'changed'
+}
+
 export type BracketChange =
-  | { bracket: number; kind: "added"; after: BracketRow }
-  | { bracket: number; kind: "removed"; before: BracketRow }
+  | { bracket: number; kind: BRACKET_CHANGE_KIND.ADDED; after: BracketRow }
+  | { bracket: number; kind: BRACKET_CHANGE_KIND.REMOVED; before: BracketRow }
   | {
       bracket: number;
-      kind: "changed";
+      kind: BRACKET_CHANGE_KIND.CHANGED;
       fields: { field: BracketField; before: string; after: string }[];
     };
 

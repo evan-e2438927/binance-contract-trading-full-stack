@@ -35,6 +35,8 @@ export interface Position {
   isolatedMargin: Decimal;
   /** 预估强平价；null = 没有强平价，或缺标记价算不出来 */
   liquidationPrice: Decimal | null;
+  /** liquidationPrice 为 null 时的具体原因；有值时固定为 null */
+  liquidationUnavailableReason: "MARGIN_SUFFICIENT" | "HEDGE_OFFSET" | "NO_LEGS" | "MARK_PRICE_MISSING" | null;
   /** 损益两平价（币安 breakEvenPrice）：含手续费的成本价，价格到这里才不赚不赔；不含资金费 */
   breakEvenPrice: Decimal | null;
   /** 保证金比率：逐仓是本仓位的，全仓是账户级的全仓保证金率；缺标记价时为 null */

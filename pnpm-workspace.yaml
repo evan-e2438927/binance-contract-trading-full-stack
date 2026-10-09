@@ -6,11 +6,18 @@ allowBuilds:
   sharp: true
   msgpackr-extract: true
   workerd: true
+  '@reown/appkit': true
+  bigint-buffer: true
+  bufferutil: true
+  utf-8-validate: true
 overrides:
   "@effect/platform-node-shared": 4.0.0-rc.112
   "@effect/sql-d1": 4.0.0-rc.112
   "@effect/sql-sqlite-do": 4.0.0-rc.112
   "@effect/vitest": 4.0.0-rc.112
+  # 钱包登录（2026-09-26 迭代）：wagmi / @reown/appkit-* / @coinbase/wallet-sdk 各自的 viem peer range
+  # 解析出多份物理副本，深层泛型类型互不兼容导致 tsc 报错；强制全仓库单一版本。
+  viem: 2.56.9
 catalog:
   zod: ^4.5.4
   "@types/node": ^26.4.1

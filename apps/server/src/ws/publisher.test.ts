@@ -40,6 +40,7 @@ const positionView = (): PositionView => ({
   maintMargin: parse("20.02"),
   isolatedMargin: 0n,
   liquidationPrice: parse("45000"),
+  liquidationUnavailableReason: null,
   roe: parse("0.02"),
   openedAt: T,
   updatedAt: T,
@@ -230,5 +231,7 @@ describe("WebSocket 推送", () => {
     ]);
     expect(privateMsgs).toHaveLength(1);
     expect(privateMsgs[0]).toMatchObject({ channel: "position", data: { positionAmt: "0", symbol: "BTCUSDT", markPrice: null } });
+    // AC-006b: 已平仓仓位没有意义讨论"为什么算不出强平价"，liquidationUnavailableReason 固定为 null，和 liquidationPrice: null 保持一致
+    expect(privateMsgs[0]!.data).toMatchObject({ liquidationPrice: null, liquidationUnavailableReason: null });
   });
 });

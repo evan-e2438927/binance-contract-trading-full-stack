@@ -1,7 +1,7 @@
 import { format, parse } from "@binance-contract-trading-full-stack/shared";
 import { describe, expect, it } from "vitest";
 import { marginBalance, notional, unrealizedPnl } from "./formulas";
-import { findBracket, liquidationPrice, maintMargin, marginRatio } from "./liquidation";
+import { findBracket, liquidationPrice, liquidationPriceDetailed, maintMargin, marginRatio } from "./liquidation";
 import { BTCUSDT_BRACKETS } from "./testing/fixtures";
 
 describe("4.5 杠杆分层与维持保证金", () => {
@@ -143,5 +143,55 @@ describe("4.6 强平价——算例连反向验算一起过，另加币安 FAQ �
     // 钱包比名义价值还多的多头：价格跌到 0 也爆不了，公式算出负数
     expect(liquidationPrice({ ...base, walletBalance: parse("60000"), legs: [long1] })).toBeNull();
     expect(liquidationPrice({ ...base, walletBalance: parse("1000"), legs: [] })).toBeNull();
+  });
+});
+
+describe("liquidationPriceDetailed（第 25 讲）：liquidationPrice() 是它的薄包装，区分 null 的具体原因", () => {
+  const long1 = { side: "LONG" as const, qty: parse("1"), entryPrice: parse("50000") };
+  const short1 = { side: "SHORT" as const, qty: parse("1"), entryPrice: parse("50000") };
+  const base = { otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n, brackets: BTCUSDT_BRACKETS };
+
+  /**
+   * 双向持仓分母恰好对冲为 0 的一组腿：entryPrice 定得很低（=1）让两条腿都稳稳落在第 1 层（mmr 0.004），
+   * 数量 251 / 249 是解 `(qL+qS)×mmr = SCALE×(qL−qS)` 在 bigint 截断下的一组精确解——
+   * 不是凑单价 1 美元的多头/空头，纯粹为了让 solve() 内部分母算出恰好 0（双向全仓多空数量对冲，见 liquidation.ts 顶部公式注释）。
+   */
+  const hedgeLong = { side: "LONG" as const, qty: parse("251"), entryPrice: parse("1") };
+  const hedgeShort = { side: "SHORT" as const, qty: parse("249"), entryPrice: parse("1") };
+
+  it("AC-004 (error): liquidationPrice() 的返回值和 liquidationPriceDetailed().price 永远一致（既有算例复核）", () => {
+    const cases = [
+      { walletBalance: parse("5000"), legs: [long1] },
+      { walletBalance: parse("5000"), legs: [short1] },
+      { walletBalance: parse("10000"), legs: [long1] },
+      { walletBalance: parse("60000"), legs: [long1] }, // MARGIN_SUFFICIENT
+      { walletBalance: parse("1000"), legs: [] }, // NO_LEGS
+      { walletBalance: parse("1000"), legs: [hedgeLong, hedgeShort] }, // HEDGE_OFFSET
+    ];
+    for (const c of cases) {
+      const input = { ...base, ...c };
+      expect(liquidationPrice(input)).toBe(liquidationPriceDetailed(input).price);
+    }
+  });
+
+  it("AC-002a (happy-path): 双向持仓分母对冲为 0 → { price: null, reason: HEDGE_OFFSET }", () => {
+    const result = liquidationPriceDetailed({ ...base, walletBalance: parse("1000"), legs: [hedgeLong, hedgeShort] });
+    expect(result).toEqual({ price: null, reason: "HEDGE_OFFSET" });
+  });
+
+  it("AC-001a (happy-path): 保证金过于充足、算出价格 ≤ 0 → { price: null, reason: MARGIN_SUFFICIENT }", () => {
+    const result = liquidationPriceDetailed({ ...base, walletBalance: parse("60000"), legs: [long1] });
+    expect(result).toEqual({ price: null, reason: "MARGIN_SUFFICIENT" });
+  });
+
+  it("AC-005 (boundary): legs 为空数组 → { price: null, reason: NO_LEGS }，不抛异常", () => {
+    expect(() => liquidationPriceDetailed({ ...base, walletBalance: parse("1000"), legs: [] })).not.toThrow();
+    expect(liquidationPriceDetailed({ ...base, walletBalance: parse("1000"), legs: [] })).toEqual({ price: null, reason: "NO_LEGS" });
+  });
+
+  it("正常能算出强平价时 reason 为 null", () => {
+    const result = liquidationPriceDetailed({ ...base, walletBalance: parse("5000"), legs: [long1] });
+    expect(result.price).not.toBeNull();
+    expect(result.reason).toBeNull();
   });
 });

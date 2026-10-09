@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_DAYS, DEFAULT_PERIOD, leaderboardHref, parseLeaderboardQuery } from "./period";
+import { DEFAULT_PERIOD, leaderboardHref, parseLeaderboardQuery } from "./period";
 
 const params = (search: string) => new URLSearchParams(search);
 
 describe("parseLeaderboardQuery", () => {
   it("没有参数时用默认值", () => {
-    expect(parseLeaderboardQuery(params(""))).toEqual({ period: DEFAULT_PERIOD, days: DEFAULT_DAYS });
+    expect(parseLeaderboardQuery(params(""))).toEqual({ period: DEFAULT_PERIOD });
   });
 
   it("认得出三个周期", () => {
@@ -18,24 +18,22 @@ describe("parseLeaderboardQuery", () => {
     expect(parseLeaderboardQuery(params("period=monthly")).period).toBe(DEFAULT_PERIOD);
   });
 
-  it("天数只收 7 / 30 / 90，别的当成没传", () => {
-    expect(parseLeaderboardQuery(params("days=7")).days).toBe(7);
-    expect(parseLeaderboardQuery(params("days=365")).days).toBe(DEFAULT_DAYS);
-    expect(parseLeaderboardQuery(params("days=abc")).days).toBe(DEFAULT_DAYS);
+  it("历史遗留的 days 参数被静默忽略，不影响 period 解析", () => {
+    expect(parseLeaderboardQuery(params("period=daily&days=90"))).toEqual({ period: "daily" });
   });
 });
 
 describe("leaderboardHref", () => {
   it("默认值不写进 URL", () => {
-    expect(leaderboardHref({ period: DEFAULT_PERIOD, days: DEFAULT_DAYS })).toBe("/leaderboard");
+    expect(leaderboardHref({ period: DEFAULT_PERIOD })).toBe("/leaderboard");
   });
 
-  it("带上周期和天数", () => {
-    expect(leaderboardHref({ period: "daily", days: 90 })).toBe("/leaderboard?period=daily&days=90");
+  it("带上周期", () => {
+    expect(leaderboardHref({ period: "daily" })).toBe("/leaderboard?period=daily");
   });
 
   it("转一圈回到原样", () => {
-    const href = leaderboardHref({ period: "weekly", days: 7 });
-    expect(parseLeaderboardQuery(params(href.split("?")[1] ?? ""))).toEqual({ period: "weekly", days: 7 });
+    const href = leaderboardHref({ period: "weekly" });
+    expect(parseLeaderboardQuery(params(href.split("?")[1] ?? ""))).toEqual({ period: "weekly" });
   });
 });

@@ -1,0 +1,17 @@
+{
+  // 只让 VS Code 不再监听这些目录的文件变化（装依赖/构建时会一次改几千个文件，容易把编辑器冲垮）。
+  // 文件仍然在侧边栏可见、可打开，搜索行为不变。
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/.pnpm-store/**": true,
+    "**/.turbo/**": true,
+    "**/.next/**": true,
+    "**/.expo/**": true,
+    "**/dist/**": true,
+    "**/build/**": true,
+    "**/coverage/**": true,
+    "**/*.tsbuildinfo": true
+  }
+}

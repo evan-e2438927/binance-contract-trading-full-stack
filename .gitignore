@@ -57,7 +57,18 @@ coverage
 tmp
 temp
 
+# lark MCP：本地凭据 + OAuth token（含 App Secret，绝不进 git）
+.lark-config/
+
 # 币安文档本地副本（pnpm run docs:binance 拉取，不进版本库）
 docs/vendor/binance/*.txt
 docs/vendor/binance/*.yaml
 docs/vendor/binance/rest-api/
+.claude/.sdlc-config
+.claude/.sdlc-config.local
+.claude/*.bak
+# SDLC qa 二进制产物（保留 tests/reports/*.md）
+tests/reports/**/screenshots/
+tests/reports/playwright/
+tests/reports/**/*.png
+.claude/.sdlc-active-iteration

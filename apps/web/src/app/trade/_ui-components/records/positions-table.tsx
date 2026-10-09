@@ -13,6 +13,7 @@ import type { Position } from "@/server-api-module/position/types";
 import { useAccountStore } from "@/stores/account-store";
 import { useMarketStore } from "@/stores/market-store";
 
+import { liquidationReasonTitle } from "../../_lib/liquidation-reason";
 import { ClosePositionDialog, IsolatedMarginDialog } from "../dialogs/position-dialogs";
 import { PositionTpslDialog } from "../dialogs/position-tpsl/position-tpsl-dialog";
 
@@ -68,6 +69,7 @@ export function PositionsTable({
 function PositionRow({ position, spec }: { position: Position; spec: SymbolSpec | undefined }) {
   const [dialog, setDialog] = useState<"close" | "margin" | "tpsl" | null>(null);
   const fundingRate = useMarketStore((s) => s.tickers[position.symbol]?.fundingRate) ?? null;
+  const missingMarkPrices = useAccountStore((s) => s.account?.missingMarkPrices) ?? [];
   if (!spec) return null;
 
   const amt = parse(position.positionAmt);
@@ -101,7 +103,7 @@ function PositionRow({ position, spec }: { position: Position; spec: SymbolSpec 
       </span>
       <span
         className="text-right font-mono text-down"
-        title={position.liquidationPrice ? undefined : "保证金相对仓位充足，或全仓行情还没到齐时算不出强平价，不是故障"}
+        title={liquidationReasonTitle(position.liquidationUnavailableReason, missingMarkPrices)}
       >
         {position.liquidationPrice ? formatPrice(position.liquidationPrice, spec) : PLACEHOLDER}
       </span>

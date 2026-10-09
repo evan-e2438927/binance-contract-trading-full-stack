@@ -73,6 +73,7 @@ export function closedPositionPayload(mode: PositionMode, position: Position) {
     maintMargin: null,
     isolatedMargin: "0",
     liquidationPrice: null,
+    liquidationUnavailableReason: null,
     roe: null,
     openedAt: position.openedAt,
     updatedAt: position.updatedAt,

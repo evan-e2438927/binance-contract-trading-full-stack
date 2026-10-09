@@ -1,0 +1,22 @@
+{
+  "phase": "applied",
+  "proposal_at": "2026-09-25T18:45:00+08:00",
+  "reviewed_at": "2026-09-25T18:50:00+08:00",
+  "applied_at": "2026-09-25T18:44:17+08:00",
+  "reviewer": "cli-apply",
+  "iter_dir": "docs/iterations/2026-09-25/001-leaderboard-page-redesign-refactor/",
+  "summary": {
+    "requirement_count": 7,
+    "task_count": 7,
+    "estimated_hours": 21
+  },
+  "agent_mode": "single",
+  "agent_mode_reason": "auto: 无可并行的开发角色（本次无 backend 任务）",
+  "pipeline_stage": "test-pipeline",
+  "tracks": {
+    "foundation": "skipped",
+    "backend": "skipped",
+    "frontend": "done",
+    "test": "done"
+  }
+}

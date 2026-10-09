@@ -1,0 +1,64 @@
+# SDLC Workflow Rules
+
+- 文件操作限项目根目录内
+- 日期格式: YYYY-MM-DD
+- 迭代目录格式: docs/iterations/YYYY-MM-DD/<seq>-<slug>-<type>/
+  - <seq>: 当天内递增的 3 位序号，例 `001`
+  - <slug>: 需求名 kebab-case (≤30 字符)
+  - <type>: feature | fix | refactor | docs | test | chore
+- Commit: 遵循 Conventional Commits 1.0.0（见 https://www.conventionalcommits.org/zh-hans/v1.0.0/）
+  - 格式：`<type>[optional scope][!]: <description>`，必要时附 body 与 footer
+  - type 取值：feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+  - 破坏性变更：type 后加 `!` 或在 footer 写 `BREAKING CHANGE: <说明>`（触发 MAJOR）
+  - 配置：type 取 `.claude/.sdlc-config` 的 COMMIT_TYPE（留空则按迭代 <type> 推断），scope 取 COMMIT_SCOPE（留空自动推断）
+- 配置统一放 `.claude/.sdlc-config`（KEY=VALUE，gitignored）
+- Review/Test 循环上限由 REVIEW_MAX_ROUNDS 控制（默认 1 轮）
+- 超限中止 Pipeline，等待人工介入
+- 禁止直推 main/master 分支（push + PR 仅在 `pr` 命令中执行）
+- 禁止日志泄露敏感信息（密钥/Token/密码）
+- Codex Gate 默认使用 `codex exec --full-auto`
+- Codex CLI 不可用时必须中止，不能自动跳过 Gate
+- 测试文件统一存放 tests/ 目录（unit/ + e2e/ + reports/）
+- 新需求处理前必须参考 docs/iterations/ 最近 HISTORY_ITER_DEPTH 个迭代的历史上下文（默认 2，0=全部；见 .claude/.sdlc-config）
+- 若项目已存在业务代码或工程结构，则进入 existing project mode，必须先生成：
+  - `.claude/PROJECT_BASELINE.md`
+  - `.claude/EXISTING_STRUCTURE.md`
+  - `.claude/TEST_BASELINE.md`
+- existing project mode 下，未经 `design.md` 明确批准，不得调整既有技术架构或重排 workspace
+- 全栈项目默认遵循 Better-T-Stack 风格 monorepo：
+  - `apps/web`：Web 前端应用
+  - `apps/server`：后端 API / BFF / Worker 入口
+  - `apps/native`：移动端应用（如存在）
+  - `apps/docs`：文档站点（如存在）
+  - `packages/*`：共享代码、类型、配置、SDK、业务模块
+- 业务代码禁止随意落在新的顶层目录中；默认不允许新增根目录级 `web/`、`server/`、`api/`、`frontend/`、`backend/`
+- Web 前端实现默认落在 `apps/web/src/`
+- 后端实现默认落在 `apps/server/src/`
+- 共享包默认按 Better-T-Stack 条件创建：`packages/config` 总是存在；`packages/env`、`packages/api`、`packages/auth`、`packages/db`、`packages/infra`、`packages/ui` 按所选能力启用
+- 跨端共享逻辑默认进入 `packages/*`，不要在 `apps/web` 和 `apps/server` 间复制
+- 设计文档必须声明目录影响：新增目录、修改目录、为什么不能复用现有目录
+- existing project 的设计文档必须引用 baseline，说明本次需求是沿用既有结构还是批准的结构调整
+- 若必须偏离 Better-T-Stack 结构，需在 `design.md` 中给出明确理由，并经过 Gate 1 审查通过
+- 单元测试必须写入 `tests/unit/`，并按 workspace 镜像落位，如 `tests/unit/web/...`、`tests/unit/server/...`、`tests/unit/packages/...`
+- E2E 测试必须写入 `tests/e2e/`，并维护"需求 ID / 场景 ID / 文件路径"的唯一映射，不得重复覆盖同一需求路径
+- `tasks.md` 是执行状态单据：任务实现完成后，必须将任务标题从 `[ ]` 回写为 `[x]`，并同步勾选真实完成的验收标准
+- 每个任务必须声明 Track 字段（取值：`frontend` | `backend` | `shared` | `infra` | `unit-test` | `qa`），用于按角色组织阅读和分派
+- Track 必须与目标文件路径自洽：`apps/web/*`/`apps/native/*`/`packages/ui/*`/`tests/unit/web/*`/`tests/unit/packages/ui/*` → frontend；`apps/server/*`/`packages/api/*`/`packages/db/*`/`tests/unit/server/*`/`tests/unit/packages/api/*`/`tests/unit/packages/db/*` → backend；`packages/{config,env,auth}/*`/`packages/contracts/*`/`tests/unit/packages/{config,env,auth,contracts}/*` → shared；`db/migrations/*` 与根目录配置/CI 文件 → infra；`tests/unit/*` → unit-test；`tests/e2e/*` → qa
+- 一个任务只能属于一个 Track；跨端需求（如同时改前端表单与后端 API）必须在拆任务阶段拆为多个任务，禁止一个任务跨 Track
+- `tasks.md` 必须在"任务总览"之后提供"任务 Track 汇总（按角色视图）"表，覆盖所有任务 ID，且总数与 Phase 总览一致
+- `unit-test` / `qa` Track 仅允许出现在 Phase 3；Phase 1/2 实现任务里随手写的单元测试不计为独立 Track
+- `qa` Track 只写浏览器验收规格（Given-When-Then + 选择器约束），不写实现；脚本由 `qa` 命令生成并执行，apply 阶段跳过
+- 进入测试阶段前，必须先检测项目当前具备的验证能力，不能静默跳过测试决策
+- `TEST_BOOTSTRAP_POLICY` 决定缺少测试基础设施时的行为；existing project 默认推荐 `report`
+- 远程 / 无人值守场景默认不依赖交互式 ask，优先通过报告输出缺口与后续动作
+- apply 的 test-pipeline 只做 lint + unit（步骤 ⑨）；浏览器功能验收由 `qa` 命令（步骤 ⑩，Playwright 脚本 + Playwright MCP）负责
+- **Artifact Gate（产物验证门禁）**：标记 qa 通过前，必须验证以下产物存在于磁盘：
+  - `tests/e2e/<slug>/E2E-*.e2e.ts`（至少一份 Playwright 脚本）
+  - `tests/reports/<slug>-e2e-report.md`（qa 验收报告）
+  - 缺少任何一项 → 禁止标记 qa 为 qa_passed
+- **Token 耗尽保护**：若 context_usage > 70%，必须先执行 /compact 再进入 test-pipeline（步骤 ⑨）
+- **Pipeline 断点续跑**：status.json 用 `phase` 字段记录进度（pending_review → applied → qa_passed → accepted → pr_created）；新会话启动时读取此字段，从中断阶段继续执行而非跳过
+- 架构文档 `.claude/ARCHITECTURE.md`、安全规范 `.claude/SECURITY.md`、编码规范 `.claude/CODING_GUIDELINES.md`、配置 `.claude/.sdlc-config` 与 `CLAUDE.md` 一同位于 `.claude/` 目录
+- 主线五命令：`proposal`（→ pending_review，暂停）→ `apply`（→ applied，不提交）→ `qa`（→ qa_passed，可跳过）→ `accept`（→ accepted，本地 commit）→ `pr`（→ pr_created，push + PR）
+- `apply` 命令启动前必须检查 `status.json`，phase 为 `pending_review`（视为审核通过）或 `approved` 时允许执行
+- `doit` 命令为全自动模式，内部执行 proposal + apply + [qa] + accept + pr 不停顿

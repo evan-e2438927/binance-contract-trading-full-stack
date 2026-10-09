@@ -64,6 +64,22 @@ export interface LiquidationPriceInput {
 }
 
 /**
+ * 强平价算不出来的具体原因（第 25 讲，缺口：持仓表"强平价 --"只有一句合并文案，没区分原因）：
+ *
+ * - `NO_LEGS`：没有腿参与计算——防御性分支，理论上不会被上游调用方触发（调用方总是先过滤掉数量为 0 的仓位），
+ *   只是为了类型完整性和不崩溃。
+ * - `HEDGE_OFFSET`：分母为 0，双向持仓下同一币对多空数量刚好对冲，价格怎么走权益都不会降到维持保证金。
+ * - `MARGIN_SUFFICIENT`：算出来 ≤ 0，钱包 / 保证金相对仓位过于充足，价格跌到 0 也不会强平。
+ */
+export type LiquidationNullReason = "NO_LEGS" | "HEDGE_OFFSET" | "MARGIN_SUFFICIENT";
+
+/**
+ * 强平价算不出来时，除了"缺标记价"（不在本函数职责内，见 views.ts 的 CROSS 分支），
+ * 还有本函数区分的三种原因。views.ts 把这个联合类型再并上 `MARK_PRICE_MISSING` 透传给外层视图。
+ */
+export type LiquidationUnavailableReason = LiquidationNullReason | "MARK_PRICE_MISSING";
+
+/**
  * 强平价，按币安 FAQ「How to Calculate Liquidation Price of USDⓈ-M Futures Contracts」（2026-09-17 核对，页面更新于 2025-12-31）：
  *
  *   强平价 = (WB − TMM₁ + UPNL₁ + cumB + cumL + cumS − Side_B×Pos_B×EP_B − Pos_L×EP_L + Pos_S×EP_S)
@@ -82,23 +98,33 @@ export interface LiquidationPriceInput {
  *
  * 返回 null = 没有强平价：分母为 0（双向全仓多空数量对冲、价格怎么走权益都不降到维持保证金）
  * 或算出来 ≤ 0（钱包足够扛到价格归零）。币安这两种情况显示 0 / "--"，我们返回 null，不编一个数。
+ * 具体是哪一种原因见 `liquidationPriceDetailed()`——本函数是它的薄包装，只取 `price`，行为完全不变。
  *
  * 不对齐 tickSize（缺口 #5）：强平价是计算阈值，不是委托价。最后一步 divRound 四舍五入到 8 位。
  */
 export function liquidationPrice(input: LiquidationPriceInput): Fixed | null {
+  return liquidationPriceDetailed(input).price;
+}
+
+/**
+ * 和 `liquidationPrice()` 同一套计算，多返回一个 `reason`：算不出来时具体是哪一种原因（第 25 讲）。
+ * `liquidationPrice()` 只是取本函数的 `price` 字段，两者数值上永远一致。
+ */
+export function liquidationPriceDetailed(input: LiquidationPriceInput): { price: Fixed | null; reason: LiquidationNullReason | null } {
   const legs = input.legs.filter((leg) => leg.qty > 0n);
-  if (legs.length === 0) return null;
+  if (legs.length === 0) return { price: null, reason: "NO_LEGS" };
 
   let chosen = legs.map((leg) => findBracket(input.brackets, mul(leg.qty, leg.entryPrice)));
   let price: Fixed | null = null;
   for (let round = 0; round <= input.brackets.length; round++) {
     price = solve(input, legs, chosen);
-    if (price === null) return null;
+    if (price === null) return { price: null, reason: "HEDGE_OFFSET" };
     const next = legs.map((leg) => findBracket(input.brackets, mul(leg.qty, price!)));
     if (next.every((bracket, i) => bracket === chosen[i])) break;
     chosen = next;
   }
-  return price !== null && price > 0n ? price : null;
+  if (price !== null && price > 0n) return { price, reason: null };
+  return { price: null, reason: "MARGIN_SUFFICIENT" };
 }
 
 function solve(input: LiquidationPriceInput, legs: readonly LiquidationLeg[], brackets: readonly LeverageBracket[]): Fixed | null {

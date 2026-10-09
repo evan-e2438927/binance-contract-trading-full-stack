@@ -3,6 +3,7 @@ import { BrandLogo } from "./brand-logo";
 import { ConnectionIndicator } from "./connection-indicator";
 import { HeaderTicker } from "./header-ticker";
 import { MainNav } from "./main-nav";
+import { VersionInfo } from "./version-info";
 
 /**
  * G-01 全站顶栏（Figma 2:6 未登录 / 5:8055 已登录）：Logo · 主导航 · [行情] · 连接状态 · 登录入口 / 账户菜单。
@@ -16,6 +17,7 @@ export function AppHeader() {
       <HeaderTicker />
       <div className="flex items-center gap-2">
         <ConnectionIndicator />
+        <VersionInfo />
         <AccountEntry />
       </div>
     </header>

@@ -20,20 +20,22 @@
     "sync:brackets": "tsx src/scripts/sync-brackets.ts",
     "verify:brackets": "tsx src/scripts/verify-brackets.ts",
     "seed:symbols": "tsx src/scripts/seed-symbols.ts",
-    "reconcile:ledger": "tsx src/scripts/reconcile-ledger.ts"
+    "reconcile:ledger": "tsx src/scripts/reconcile-ledger.ts",
+    "db:sync-comments": "tsx src/scripts/sync-comments.ts"
   },
   "dependencies": {
+    "@binance-contract-trading-full-stack/shared": "workspace:*",
     "drizzle-orm": "catalog:",
     "pg": "^8.23.0",
-    "zod": "catalog:",
-    "@binance-contract-trading-full-stack/shared": "workspace:*"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@binance-contract-trading-full-stack/config": "workspace:*",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.10",
-    "typescript": "^6.0.3",
+    "ts-morph": "^28.0.0",
     "tsx": "^4.23.13",
+    "typescript": "^6.0.3",
     "varlock": "catalog:",
     "vitest": "catalog:"
   }

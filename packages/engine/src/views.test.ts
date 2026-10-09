@@ -2,7 +2,7 @@ import { divRound, format, parse } from "@binance-contract-trading-full-stack/sh
 import { describe, expect, it } from "vitest";
 import { createEngine } from "./create-engine";
 import { initialMargin, notional, unrealizedPnl } from "./formulas";
-import { T0, bookInput, markPriceInput, registerAccountInput, testConfig, testOrder, testPosition } from "./testing/fixtures";
+import { BTCUSDT, BTCUSDT_BRACKETS, T0, bookInput, markPriceInput, registerAccountInput, testConfig, testOrder, testPosition } from "./testing/fixtures";
 import type { Engine, EngineInput, Position } from "./types";
 
 /** 直接用快照摆出想要的持仓，再喂行情——视图只读，不需要走下单流程 */
@@ -122,6 +122,58 @@ describe("只读视图（第 13 讲）", () => {
     const [p] = engine.positionViews("acc-1");
     expect(p).toMatchObject({ markPrice: null, notional: null, unrealizedPnl: null, initialMargin: null, roe: null });
     expect(format(p!.liquidationPrice!, 2)).toBe("45180.72"); // 算例 A
+  });
+
+  it("AC-006a (ui-state/不变式): 能正常算出强平价时，liquidationPrice 有值且 liquidationUnavailableReason 为 null（两者不能同时非 null）", () => {
+    const engine = engineWith([testPosition()], "10000");
+    run(engine, markPriceInput("51000"));
+    const [p] = engine.positionViews("acc-1");
+    expect(p!.liquidationPrice).not.toBeNull();
+    expect(p!.liquidationUnavailableReason).toBeNull();
+  });
+
+  it("AC-001b (happy-path): 逐仓仓位保证金过于充足 → liquidationPrice 为 null，liquidationUnavailableReason 为 MARGIN_SUFFICIENT", () => {
+    // 逐仓保证金 60,000 远超 1 BTC @ 50,000 的名义价值：价格跌到 0 也不会强平（复用 liquidation.test.ts 的同一算例）
+    const engine = engineWith([testPosition({ marginMode: "ISOLATED", isolatedMargin: parse("60000"), leverageNum: 20 })]);
+    run(engine, markPriceInput("50000"));
+    const [p] = engine.positionViews("acc-1");
+    expect(p!.liquidationPrice).toBeNull();
+    expect(p!.liquidationUnavailableReason).toBe("MARGIN_SUFFICIENT");
+  });
+
+  it("AC-003a (happy-path): 全仓模式仓位，账户内另一个全仓币对缺标记价 → liquidationPrice 为 null，liquidationUnavailableReason 为 MARK_PRICE_MISSING", () => {
+    const ETHUSDT = { ...BTCUSDT, symbol: "ETHUSDT" };
+    const config = { ...testConfig(), symbols: [BTCUSDT, ETHUSDT], brackets: { BTCUSDT: BTCUSDT_BRACKETS, ETHUSDT: BTCUSDT_BRACKETS } };
+    const engine = createEngine(config, {
+      accounts: [{ id: "acc-1", walletBalance: parse("10000"), positionMode: "ONE_WAY" }],
+      settings: [],
+      positions: [testPosition(), testPosition({ symbol: "ETHUSDT", entryPrice: parse("3000") })],
+      orders: [],
+    });
+    // 只给 BTCUSDT 喂标记价，ETHUSDT 从没收到过——本币对（BTCUSDT）自己有标记价，但全仓公式要用到账户内其它全仓仓位的 TMM₁ / UPNL₁
+    run(engine, markPriceInput("50000"));
+    const btc = engine.positionViews("acc-1").find((p) => p.symbol === "BTCUSDT")!;
+    expect(btc.markPrice).not.toBeNull(); // 本币对标记价是有的，不要和"本身缺标记价"混淆
+    expect(btc.liquidationPrice).toBeNull();
+    expect(btc.liquidationUnavailableReason).toBe("MARK_PRICE_MISSING");
+  });
+
+  it("AC-002a (happy-path，test 角色补测)：双向持仓下同一币对多空数量对冲，分母为 0 → liquidationUnavailableReason 为 HEDGE_OFFSET（在 positionViews() 这一层复核 liquidation.test.ts 同一 251/249 算例，backend 汇报只在 liquidationPriceDetailed 层面测过，views.ts 层面漏了这一条）", () => {
+    const hedgeLong = testPosition({ qty: parse("251"), entryPrice: parse("1") });
+    const hedgeShort = testPosition({ positionSide: "SHORT", qty: parse("249"), entryPrice: parse("1") });
+    const engine = createEngine(testConfig(), {
+      accounts: [{ id: "acc-1", walletBalance: parse("10000"), positionMode: "HEDGE" }],
+      settings: [],
+      positions: [hedgeLong, hedgeShort],
+      orders: [],
+    });
+    run(engine, markPriceInput("1"));
+    const views = engine.positionViews("acc-1");
+    expect(views).toHaveLength(2);
+    for (const p of views) {
+      expect(p.liquidationPrice, p.positionSide).toBeNull();
+      expect(p.liquidationUnavailableReason, p.positionSide).toBe("HEDGE_OFFSET");
+    }
   });
 
   it("有未结算的 apply 时读视图直接抛错：读到的必须是已经落库的状态", () => {

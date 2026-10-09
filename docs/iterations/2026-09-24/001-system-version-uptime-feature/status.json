@@ -1,0 +1,22 @@
+{
+  "phase": "applied",
+  "proposal_at": "2026-09-24T00:00:00+08:00",
+  "reviewed_at": "2026-09-24T00:05:00+08:00",
+  "applied_at": "2026-09-24T20:05:32+08:00",
+  "reviewer": "cli-apply",
+  "iter_dir": "docs/iterations/2026-09-24/001-system-version-uptime-feature/",
+  "summary": {
+    "requirement_count": 14,
+    "task_count": 6,
+    "estimated_hours": 6.5
+  },
+  "agent_mode": "multi",
+  "agent_mode_reason": "指定 multi",
+  "pipeline_stage": "test-pipeline",
+  "tracks": {
+    "foundation": "done",
+    "backend": "done",
+    "frontend": "done",
+    "test": "done"
+  }
+}

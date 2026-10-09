@@ -1,6 +1,6 @@
 import { divRound, type Fixed } from "@binance-contract-trading-full-stack/shared";
 import { initialMargin, notional, unrealizedPnl } from "./formulas";
-import { liquidationPrice, marginRatio } from "./liquidation";
+import { liquidationPriceDetailed, marginRatio, type LiquidationUnavailableReason } from "./liquidation";
 import { crossWalletBalance, positionMaintMargin } from "./risk";
 import { sortedOrders, sortedPositions, type EngineState } from "./state";
 import type { AccountView, MarketView, Order, Position, PositionView } from "./types";
@@ -82,6 +82,7 @@ export function positionViews(state: EngineState, accountId: string): PositionVi
     const value = mark === null ? null : notional(position.qty, mark);
     const pnl = mark === null ? null : unrealizedPnl(position, mark);
     const im = mark === null ? null : initialMargin(position.qty, mark, position.leverageNum);
+    const liq = liquidationPriceOf(state, position, positions);
     return {
       symbol: position.symbol,
       positionSide: position.positionSide as "LONG" | "SHORT",
@@ -95,7 +96,8 @@ export function positionViews(state: EngineState, accountId: string): PositionVi
       initialMargin: im,
       maintMargin: mark === null ? null : positionMaintMargin(state, position, mark),
       isolatedMargin: position.marginMode === "ISOLATED" ? position.isolatedMargin : 0n,
-      liquidationPrice: liquidationPriceOf(state, position, positions),
+      liquidationPrice: liq.price,
+      liquidationUnavailableReason: liq.reason,
       breakEvenPrice: breakEvenPriceOf(position),
       marginRatio: positionMarginRatio(state, position, mark),
       roe: pnl === null || im === null || im === 0n ? null : divRound(pnl, im),
@@ -135,13 +137,18 @@ function breakEvenPriceOf(position: Readonly<Position>): Fixed | null {
 /**
  * 逐仓：这个仓位单独算，WB = 它的逐仓保证金。
  * 全仓：WB = 全仓钱包余额；TMM₁ / UPNL₁ = 其它币对的全仓仓位；本币对的全仓仓位（双向模式多空两条）一起进公式。
- * 其它币对缺标记价时算不出 TMM₁ / UPNL₁，返回 null。
+ * 其它币对缺标记价时算不出 TMM₁ / UPNL₁，返回 reason = "MARK_PRICE_MISSING"（第 25 讲，之前直接 return null，
+ * 现在和"保证金充足 / 双向对冲 / 没有腿"三种引擎内部原因一起透传给外层视图，持仓表能显示具体原因而不是一句合并文案）。
  */
-function liquidationPriceOf(state: EngineState, position: Readonly<Position>, accountPositions: readonly Readonly<Position>[]): Fixed | null {
+function liquidationPriceOf(
+  state: EngineState,
+  position: Readonly<Position>,
+  accountPositions: readonly Readonly<Position>[],
+): { price: Fixed | null; reason: LiquidationUnavailableReason | null } {
   const brackets = state.brackets.get(position.symbol)!;
   const leg = (p: Readonly<Position>) => ({ side: p.positionSide as "LONG" | "SHORT", qty: p.qty, entryPrice: p.entryPrice });
   if (position.marginMode === "ISOLATED") {
-    return liquidationPrice({ walletBalance: position.isolatedMargin, otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n, legs: [leg(position)], brackets });
+    return liquidationPriceDetailed({ walletBalance: position.isolatedMargin, otherMaintMarginSum: 0n, otherUnrealizedPnlSum: 0n, legs: [leg(position)], brackets });
   }
 
   let otherMaint = 0n;
@@ -154,11 +161,11 @@ function liquidationPriceOf(state: EngineState, position: Readonly<Position>, ac
       continue;
     }
     const mark = state.marks.get(p.symbol)?.markPrice;
-    if (mark === undefined) return null;
+    if (mark === undefined) return { price: null, reason: "MARK_PRICE_MISSING" };
     otherMaint += positionMaintMargin(state, p, mark);
     otherPnl += unrealizedPnl(p, mark);
   }
-  return liquidationPrice({
+  return liquidationPriceDetailed({
     walletBalance: crossWalletBalance(state, position.accountId),
     otherMaintMarginSum: otherMaint,
     otherUnrealizedPnlSum: otherPnl,

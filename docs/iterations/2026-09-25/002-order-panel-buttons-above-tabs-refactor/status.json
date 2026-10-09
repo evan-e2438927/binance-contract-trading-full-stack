@@ -1,0 +1,22 @@
+{
+  "phase": "applied",
+  "proposal_at": "2026-09-25T21:55:00+08:00",
+  "reviewed_at": "2026-09-25T22:00:00+08:00",
+  "applied_at": "2026-09-25T22:30:00+08:00",
+  "reviewer": "cli-apply",
+  "iter_dir": "docs/iterations/2026-09-25/002-order-panel-buttons-above-tabs-refactor/",
+  "summary": {
+    "requirement_count": 1,
+    "task_count": 2,
+    "estimated_hours": 1
+  },
+  "agent_mode": "single",
+  "agent_mode_reason": "auto: 无可并行的开发角色（只有 frontend + qa 两个 Track，无 backend 任务；--agents=mutils 不是合法枚举值 single|multi，已按 flow-apply.md 回退到 auto 解析，解析结果与手动指定 multi 不会有差异，因为没有 backend WP 可并行）",
+  "pipeline_stage": "test-pipeline",
+  "tracks": {
+    "foundation": "skipped",
+    "backend": "skipped",
+    "frontend": "done",
+    "test": "skipped"
+  }
+}

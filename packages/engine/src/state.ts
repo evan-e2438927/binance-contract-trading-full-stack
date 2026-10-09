@@ -142,7 +142,10 @@ export function sortedOrders(
 ): Readonly<Order>[] {
   return [...state.orders.values()]
     .filter(filter)
-    .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    .sort(
+      (a, b) =>
+        a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
 }
 
 /** 按币对、再按方向排序的仓位列表，理由同 sortedOrders。 */
@@ -153,7 +156,15 @@ export function sortedPositions(
   return [...state.positions.values()]
     .filter(filter)
     .sort((a, b) =>
-      a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : a.positionSide < b.positionSide ? -1 : a.positionSide > b.positionSide ? 1 : 0,
+      a.symbol < b.symbol
+        ? -1
+        : a.symbol > b.symbol
+          ? 1
+          : a.positionSide < b.positionSide
+            ? -1
+            : a.positionSide > b.positionSide
+              ? 1
+              : 0,
     );
 }
 
@@ -228,7 +239,12 @@ export function loadSnapshot(
  * `workingType` 对应的参照价：MARK_PRICE 看标记价，CONTRACT_PRICE（默认）看最新成交价。
  * 取不到返回 null——条件单的触发判断和跟踪委托的激活价默认值都用它，取不到就说明行情还没就绪。
  */
-export function referencePrice(state: EngineState, symbol: string, workingType: WorkingType): Fixed | null {
-  if (workingType === "MARK_PRICE") return state.marks.get(symbol)?.markPrice ?? null;
+export function referencePrice(
+  state: EngineState,
+  symbol: string,
+  workingType: WorkingType,
+): Fixed | null {
+  if (workingType === "MARK_PRICE")
+    return state.marks.get(symbol)?.markPrice ?? null;
   return state.lastPrices.get(symbol) ?? null;
 }

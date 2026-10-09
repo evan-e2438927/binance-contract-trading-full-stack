@@ -64,3 +64,13 @@ dev-dist
 
 # TradingView Charting Library（公司授权，不进 git；放置方法见 README）
 /public/charting_library/
+
+/docs/design/
+/docs/frontend/
+/docs/superpowers/
+/docs/tutorial/
+
+
+
+
+

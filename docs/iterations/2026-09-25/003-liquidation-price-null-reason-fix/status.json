@@ -1,0 +1,22 @@
+{
+  "phase": "applied",
+  "proposal_at": "2026-09-25T23:10:00+08:00",
+  "reviewed_at": "2026-09-26T09:00:00+08:00",
+  "applied_at": "2026-09-26T10:50:00+08:00",
+  "reviewer": "cli-apply",
+  "iter_dir": "docs/iterations/2026-09-25/003-liquidation-price-null-reason-fix/",
+  "summary": {
+    "requirement_count": 3,
+    "task_count": 9,
+    "estimated_hours": 9
+  },
+  "agent_mode": "multi",
+  "agent_mode_reason": "指定 multi",
+  "pipeline_stage": "test-pipeline",
+  "tracks": {
+    "foundation": "skipped",
+    "backend": "done",
+    "frontend": "done",
+    "test": "done"
+  }
+}

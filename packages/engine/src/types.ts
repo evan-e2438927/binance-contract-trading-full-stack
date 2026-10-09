@@ -12,6 +12,7 @@ import type {
   TimeInForce,
   WorkingType,
 } from "@binance-contract-trading-full-stack/shared";
+import type { LiquidationUnavailableReason } from "./liquidation";
 
 // ─────────────────────────────────────────────────────────────
 // 配置：宿主启动时从数据库读出来，一次性喂给引擎
@@ -96,8 +97,8 @@ export interface EngineConfig {
 
 /** 盘口的一档。 */
 export interface Level {
-  price: Fixed;
-  qty: Fixed;
+  price: Fixed; //价格
+  qty: Fixed; //数量
 }
 
 /** 账户——引擎只关心交易相关状态，不知道用户是用钱包还是邮箱登录的。 */
@@ -112,7 +113,7 @@ export interface AccountSymbolSetting {
   accountId: string;
   symbol: string;
   leverageNum: number;
-  marginMode: MarginMode;
+  marginMode: MarginMode; // 保证金模式 CROSS 全仓  ISOLATED 逐仓
 }
 
 export interface Position {
@@ -423,6 +424,7 @@ export interface PositionView {
   maintMargin: Fixed | null;
   isolatedMargin: Fixed; // 全仓为 0
   liquidationPrice: Fixed | null; // null = 没有强平价，或缺标记价算不出来
+  liquidationUnavailableReason: LiquidationUnavailableReason | null; // null = liquidationPrice 有值；否则必须有具体原因
   breakEvenPrice: Fixed | null; // 损益两平价（币安 breakEvenPrice）：累计成本 ÷ 有符号数量，含手续费
   marginRatio: Fixed | null; // 逐仓：本仓位维持保证金 ÷（逐仓保证金 + 未实现盈亏）；全仓：账户级全仓保证金率
   roe: Fixed | null; // 未实现盈亏 ÷ 按标记价的起始保证金（币安 FAQ ROI% 标记价口径），0.2 = 20%
