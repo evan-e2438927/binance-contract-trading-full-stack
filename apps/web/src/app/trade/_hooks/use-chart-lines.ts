@@ -32,6 +32,19 @@ const DASHED = 2;
 /** 正在创建中的占位。只做身份比较，不会被当成真的 id 用 */
 const PENDING = "__pending__";
 
+/**
+ * 删线。组件卸载时 tv-chart 的 effect 先跑 `widget.remove()`，hook 的清理后跑——
+ * 这时图表已经销毁，库内部会抛 `Cannot read properties of undefined`。
+ * 图表都没了，线自然也没了，吞掉即可；切币对时图表还活着，正常删。
+ */
+function safeRemove(chart: TvChart, id: string): void {
+  try {
+    chart.removeEntity(id);
+  } catch {
+    // 图表已销毁
+  }
+}
+
 export function useChartLines(chart: TvChart | null, symbol: string, lines: ChartLine[]): void {
   const shapeIds = useRef(new Map<string, string>());
   const applied = useRef(new Map<string, ChartLine>());
@@ -41,7 +54,7 @@ export function useChartLines(chart: TvChart | null, symbol: string, lines: Char
     generation.current += 1;
     if (target) {
       for (const id of shapeIds.current.values()) {
-        if (id !== PENDING) target.removeEntity(id);
+        if (id !== PENDING) safeRemove(target, id);
       }
     }
     shapeIds.current.clear();
@@ -65,7 +78,7 @@ export function useChartLines(chart: TvChart | null, symbol: string, lines: Char
     // ① 不该存在的线：删掉
     for (const [key, id] of shapeIds.current) {
       if (wanted.has(key)) continue;
-      if (id !== PENDING) chart.removeEntity(id);
+      if (id !== PENDING) safeRemove(chart, id);
       shapeIds.current.delete(key);
       applied.current.delete(key);
     }
@@ -96,7 +109,7 @@ export function useChartLines(chart: TvChart | null, symbol: string, lines: Char
             return;
           }
           if (stale) {
-            chart.removeEntity(id);
+            safeRemove(chart, id);
             return;
           }
           shapeIds.current.set(key, id);
