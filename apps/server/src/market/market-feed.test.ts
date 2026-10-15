@@ -70,7 +70,7 @@ describe("行情状态", () => {
   it("两条连接地址：盘口走 /public，成交、标记价、K 线走 /market（缺口 #22）", () => {
     const { conn } = setup();
     expect(conn("public").url).toBe(
-      "wss://fstream.binance.com/public/stream?streams=btcusdt@depth@100ms/ethusdt@depth@100ms",
+      "wss://fstream.binance.com/public/stream?streams=btcusdt@depth/ethusdt@depth",
     );
     expect(conn("market").url).toBe(
       "wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade/btcusdt@markPrice@1s/btcusdt@kline_1m/btcusdt@ticker/ethusdt@aggTrade/ethusdt@markPrice@1s/ethusdt@kline_1m/ethusdt@ticker",

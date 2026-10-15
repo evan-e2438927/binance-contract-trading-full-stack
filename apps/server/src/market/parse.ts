@@ -60,7 +60,7 @@ export interface Stats24hEvent {
 }
 
 /**
- * `<symbol>@depth@100ms`：增量深度（S01）。b / a 里的数量是**绝对值**，0 表示删档；
+ * `<symbol>@depth`（250ms）：增量深度（S01）。b / a 里的数量是**绝对值**，0 表示删档；
  * U / u / pu 用来判断有没有掉包，规则见 local-book.ts。
  */
 export interface DepthDiffEvent {
@@ -125,7 +125,7 @@ export function parseStreamMessage(raw: string): MarketEvent | null {
 }
 
 /**
- * `<symbol>@depth@100ms`：增量深度（S01）。
+ * `<symbol>@depth`（250ms）：增量深度（S01）。
  *
  * 和原来的 depth20 快照流不同，这里**不检查排序**：增量推送里的档位本来就不保证有序，
  * 排序由本地盘口（local-book.ts）维护。U / u / pu 三个序列号必须都在，缺了说明协议变了。

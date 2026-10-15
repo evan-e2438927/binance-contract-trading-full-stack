@@ -85,6 +85,108 @@ Bun's automatic env loading is disabled in `bunfig.toml`; the framework integrat
 
 ## Deployment
 
+Run these commands from the repository root to release each app independently:
+
+```bash
+pnpm run deploy:server  # Build and start the local Docker backend + tunnel
+pnpm run deploy:web     # Build and publish the frontend to Cloudflare Workers
+```
+
+`deploy:server` uses the current Docker context and waits up to 120 seconds after
+startup for the backend health check. It does not build or publish the frontend.
+`deploy:web` uses the existing OpenNext / Wrangler configuration and does not
+restart the backend. The original `deploy` command still uses Alchemy.
+
+| Env file | Used by |
+| --- | --- |
+| `apps/server/.env.docker` | Docker backend runtime |
+| `apps/server/.env.production` | Direct server startup with `NODE_ENV=production` |
+| `apps/server/.env.tunnel` | Cloudflare Tunnel connector |
+| `apps/web/.env.production` | Frontend production build |
+
+The Docker backend does not read `apps/server/.env.production`. If Docker is your
+only backend deployment method, maintain `.env.docker`; `.env.production` is only
+needed for direct production startup outside Docker. These ignored files are
+independent copies, so changes are not synchronized between them.
+
+Development and production must use different `JWT_SECRET` values. Node and
+Docker deployments of the same production environment should use the same
+production key. Rotating that key invalidates existing login tokens. Use
+separate databases for development and production; a different hostname or
+env filename alone does not isolate the persisted trading state.
+
+### Server in Docker
+
+The server image uses the existing `build` / `start` flow: tsdown builds
+`dist/index.mjs`, and Node 24 runs it with production dependencies and the Varlock
+schema. It does not use the Bun `compile` script. Build from the repository root
+so Docker can resolve the workspace packages.
+
+Create an ignored runtime env file (use `.env` instead if starting with local
+development settings):
+
+```bash
+cp apps/server/.env.production apps/server/.env.docker
+```
+
+Edit `apps/server/.env.docker` with the database URL, Binance credentials,
+JWT secret, and the browser-facing `CORS_ORIGIN`. To connect to local Supabase
+on Docker Desktop, use:
+
+```dotenv
+DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:54322/postgres
+```
+
+Inside the container, `127.0.0.1` refers to the server container itself. For a
+remote database, use its actual connection string instead. The database must be
+running, migrated, and seeded before starting the server; the image does not
+initialize it. On Linux, the host database must also accept connections from
+the Docker bridge network.
+
+```bash
+pnpm run deploy:server
+docker compose -f compose.server.yaml logs -f server
+# Stop the server container:
+docker compose -f compose.server.yaml down
+```
+
+The backend health check calls `/`, which is not rate limited; the HTTP server starts after
+database recovery and market readiness. The tunnel waits for a healthy backend
+before its initial startup. A backend startup failure makes `deploy:server` fail
+instead of reporting success just because a container was created.
+
+The API and WebSocket server are exposed on port 3000. Stop any local server
+already using that port, or change the host side of `3000:3000` in the Compose
+file. Application env files are excluded from the image and injected at runtime.
+Recreate the container after changing `.env.docker`:
+
+```bash
+pnpm run deploy:server:force
+```
+
+This command recreates only the backend without rebuilding the image, waits for
+backend health, then ensures the tunnel is running. An unchanged, running tunnel
+is kept; a stopped or missing tunnel is started. Code changes still require
+`pnpm run deploy:server` to build a new image.
+
+### Frontend on Cloudflare Workers
+
+Configure the public API URL and Reown project ID in the ignored
+`apps/web/.env.production`, or supply them through the build environment. Local
+`.env.production.local` and exported environment variables take precedence.
+The frontend build embeds the `NEXT_PUBLIC_*` values, so publish again after
+changing them.
+
+On a new machine, authenticate once, then deploy:
+
+```bash
+pnpm --filter web exec wrangler login
+pnpm run deploy:web
+```
+
+See [Cloudflare deployment](docs/frontend/cloudflare-deployment.md) for CI,
+custom domains, and CORS configuration.
+
 ### Alchemy
 
 - Target: web on Cloudflare
@@ -120,6 +222,9 @@ binance-contract-trading-full-stack/
 - `pnpm run build`: Build all applications
 - `pnpm run dev:web`: Start only the web application
 - `pnpm run dev:server`: Start only the server
+- `pnpm run deploy:server`: Build and start the Docker backend and tunnel, waiting for backend health
+- `pnpm run deploy:server:force`: Apply backend env changes without rebuilding, then ensure the tunnel is running
+- `pnpm run deploy:web`: Build and publish only the frontend to Cloudflare Workers
 - `pnpm run check-types`: Check TypeScript types across all apps
 - `pnpm run dev:native`: Start the React Native/Expo development server
 - `pnpm run db:push`: Push schema changes to database

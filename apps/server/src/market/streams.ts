@@ -21,7 +21,10 @@ export type ConnectionName = "public" | "market";
 export function streamsFor(connection: ConnectionName, symbol: string): string[] {
   const s = symbol.toLowerCase();
   return connection === "public"
-    ? [`${s}@depth@100ms`] // 增量深度，每 100ms 一次；配合 REST 快照在本地维护完整盘口（S01，local-book.ts）
+    ? // 增量深度，默认每 250ms 一次；配合 REST 快照在本地维护完整盘口（S01，local-book.ts）。
+      // 2026-10-15 从 @depth@100ms 降到 @depth：线上 1 小时收 600MB，绝大部分是这条流。
+      // 降频不丢数据，币安会把 250ms 内的变化合并成一条推送；代价是撮合用的盘口最多旧 250ms（失真点 #4）
+      [`${s}@depth`]
     : [`${s}@aggTrade`, `${s}@markPrice@1s`, `${s}@kline_1m`, `${s}@ticker`];
 }
 

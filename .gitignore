@@ -72,3 +72,5 @@ tests/reports/**/screenshots/
 tests/reports/playwright/
 tests/reports/**/*.png
 .claude/.sdlc-active-iteration
+
+

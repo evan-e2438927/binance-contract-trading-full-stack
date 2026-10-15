@@ -1,0 +1,39 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - ./apps/server/.env.docker
+    environment:
+      NODE_ENV: production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    init: true
+    stop_grace_period: 30s
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - --input-type=module
+        - -e
+        - >-
+          const response = await fetch('http://127.0.0.1:3000/', { signal: AbortSignal.timeout(3000) });
+          if (!response.ok || await response.text() !== 'OK') process.exit(1);
+      interval: 10s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    env_file:
+      - ./apps/server/.env.tunnel
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped

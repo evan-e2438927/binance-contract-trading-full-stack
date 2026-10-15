@@ -11,4 +11,10 @@
   "images": {
     "binding": "IMAGES",
   },
+  "routes": [
+    {
+      "pattern": "trade.coinbasis.org",
+      "custom_domain": true,
+    },
+  ],
 }

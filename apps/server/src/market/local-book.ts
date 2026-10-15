@@ -9,7 +9,7 @@ import type { Fixed } from "@binance-contract-trading-full-stack/shared";
  * 市价单也容易触发"吃穿深度拒单"（失真点 #4）。
  *
  * 现在改成币安文档《How to manage a local order book correctly》的做法（2026-09-20 核对）：
- * 1. 先开着增量流 `<symbol>@depth@100ms`，把推送缓冲起来
+ * 1. 先开着增量流 `<symbol>@depth`（250ms），把推送缓冲起来
  * 2. 拉一份 REST 快照（limit=1000），记下 `lastUpdateId`
  * 3. 丢掉 `u < lastUpdateId` 的增量
  * 4. 第一条要处理的增量必须满足 `U <= lastUpdateId <= u`
