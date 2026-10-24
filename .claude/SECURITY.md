@@ -31,6 +31,12 @@
 - 币安 Key 边界是本项目最关键的安全约束：只读、只在 `apps/server`、只用于同步杠杆分层表，任何把 Key（或能推导出 Key 的逻辑）下发到 `apps/web` 的改动都是安全事故级别的问题
 - `.claude/.sdlc-config` 与 `.claude/.sdlc-config.local` 已在根 `.gitignore` 排除
 
+### 部署密钥与网络暴露（`compose.server.yaml`）
+
+- 容器环境变量来自 `apps/server/.env.docker`，隧道凭据来自 `apps/server/.env.tunnel`；二者被 `apps/server/.gitignore` 的 `.env*` 排除，且 `.dockerignore` 的 `**/.env*` 阻止其进入镜像构建上下文——**不得提交、不得 COPY 进镜像**
+- `server` 端口只绑定 `127.0.0.1:3000`，公网入口仅经 `cloudflared` 隧道；不要改成 `0.0.0.0` 直出
+- `cloudflare/cloudflared:latest` 未锁版本——**待确认**是否固定 tag 以避免隧道客户端意外升级
+
 ## 输入验证
 
 - 后端用 `zod`（`catalog:` 统一版本）做入参校验——**待确认**具体覆盖范围是否已覆盖所有 API handler，intake 未逐个 handler 核对
@@ -56,4 +62,5 @@
 ## 安全审计
 
 - 未发现集中式安全日志/监控方案——**待确认**，intake 未在 `apps/server` 找到审计日志模块
+- 线上监控方案（Better Stack + Sentry + Cloudflare）已写入 `docs/design/09-monitoring.md`，截至 2026-10-24 **尚未实施**，上述结论不变
 - 资金相关操作的可追溯性由 `ledger_entries`（必填 `balanceAfter`）提供，本质上起到审计轨迹的作用，但这是会计不变式而非专门的安全审计系统

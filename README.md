@@ -99,15 +99,19 @@ restart the backend. The original `deploy` command still uses Alchemy.
 
 | Env file | Used by |
 | --- | --- |
-| `apps/server/.env.docker` | Docker backend runtime |
+| `apps/server/.env.docker` | Docker backend runtime (optional `SENTRY_DSN` / `SENTRY_RELEASE` enable server error reporting) |
 | `apps/server/.env.production` | Direct server startup with `NODE_ENV=production` |
 | `apps/server/.env.tunnel` | Cloudflare Tunnel connector |
-| `apps/web/.env.production` | Frontend production build |
+| `apps/web/.env.production` | Frontend production build (optional `NEXT_PUBLIC_SENTRY_DSN`, inlined at build time) |
 
 The Docker backend does not read `apps/server/.env.production`. If Docker is your
 only backend deployment method, maintain `.env.docker`; `.env.production` is only
 needed for direct production startup outside Docker. These ignored files are
 independent copies, so changes are not synchronized between them.
+
+Sentry is optional on both sides and disabled when its DSN is empty. The server and
+the web app must use two different Sentry projects, so `SENTRY_DSN` and
+`NEXT_PUBLIC_SENTRY_DSN` are different values. See `docs/design/09-monitoring.md`.
 
 Development and production must use different `JWT_SECRET` values. Node and
 Docker deployments of the same production environment should use the same

@@ -36,7 +36,10 @@ export function parseQuery<S extends z.ZodType>(c: Context, schema: S): z.infer<
 }
 
 /** app.onError：AppError 按错误码表给 HTTP 状态；其它一律 INTERNAL_ERROR，不把内部错误细节回给前端 */
-export function createErrorHandler(logger: Pick<Console, "error"> = console): ErrorHandler {
+export function createErrorHandler(
+  logger: Pick<Console, "error"> = console,
+  reportError?: (error: unknown, ctx: { method: string; path: string }) => void,
+): ErrorHandler {
   return (error, c) => {
     if (error instanceof AppError) {
       return c.json(
@@ -45,6 +48,14 @@ export function createErrorHandler(logger: Pick<Console, "error"> = console): Er
       );
     }
     logger.error(`[http] ${c.req.method} ${c.req.path} 内部错误`, error);
+    // 只报「非 AppError」的意外错误；上报自己出错不能影响响应
+    if (reportError) {
+      try {
+        reportError(error, { method: c.req.method, path: c.req.path });
+      } catch (reportFailure) {
+        logger.error("[http] 错误上报失败", reportFailure);
+      }
+    }
     return c.json({ ok: false as const, error: { code: "INTERNAL_ERROR", message: "服务器内部错误，请稍后重试" } }, 500);
   };
 }

@@ -37,8 +37,10 @@
 ```
 dev / dev:server / dev:web / dev:native
 build / check-types / test
-db:push / db:generate / db:migrate / db:studio / db:update:dev
+db:push / db:generate / db:migrate / db:studio / db:update:dev / db:comments / db:migrate:dev / db:migrate:deploy
 deploy / destroy（packages/infra，只管 web）
+deploy:web（apps/web 经 OpenNext 部署 Cloudflare）
+deploy:server / deploy:server:force（docker compose -f compose.server.yaml，server + cloudflared 隧道，部署 VPS）
 env:generate（postinstall 自动跑）
 docs:binance（拉取 docs/vendor/binance/ 本地副本，见根 CLAUDE.md）
 ```
@@ -52,6 +54,7 @@ docs:binance（拉取 docs/vendor/binance/ 本地副本，见根 CLAUDE.md）
 - **Google OAuth**：`arctic` 库，登录方式之一
 - **Resend**（可选）：邮箱验证码发信，未配置时开发环境验证码打日志，生产环境该登录方式返回 `SERVICE_UNAVAILABLE`
 - **Cloudflare Workers**：`apps/web` 部署目标（`@opennextjs/cloudflare` + `packages/infra` 的 Alchemy）
+- **Docker / Cloudflare Tunnel**：`apps/server` 以 `apps/server/Dockerfile` 打镜像，`compose.server.yaml` 编排 `server`（仅绑 127.0.0.1:3000，带 healthcheck）+ `cloudflared`（隧道出口）；环境变量走未入库的 `apps/server/.env.docker` / `.env.tunnel`
 
 ## Verified Facts（已读代码/配置核实）
 
@@ -59,9 +62,9 @@ docs:binance（拉取 docs/vendor/binance/ 本地副本，见根 CLAUDE.md）
 - 鉴权是**自研 JWT**（`hono/jwt`，HS256，7 天有效期，payload 只有 `{ sub: accountId, iat, exp }`），三种登录方式（钱包 SIWE/SIWS、邮箱验证码、Google OAuth）共用同一套签发/校验（`apps/server/src/auth/tokens.ts`）
 - `apps/web` 有 `biome.json` 且 `lint` 脚本用 biome；其余 7 个 workspace **均无 `lint` 脚本**，仅有 `check-types`（`tsc --noEmit`）
 - 测试运行时是 **Vitest**（各 workspace `test: "vitest run"`），**不是** init 模板默认的 jest
-- 测试文件**与源码同目录共存**（如 `apps/server/src/auth/tokens.test.ts`、`packages/engine/src/**/*.test.ts`），**不是** init 模板假设的 `tests/unit/<workspace>/` 镜像目录
+- 测试文件统一在 `tests/unit/<workspace>/` 镜像目录（如 `tests/unit/server/auth/tokens.test.ts`、`tests/unit/packages/engine/*.test.ts`），2026-10-24 由同目录迁入
 - 仓库当前不存在任何 `@playwright/test` 依赖或 Playwright 配置文件，尽管 `docs/design/06-testing-design.md` 与 `HANDOFF.md` 提到 E2E 计划用 Playwright ——**这是设计意图，不是已落地的能力**
-- 无 `.github/` CI 配置
+- 无 `.github/` CI 配置（部署靠本地执行 `pnpm run deploy:server` / `deploy:web`，最近的 `ci:` 提交只是补生产环境变量，不是 GitHub Actions）
 - 目录结构不是 Better-T-Stack 默认的 `packages/env|api|auth|db|infra|ui`：实际是 `config/db/engine/infra/shared/ui`，鉴权代码在 `apps/server/src/auth/`，环境变量走 `varlock` 生成而非独立 `packages/env`
 
 ## Claimed but Unverified（文档中提到但未在代码里逐项核实）
@@ -85,3 +88,9 @@ docs:binance（拉取 docs/vendor/binance/ 本地副本，见根 CLAUDE.md）
   未新增 workspace、未新增依赖、`package.json` 脚本列表不变（`apps/server/package.json` 新增了一个
   `"version": "0.1.0"` 字段，属应用级元数据，不影响本文件登记的脚本/依赖/workspace 结构，不算漂移）
 - 测试文件数量的变化记录在 `.claude/TEST_BASELINE.md`（本文件不重复维护该细节）
+
+## 2026-10-16 `/sdlc-workflow:update` 增量刷新记录
+
+- 触发原因：`/sdlc-workflow:update`；距上次刷新（2026-09-24）新增 6 个迭代（2026-09-24/002、2026-09-25/001–003、2026-09-26/001 等）与部署相关提交
+- 漂移：新增根脚本 `db:comments` / `db:migrate:dev` / `db:migrate:deploy` / `deploy:server(:force)` / `deploy:web`；新增 `compose.server.yaml`、`apps/server/Dockerfile`、`scripts/kill-stray-dev.sh`；外部依赖新增 Docker + Cloudflare Tunnel 部署链路
+- 未漂移：workspace 列表、依赖方向、包管理器与构建系统

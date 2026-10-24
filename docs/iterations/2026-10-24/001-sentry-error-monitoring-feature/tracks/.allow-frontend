@@ -1,0 +1,13 @@
+# frontend 角色允许清单（T-005, T-006 目标文件 + 同目录测试 + 汇报文件）
+apps/web/.env.schema
+apps/web/src/env.ts
+apps/web/src/lib/config/env.ts
+apps/web/src/lib/config/env.test.ts
+apps/web/src/instrumentation-client.ts
+apps/web/src/instrumentation-client.test.ts
+apps/web/src/lib/sentry/*
+apps/web/src/app/error.tsx
+apps/web/src/app/error.test.tsx
+apps/web/src/app/global-error.tsx
+apps/web/src/app/global-error.test.tsx
+docs/iterations/2026-10-24/001-sentry-error-monitoring-feature/tracks/frontend.md

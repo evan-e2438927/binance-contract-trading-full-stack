@@ -26,6 +26,8 @@ Next.js 会在构建时内联所有 `NEXT_PUBLIC_*` 变量，因此必须在构�
 ```dotenv
 NEXT_PUBLIC_SERVER_URL=https://api.example.com
 NEXT_PUBLIC_REOWN_PROJECT_ID=your-reown-project-id
+# 可选：Sentry 浏览器端报错收集。不配 = 完全不启用。必须是 web 专用的 DSN，和后端的不是同一个
+NEXT_PUBLIC_SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project-id>
 ```
 
 `.env.production.local` 和已有 shell 环境变量的优先级更高。CI 中通过环境变量提供配置：
@@ -33,7 +35,10 @@ NEXT_PUBLIC_REOWN_PROJECT_ID=your-reown-project-id
 ```bash
 export NEXT_PUBLIC_SERVER_URL="https://api.example.com"
 export NEXT_PUBLIC_REOWN_PROJECT_ID="your-reown-project-id"
+export NEXT_PUBLIC_SENTRY_DSN="https://<key>@<org>.ingest.sentry.io/<project-id>"   # 可选
 ```
+
+`NEXT_PUBLIC_SENTRY_DSN` 同样是**构建期内联**：新增、更换或删除它之后都必须重新执行 `deploy:web` 才会生效；漏配的后果是线上静默不上报，不会报错。上线后用浏览器控制台执行 `Promise.reject(new Error("sentry-probe"))`，到 Sentry 项目里确认收到事件。
 
 `NEXT_PUBLIC_SERVER_URL` 不要以 `/` 结尾。浏览器会由它派生 WebSocket 地址，例如 `https://api.example.com` 对应 `wss://api.example.com/ws`。
 
@@ -73,4 +78,4 @@ pnpm install --frozen-lockfile
 pnpm run deploy:web
 ```
 
-CI 需要提供 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`NEXT_PUBLIC_SERVER_URL` 和 `NEXT_PUBLIC_REOWN_PROJECT_ID`。Token 仅授予目标账号的 Workers Scripts 编辑权限。
+CI 需要提供 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`NEXT_PUBLIC_SERVER_URL` 和 `NEXT_PUBLIC_REOWN_PROJECT_ID`；要启用浏览器端报错收集时再加 `NEXT_PUBLIC_SENTRY_DSN`（可选）。Token 仅授予目标账号的 Workers Scripts 编辑权限。

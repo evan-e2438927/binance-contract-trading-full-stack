@@ -39,7 +39,7 @@ packages/infra/   Alchemy 部署，只管 web
 - 本项目是 existing project，先参考 `.claude/PROJECT_BASELINE.md`、`.claude/EXISTING_STRUCTURE.md`、`.claude/TEST_BASELINE.md`
 - 提交遵循 Conventional Commits 1.0.0：`<type>[scope][!]: <description>`（type: feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert；破坏性变更加 `!` 或 footer `BREAKING CHANGE:`）
 - **本项目不是 Better-T-Stack 默认布局**：包布局是 `config/db/engine/infra/shared/ui`，没有独立的 `packages/env|api|auth`（环境变量走 varlock 各 app 自生成、API 客户端在 `apps/web/src/server-api-module`、鉴权在 `apps/server/src/auth`）。新建这几个包前必须先过 `design.md`，见 `.claude/EXISTING_STRUCTURE.md`「与 Better-T-Stack 默认约定的偏离」
-- 测试文件**与源码同目录共存**（`<name>.test.ts`），不是独立的 `tests/unit/<workspace>/` 镜像目录，见 `.claude/CODING_GUIDELINES.md`「测试规范」
+- 单元测试统一放仓库根 `tests/unit/`，按 workspace 镜像（`apps/server/src/x/y.ts` → `tests/unit/server/x/y.test.ts`，`packages/<p>/src/x.ts` → `tests/unit/packages/<p>/x.test.ts`），**不再**与源码同目录共存，见 `.claude/CODING_GUIDELINES.md`「测试规范」
 - 默认不新建根目录级 `web/`、`api/`、`server/` 等目录，除非设计文档明确批准
 
 ## 迭代历史

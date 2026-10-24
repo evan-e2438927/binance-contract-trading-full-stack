@@ -1,4 +1,7 @@
 import { env } from "./env.server";
+import { flushBeforeExit } from "./observability/flush-before-exit";
+import { resolveRelease } from "./observability/release";
+import { initSentry } from "./observability/sentry";
 
 import { format } from "@binance-contract-trading-full-stack/shared";
 
@@ -18,6 +21,14 @@ import { createWsPublisher, type WsPublisher } from "./ws/publisher";
 import { attachWsServer } from "./ws/server";
 import { booksRoute } from "./routers/books";
 import { getDb } from "./services";
+
+// 报错收集：env 导入之后第一件事，没配 SENTRY_DSN 返回 null（完全不启用）。
+// 版本标识没手动配时自动用 package.json 的 version（server@x.y.z）
+const errorReporter = initSentry({
+  dsn: env.SENTRY_DSN,
+  environment: env.NODE_ENV,
+  release: resolveRelease(env.SENTRY_RELEASE),
+});
 
 // 交易内核：从数据库恢复引擎状态、连币安行情、等就绪（30 秒没就绪就退出，04-backend-design.md 第 1 节）。
 // 先于 HTTP 服务启动：盘口和标记价没就位就不对外接受请求
@@ -78,6 +89,7 @@ const app = createApp({
   mailer,
   google,
   secureCookies: isProduction,
+  reportError: errorReporter?.report,
 });
 app.route("/books", booksRoute); // 练手链路，和业务无关
 
@@ -109,12 +121,16 @@ const equitySnapshotJob = startEquitySnapshotJob({
   take: (at) => takeEquitySnapshot({ db: getDb(), host: trading.host, isSymbolReady: (s) => trading.feed.symbolReady(s), at }),
 });
 
+const SENTRY_FLUSH_TIMEOUT_MS = 2000;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     console.log(`[server] 收到 ${signal}，停止行情、等队列处理完再退出`);
     equitySnapshotJob.stop();
     wsServer.close();
     wsHub.stop();
-    trading.stop().finally(() => process.exit(0));
+    trading
+      .stop()
+      .finally(() => flushBeforeExit(errorReporter, SENTRY_FLUSH_TIMEOUT_MS))
+      .finally(() => process.exit(0));
   });
 }

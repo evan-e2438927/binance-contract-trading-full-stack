@@ -11,3 +11,9 @@ export const REOWN_PROJECT_ID = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ?? "";
 
 /** TradingView Charting Library 静态文件的位置（public/charting_library，不进 git） */
 export const CHARTING_LIBRARY_PATH = "/charting_library/";
+
+/**
+ * 浏览器端 Sentry DSN（构建期内联）。空串表示不启用错误上报。
+ * 必须保持 process.env.NEXT_PUBLIC_* 字面量访问，Next 才会内联；不能改用 varlock 的 ENV 对象。
+ */
+export const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN ?? "";

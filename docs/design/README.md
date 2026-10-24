@@ -18,6 +18,7 @@ docs/design/
 ├── 06-testing-design.md       └─ 测试子设计
 ├── 07-binance-reference.md  币安标准参考（核对过的币安规则、出处、查阅方法）
 ├── 08-frontend-pages.md     前端页面与模块清单（带编号，Figma 设计输入）
+├── 09-monitoring.md         线上监控方案（Better Stack + Sentry + Cloudflare，分三个迭代落地）
 └── build-guide/             搭建教程（分段交付，跟着一步步做）
 ```
 
@@ -33,6 +34,7 @@ docs/design/
 | 05 | [前端子设计](./05-frontend-design.md) | 页面与组件树、状态管理、WS 客户端、图表与盘口性能、下单面板、钱包连接 | 写前端时 |
 | 06 | [测试子设计](./06-testing-design.md) | 测试分层、公式算例、场景重放、不变式、集成与 E2E、压测与故障演练 | 贯穿全程 |
 | 08 | [前端页面与模块清单](./08-frontend-pages.md) | 每个页面的模块编号、字段、状态、交互、弹窗、通用组件、影响设计的待定项 | 出设计稿、写前端时 |
+| 09 | [线上监控方案](./09-monitoring.md) | 风险清单、外部探测 / 心跳 / 报错收集三层、告警分级、处置手册、实施顺序；已拆为 Sentry → Telegram → 探测心跳三个迭代 | 上线后、排查线上问题时 |
 | 07 | [币安标准参考](./07-binance-reference.md) | 持仓表示、下单参数、交易规则 filters、错误码对照、开仓成本公式、和币安刻意不同的地方 | 设计没说清、拿不准时先查 |
 
 ---

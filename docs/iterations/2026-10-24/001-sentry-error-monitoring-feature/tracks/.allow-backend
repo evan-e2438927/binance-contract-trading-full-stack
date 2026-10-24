@@ -1,0 +1,10 @@
+# backend 角色允许清单（T-003, T-004 目标文件 + 同目录测试 + 汇报文件）
+apps/server/.env.schema
+apps/server/src/env.ts
+apps/server/src/observability/*
+apps/server/src/http/respond.ts
+apps/server/src/http/respond.test.ts
+apps/server/src/app.ts
+apps/server/src/app.test.ts
+apps/server/src/index.ts
+docs/iterations/2026-10-24/001-sentry-error-monitoring-feature/tracks/backend.md

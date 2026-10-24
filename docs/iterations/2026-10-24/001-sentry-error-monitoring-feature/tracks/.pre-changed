@@ -1,0 +1,17 @@
+.claude/ARCHITECTURE.md
+.claude/EXISTING_STRUCTURE.md
+.claude/PROJECT_BASELINE.md
+.claude/SECURITY.md
+.claude/TEST_BASELINE.md
+.claude/rules/workflow-rules.md
+.claude/rules/workflow-rules.md.bak
+.claude/settings.json
+docs/design/09-monitoring.md
+docs/design/README.md
+docs/iterations/2026-10-24/001-sentry-error-monitoring-feature/design.md
+docs/iterations/2026-10-24/001-sentry-error-monitoring-feature/requirements.md
+docs/iterations/2026-10-24/001-sentry-error-monitoring-feature/status.json
+docs/iterations/2026-10-24/001-sentry-error-monitoring-feature/tasks.md
+docs/iterations/2026-10-24/001-sentry-error-monitoring-feature/tracks/.pre-changed
+docs/iterations/2026-10-24/002-telegram-alert-notify-feature/requirements.md
+docs/iterations/2026-10-24/003-health-probe-heartbeat-feature/requirements.md
