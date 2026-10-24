@@ -98,6 +98,9 @@ server ──► db     ──► shared
 
 - `apps/web` → Cloudflare Workers（`@opennextjs/cloudflare` + `packages/infra` 的 Alchemy，`pnpm run deploy`）
 - `apps/server` → 独立 VPS 常驻 Node 进程（**不能**部署到 Cloudflare Workers，因为需要常驻撮合引擎 + 长连接 WS + 直连币安）
+  - 容器化：`apps/server/Dockerfile` 打镜像，`compose.server.yaml` 编排 `server`（`127.0.0.1:3000`，带 healthcheck，`restart: unless-stopped`）+ `cloudflared`（隧道，`depends_on: server healthy`）
+  - 命令：`pnpm run deploy:server`（build + up，等待健康）/ `deploy:server:force`（仅强制重建 server 并重启 cloudflared）；web 侧 `pnpm run deploy:web`
+  - 无 GitHub Actions CI，部署由本地手动触发
 - `packages/db` → Supabase Postgres，迁移用 `pnpm run db:generate` / `db:migrate`
 - 引擎状态：纯内存 + 定期/事件落库，单实例，不引 Redis（重启从库恢复）
 

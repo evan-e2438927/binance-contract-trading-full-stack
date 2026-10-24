@@ -1,0 +1,43 @@
+{
+  "phase": "applied",
+  "proposal_at": "2026-10-24T17:03:28+08:00",
+  "mode": "proposal",
+  "iter_dir": "docs/iterations/2026-10-24/001-sentry-error-monitoring-feature",
+  "history": [
+    {
+      "at": "2026-10-24T17:03:28+08:00",
+      "from": null,
+      "to": "pending_review",
+      "by": "proposal"
+    },
+    {
+      "at": "2026-10-24T17:50:05+08:00",
+      "from": "pending_review",
+      "to": "approved",
+      "by": "apply"
+    },
+    {
+      "at": "2026-10-24T18:03:52+08:00",
+      "from": "approved",
+      "to": "applied",
+      "by": "apply"
+    }
+  ],
+  "summary": {
+    "requirement_count": 4,
+    "task_count": 9,
+    "estimated_hours": 16
+  },
+  "reviewed_at": "2026-10-24T09:50:05Z",
+  "reviewer": "apply",
+  "agent_mode": "multi",
+  "agent_mode_reason": "指定 multi",
+  "pipeline_stage": "test-pipeline",
+  "tracks": {
+    "foundation": "done",
+    "backend": "done",
+    "frontend": "done",
+    "test": "done"
+  },
+  "applied_at": "2026-10-24T18:03:52+08:00"
+}

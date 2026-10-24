@@ -59,6 +59,8 @@ export interface AppDeps {
   logRequests?: boolean;
   /** 取客户端 IP；默认读 TCP 连接的对端地址（部署在反向代理后面时要改成信任代理头） */
   clientIp?: (c: Context) => string | null;
+  /** 意外错误（非 AppError）上报回调，如 Sentry；不传则只记日志 */
+  reportError?: (error: unknown, ctx: { method: string; path: string }) => void;
 }
 
 function remoteAddress(c: Context): string | null {
@@ -75,7 +77,7 @@ export function createApp(deps: AppDeps) {
   const clientIp = deps.clientIp ?? remoteAddress;
   const app = new Hono();
 
-  app.onError(createErrorHandler(logger));
+  app.onError(createErrorHandler(logger, deps.reportError));
   if (deps.logRequests !== false) app.use(requestLogger());
   app.use(
     "/*",

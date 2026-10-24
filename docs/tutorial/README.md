@@ -63,10 +63,12 @@
 | S01 | 行情层升级：盘口从 20 档换成完整盘口（增量流 + REST 快照） | `apps/server/src/market` | 2026-09-20 |
 | S02 | 事故复盘：被币安封了 IP。限流闸门、盘口对齐的两个 bug、日志失真 | `apps/server/src/market` | 2026-09-20 |
 | S03 | 盘口精度：聚合挪到服务端、行不再露半截、砍掉喂不起的精度、页面撑满屏幕 | `packages/shared` `apps/server/src/ws` `apps/web` | 2026-09-20 |
+| S04 | Sentry 版本号自动填：`SENTRY_RELEASE` 留空时用 package.json 的 version | `apps/server/src/observability` | 2026-10-24 |
 
 - [S01-full-order-book.md](S01-full-order-book.md)
 - [S02-rate-limit-incident.md](S02-rate-limit-incident.md) ← **S01 上线当天出的事故，接着 S01 读**
 - [S03-orderbook-precision.md](S03-orderbook-precision.md) ← 由一张「精度选 0.1 就没数据了」的截图牵出来的四个问题
+- [S04-sentry-release-auto.md](S04-sentry-release-auto.md) ← 不用再手动填 Sentry 版本号
 
 ---
 

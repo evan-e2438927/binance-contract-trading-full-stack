@@ -29,6 +29,11 @@ apps/
     src/ws/              WebSocket hub，向前端转发行情/账户事件
     src/env.ts / env.server.ts   varlock 生成，禁止手改
   native/   Expo（第一版不动，禁止改动）
+  server/Dockerfile        server 容器镜像（VPS 部署）
+
+compose.server.yaml        server + cloudflared 编排（`pnpm run deploy:server`）
+scripts/                   仓库级脚本（kill-stray-dev.sh）
+tests/                     SDLC 产物目录：reports/ 有内容，unit/ e2e/ 为空骨架
 
 packages/
   shared/   类型、枚举、错误码、定标换算（零依赖，纯函数）
@@ -45,7 +50,7 @@ packages/
 docs/
   design/          ★ 权威设计文档，动手前必读 README.md + 02-architecture.md
   vendor/binance/  币安官方文档本地副本，不进 git，`pnpm run docs:binance` 拉取
-  iterations/      SDLC 迭代记录（intake 时新建，此前为空；2026-09-24 已有首个迭代 `2026-09-24/001-system-version-uptime-feature/` 走完 apply，见下方「2026-09-24 增量刷新记录」）
+  iterations/      SDLC 迭代记录（截至 2026-10-16 共 6 个：2026-09-24/{001-system-version-uptime,002-position-liquidation-price-fix}、2026-09-25/{001-leaderboard-page-redesign,002-order-panel-buttons-above-tabs,003-liquidation-price-null-reason-fix}、2026-09-26/001-wallet-login-multi-chain）
   books-tutorial.md / db-notes.md / tutorial/   早前练手记录，与本项目业务无关
   frontend/        前端相关补充文档
   requiremnts/     （原文件夹名如此，未改名）
@@ -73,7 +78,7 @@ docs/
 3. **无独立 `packages/auth`**：鉴权实现在 `apps/server/src/auth/`（服务端专属，前端不需要）
 4. **多出 `packages/engine`**：Better-T-Stack 默认模板没有这一层，是本项目核心——撮合/风控/清算纯逻辑内核，必须保持零 IO 依赖
 5. **`packages/config` 无源码**，只有 `tsconfig.base.json` 和空 `package.json`
-6. **测试文件与源码同目录**（`*.test.ts` 紧挨被测文件），不是 `tests/unit/<workspace>/` 镜像目录（见 `.claude/TEST_BASELINE.md`）
+6. **测试文件统一在 `tests/unit/<workspace>/` 镜像目录**（2026-10-24 起，原同目录测试已迁入；见 `.claude/TEST_BASELINE.md`）
 
 ## 历史事实目录（禁止本轮需求随意变更）
 
@@ -95,3 +100,13 @@ docs/
 - 触发原因：首个迭代 `docs/iterations/2026-09-24/001-system-version-uptime-feature/` 完成 `apply`
 - 结构层面漂移扫描结果：**无漂移**。本次迭代新增的 `apps/server/src/api/system.ts`、`apps/web/src/server-api-module/system/`、`apps/web/src/app/_shared/ui-components/app-header/version-info.tsx` 均落在上方目录树已登记的既有落位规则内（`apps/server/src/api/` 对外 API handler、`apps/web/src/server-api-module/` 类型化 API 客户端层），未引入任何新目录、新 workspace 或新的 Better-T-Stack 偏离项
 - 结论：本文件除 `docs/iterations/` 那一行的事实性措辞更新外，其余内容（目录树、Workspace 职责、偏离记录、历史事实目录、边界规则）与真实结构核对后**保持不变**
+
+## 2026-10-16 `/sdlc-workflow:update` 增量刷新记录
+
+- 结构漂移：新增 `compose.server.yaml`、`apps/server/Dockerfile`、`scripts/`；`docs/iterations/` 增至 6 个迭代；`apps/web` 新增 `vitest.config.mts`
+- 未新增 workspace，未新增 Better-T-Stack 偏离项，目录落位规则与依赖方向不变
+
+## 2026-10-24 `/sdlc-workflow:update` 增量刷新记录
+
+- 结构漂移：仅 `docs/design/` 新增 `09-monitoring.md`（线上监控方案，状态：方案待定稿、尚未实施；`docs/design/README.md` 已登记）
+- 核对无变化：workspace 列表、测试文件计数（server 29 / web 33 / engine 23 / db 6 / shared 3）、迭代数（6 个）、根脚本、`tests/` 目录内容、无 `.github/`；`.sdlc-config` 的 vitest / biome 与仓库一致

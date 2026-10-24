@@ -41,16 +41,15 @@
 
 ## 测试规范
 
-> ⚠️ **本条覆盖 init 模板默认假设**：本项目实际约定是测试文件**与源码同目录共存**，不是独立镜像的
-> `tests/unit/<workspace>/` 目录。intake 时仓库已有 88 个 `*.test.ts` 文件全部采用同目录约定
-> （详见 `.claude/TEST_BASELINE.md`），新测试必须延续这个约定，不要为了迁就模板把新测试写进
-> `tests/unit/`（那会造成新旧测试分裂成两套目录约定）：
+> 单元测试统一放仓库根 `tests/unit/`，按 workspace 镜像；源码目录（`src/`）里不再放 `*.test.ts`。2026-10-24 已把原先同目录的 94 个测试全部迁入。
 
-- 单元测试与被测文件同目录，命名 `<name>.test.ts`，例如 `packages/engine/src/execute-order.ts` 对应 `packages/engine/src/execute-order.test.ts`
+- 路径映射：`apps/server/src/<dir>/<name>.ts` → `tests/unit/server/<dir>/<name>.test.ts`；`apps/web/src/...` → `tests/unit/web/...`；`packages/<p>/src/...` → `tests/unit/packages/<p>/...`
+- 测试通过相对路径导入源码（如 `../../../../packages/engine/src/execute-order`）；web 的 `@/` 别名照常可用；裸模块（`vitest`、`hono`…）由 `packages/config/vitest/resolve-tests-unit-imports.ts` 从对应 workspace 解析，各 workspace 的 `vitest.config` 已配置
+- 测试专用的固定数据（如 `__fixtures__/`）跟测试一起放在 `tests/unit/` 对应目录下
 - 测试框架统一 **Vitest**（`vitest run`），不是 jest
 - `packages/engine` 的测试是投入重点（根 `docs/design/06-testing-design.md`：引擎单测:集成:E2E:演练 ≈ 6:2:1:1），新增撮合/风控/清算逻辑必须配纯函数单测，且不能引入 IO 依赖
-- `packages/engine/src/purity.test.ts` 专门校验引擎纯函数约束，任何触碰 `packages/engine` 的改动都要确保这个测试仍然通过
-- init 脚本生成的 `tests/unit/`、`tests/e2e/`、`tests/reports/` 目录骨架**保留但目前不是主要测试落位**：
+- `tests/unit/packages/engine/purity.test.ts` 专门校验引擎纯函数约束，任何触碰 `packages/engine` 的改动都要确保这个测试仍然通过
+- `tests/e2e/`、`tests/reports/` 的约定：
   - `tests/e2e/` 用于未来补齐的 Playwright E2E（当前仓库无此能力，见 `.claude/TEST_BASELINE.md` 缺口 1）
   - 每个 E2E 文件必须带唯一场景 ID（如 `E2E-001`），并注明覆盖的 Requirement IDs 和 Task IDs
   - 同一需求路径不得被重复创建多个等价 E2E 场景
@@ -69,5 +68,5 @@
 - 文件是否落在正确 workspace（尤其是撮合/风控数值逻辑有没有误放进 `apps/server` 而不是 `packages/engine`）
 - 是否无必要地引入新的顶层目录，或新建了本该先过 `design.md` 的 `packages/env|api|auth`
 - 共享逻辑是否应该下沉到 `packages/shared`
-- 测试是否放进了独立的 `tests/unit/`，而不是遵循同目录 `*.test.ts` 惯例
+- 新测试是否放进了 `tests/unit/` 的镜像路径，而不是写在 `src/` 里
 - 根 `CLAUDE.md` 提交前自检四问：`number` 有没有溜进金额运算 / `engine` 有没有 import 不该 import 的东西 / 改了余额有没有写流水 / 依赖方向有没有反
